@@ -1,0 +1,1071 @@
+{
+    "dashboard": {
+        "keyword": [
+            "Dashboard",
+            "Home",
+            "Panel",
+            "Admin",
+            "Control center",
+            "Overview",
+            "Main hub",
+            "Management hub",
+            "Administrative hub",
+            "Central hub",
+            "Command center",
+            "Administrator portal",
+            "Centralized interface",
+            "Admin console",
+            "Management dashboard",
+            "Main screen",
+            "Administrative dashboard",
+            "Command dashboard",
+            "Main control panel"
+        ],
+        "title": "Dashboard",
+        "icon": "las la-home",
+        "route_name": "admin.dashboard",
+        "menu_active": "admin.dashboard"
+    },
+    "manage_users": {
+        "title": "Manage Users",
+        "icon": "las la-users",
+        "counters": [
+            "bannedUsersCount",
+            "emailUnverifiedUsersCount",
+            "mobileUnverifiedUsersCount",
+            "kycUnverifiedUsersCount",
+            "kycPendingUsersCount"
+        ],
+        "menu_active": "admin.users*",
+        "submenu": [
+            {
+                "keyword": [
+                    "active users",
+                    "Manage Users",
+                    "User management",
+                    "User control",
+                    "User status",
+                    "User activity",
+                    "User analytics"
+                ],
+                "title": "Active Users",
+                "route_name": "admin.users.active",
+                "menu_active": "admin.users.active"
+            },
+            {
+                "keyword": [
+                    "banned users",  
+                    "Manage Users",
+                    "User management",
+                    "Account bans",
+                    "User activity"
+                ],
+                "title": "Banned Users",
+                "route_name": "admin.users.banned",
+                "menu_active": "admin.users.banned",
+                "counter": "bannedUsersCount"
+            },
+           
+            
+            {
+                "keyword": [
+                    "with balance users",
+                    "Manage Users",
+                    "User management",
+                    "User activity",
+                    "Account management"
+                ],
+                "title": "With Balance",
+                "route_name": "admin.users.with.balance",
+                "menu_active": "admin.users.with.balance"
+            },
+            
+            {
+                "keyword": [
+                    "all users users",
+                    "Manage Users",
+                    "User management",
+                    "User control",
+                    "User activity",
+                    "User analytics"
+                ],
+                "title": "All Users",
+                "route_name": "admin.users.all",
+                "menu_active": "admin.users.all"
+            },
+            {
+                "keyword": [
+                    "send notification users",
+                    "Manage Users",
+                    "User notifications",
+                    "User management",
+                    "User activity"
+                ],
+                "title": "Send Notification",
+                "route_name": "admin.users.notification.all",
+                "menu_active": "admin.users.notification.all"
+            },
+            {
+                "keyword": [ 
+                    "User Stages",
+                    "Stage 1",
+                    "Stage 2",
+                    "Stage 3",
+                    "Stage 4",
+                    "Stage 5",
+                    "Matrix stages",
+                    "User levels",
+                    "Stage management"
+                ],
+                "title": "User Stages",
+                "route_name": "admin.users.stages",
+                "menu_active": "admin.users.stages",
+                "roles": ["super-admin", "admin"]
+            },
+            {
+                "keyword": [
+                    "kyc unverified users",
+                    "Manage Users",
+                    "User verification",
+                    "User authentication",
+                    "User management"
+                ],
+                "title": "KYC Unverified",
+                "route_name": "admin.users.kyc.unverified",
+                "menu_active": "admin.users.kyc.unverified",
+                "counter": "kycUnverifiedUsersCount"
+            },
+            {
+                "keyword": [
+                    "kyc pending users",
+                    "Manage Users",
+                    "User verification",
+                    "User authentication",
+                    "User management"
+                ],
+                "title": "KYC Pending",
+                "route_name": "admin.users.kyc.pending",
+                "menu_active": "admin.users.kyc.pending",
+                "counter": "kycPendingUsersCount"
+            },
+            {
+                "keyword": ["ACB Members", "ACB", "Achievers Celebrated Bonus", "Ambassador"],
+                "title": "ACB Members",
+                "route_name": "admin.acb.index",
+                "menu_active": "admin.acb*"
+            },
+            {
+                "keyword": ["Autoship", "Autoship Balances", "Autoship Gained", "Autoship Lost", "Autoship Sweep", "Matching Hold", "Month End"],
+                "title": "Autoship",
+                "route_name": "admin.autoship.index",
+                "menu_active": "admin.autoship*"
+            },
+            {
+                "keyword": ["PV Log", "PV Logs", "Point Volume", "Binary PV", "Left PV", "Right PV", "PV History", "Pairing Volume"],
+                "title": "PV Log",
+                "route_name": "admin.pv-logs.index",
+                "menu_active": "admin.pv-logs*"
+            },
+            {
+                "keyword": ["Notices", "Direct Notice", "Send Notice", "Personal Notification", "Message User"],
+                "title": "Direct Notices",
+                "route_name": "admin.notices.index",
+                "menu_active": "admin.notices*"
+            },
+            {
+                "keyword": ["Key-In Bonus", "Key In Bonus", "Registration Bonus", "Keyed In"],
+                "title": "Key-In Bonus",
+                "route_name": "admin.key-in-bonus.index",
+                "menu_active": "admin.key-in-bonus*"
+            }
+        ]
+    },
+    "stockist": {
+        "title": "Manage Stockist",
+        "icon": "las la-key",
+        "counters": [
+            "pendingStockTransfersCount"
+        ],
+        "menu_active": "admin.stockist*",
+        "submenu": [
+            {
+                "keyword": [ "Stockist","Item", "Inventory"],
+                "title": "Dashboard",
+                "icon": "lab la-product-hunt",
+                "route_name": "admin.stockist.dashboard",
+                "menu_active": "admin.stockist.dashboard"
+            },
+            {
+                "keyword": ["Stockist Orders","Recharge","Flexi load","Stockist Orders","Inactive stockist"],
+                "title": "Stockist Orders",
+                "route_name": "admin.stockist-orders.index",
+                "menu_active": "admin.stockist-orders.index"
+            },
+            {
+                "keyword": ["Redemption Report", "Stockist Sales", "Inventory Report", "Financial Report", "Accounting"],
+                "title": "Redemption Report",
+                "icon": "las la-clipboard-list",
+                "route_name": "admin.stockist.report",
+                "menu_active": "admin.stockist.report*"
+            },
+            {
+                "keyword": ["Stock Transfers", "Stock Requests", "Mega Stockist", "Mini Stockist", "Stockist transfer"],
+                "title": "Stock Transfers",
+                "route_name": "admin.stockist.transfers.index",
+                "menu_active": "admin.stockist.transfers*",
+                "counter": "pendingStockTransfersCount"
+            },
+
+            
+           
+            {
+                "keyword": ["Stockist Orders"],
+                "title": "Stockist Order Request",
+                "route_name": "admin.sorder.index",
+                "menu_active": "admin.sorder.index"
+            },
+            {
+                "keyword": ["Stockist Supplies"],
+                "title": "Supplies",
+                "route_name": "admin.supply.index",
+                "menu_active": "admin.supply.index"
+            }
+
+
+        ]
+    },
+    "shop": {
+        "keyword": ["Shop", "Product", "Category", "Sales", "Order", "Manage Shop", "Inventory", "Merchandise"],
+        "title": "Shop",
+        "icon": "las la-store",
+        "menu_active": "admin.product*|admin.category*|admin.sales*|admin.order*|admin.state*|admin.repurchase-award*",
+        "submenu": [
+            {
+                "keyword": ["Product", "Item", "Manufacture", "Inventory"],
+                "title": "Manage Product",
+                "route_name": "admin.product.index",
+                "menu_active": "admin.product*"
+            },
+            {
+                "keyword": ["Category", "Class", "Group", "Type", "Division"],
+                "title": "Manage Category",
+                "route_name": "admin.category.index",
+                "menu_active": "admin.category.index"
+            },
+            {
+                "keyword": ["Sales", "Manage Sales", "Invoices", "Redemptions", "Daily sales", "Sales report"],
+                "title": "Manage Sales",
+                "route_name": "admin.sales.index",
+                "menu_active": "admin.sales*"
+            },
+            {
+                "keyword": ["Order", "Purchase", "Buy", "Sell"],
+                "title": "Manage Order",
+                "route_name": "admin.order.index",
+                "menu_active": "admin.order.index"
+            },
+            {
+                "keyword": ["State", "Manage States", "States", "Region", "Territory"],
+                "title": "Manage States",
+                "route_name": "admin.state.index",
+                "menu_active": "admin.state*"
+            },
+            {
+                "keyword": ["Repurchase Award", "PV Award", "Unilevel Award", "Product PV", "Repurchase"],
+                "title": "Repurchase Awards",
+                "route_name": "admin.repurchase-award.index",
+                "menu_active": "admin.repurchase-award*"
+            }
+        ]
+    },
+    "affiliate_program": {
+        "title": "Affiliate Program",
+        "icon": "las la-bullhorn",
+        "menu_active": "admin.affiliate*|admin.ads*",
+        "submenu": [
+            {
+                "keyword": ["Affiliate Dashboard", "Affiliate Program", "Marketing"],
+                "title": "Affiliate Dashboard",
+                "route_name": "admin.affiliate.dashboard",
+                "menu_active": "admin.affiliate.dashboard"
+            },
+            {
+                "keyword": ["Ad Center", "Marketing Ads", "Ad Materials", "Social Media Ads"],
+                "title": "Ad Materials & Media",
+                "route_name": "admin.ads.index",
+                "menu_active": "admin.ads*"
+            },
+            {
+                "keyword": ["Affiliate Orders", "Retail Orders", "Guest Orders"],
+                "title": "Affiliate Orders",
+                "route_name": "admin.affiliate.orders",
+                "menu_active": "admin.affiliate.orders*"
+            },
+            {
+                "keyword": ["Affiliate Marketers", "Top Affiliates", "Affiliate Members"],
+                "title": "Active Affiliates",
+                "route_name": "admin.affiliate.affiliates",
+                "menu_active": "admin.affiliate.affiliates"
+            },
+            {
+                "keyword": ["Affiliate Settings", "Attribution Window", "Cookie Settings"],
+                "title": "Affiliate Settings",
+                "route_name": "admin.affiliate.settings",
+                "menu_active": "admin.affiliate.settings"
+            }
+        ]
+    },
+    "mlm_projects": {
+        "header": "Binary",
+        "keyword": [
+            "MLM Projects", "Projects", "Subscription Plans", "Binary MLM", "Commission Plans",
+            "Direct Commission", "Indirect Commission", "Pairing Bonus", "PV", "Activation"
+        ],
+        "title": "MLM Projects",
+        "icon": "las la-sitemap",
+        "route_name": "admin.projects.index",
+        "menu_active": "admin.projects*"
+    },
+    "awards": {
+        "keyword": ["Award", "Awards", "Award Management", "Reward", "Trophy"],
+        "title": "Manage Awards",
+        "icon": "las la-trophy",
+        "menu_active": "admin.awards*",
+        "submenu": [
+            {
+                "keyword": ["All Awards", "Awards List"],
+                "title": "All Awards",
+                "route_name": "admin.awards.index",
+                "menu_active": "admin.awards.index"
+            },
+            {
+                "keyword": ["Award Payments", "Pay Awards"],
+                "title": "Award Payments",
+                "route_name": "admin.awards.payments",
+                "menu_active": "admin.awards.payments"
+            }
+        ]
+    },
+    "manage_unilevel": {
+        "keyword": ["Unilevel", "Unilevel bonus", "Generation", "Add generation", "Allocate generation", "PRB", "Product repurchase bonus"],
+        "title": "Manage Unilevel",
+        "icon": "las la-layer-group",
+        "menu_active": "admin.unilevel*",
+        "submenu": [
+            {
+                "keyword": ["Unilevel Generation", "Generation settings", "Add generation", "Create generation"],
+                "title": "Add Generation",
+                "route_name": "admin.unilevel.generations.index",
+                "menu_active": "admin.unilevel.generations*"
+            },
+            {
+                "keyword": ["Allocate generation", "Assign generation", "Project generation", "Link generation"],
+                "title": "Allocate Generation",
+                "route_name": "admin.unilevel.allocate.index",
+                "menu_active": "admin.unilevel.allocate*"
+            }
+        ]
+    },
+    "welcome_pack": {
+        "title": "Welcome Pack",
+        "icon": "las la-gift",
+        "menu_active": "admin.welcome-pack*",
+        "submenu": [
+            {
+                "keyword": ["Welcome Pack", "Welcome Back Package", "Welcome Package", "Redeem Code"],
+                "title": "All Welcome Packages",
+                "route_name": "admin.welcome-pack.index",
+                "menu_active": "admin.welcome-pack.index"
+            }
+        ]
+    },
+    "pin": {
+        "title": "Manage Pins",
+        "icon": "las la-key",
+        "counters": [],
+        "menu_active": "admin.pin*",
+        "submenu": [{
+                "keyword": ["All pin","Recharge","Flexi load","User pin","Admin pin","Create pin","Used pins","Unused pins"],
+                "title": "All Pins",
+                "route_name": "admin.pin.index",
+                "menu_active": "admin.pin.index"
+            },
+            {
+                "keyword": ["User pin","Create pin","Customer pin"],
+                "title": "User Pins",
+                "route_name": "admin.pin.user",
+                "menu_active": "admin.pin.user"
+            },
+            {
+                "keyword": ["Admin pin","Agent pin","Create pin"],
+                "title": "Admin Pins",
+                "route_name": "admin.pin.generate",
+                "menu_active": "admin.pin.generate"
+            },
+            {
+                "keyword": ["Used pin","Applied pin","Recycled pin","Secondhand pin"],
+                "title": "Used Pins",
+                "route_name": "admin.pin.used",
+                "menu_active": "admin.pin.used"
+            },
+            {
+                "keyword": ["Unused pin","New pin","Unapplied pin","Fresh pin"],
+                "title": "Unused Pins",
+                "route_name": "admin.pin.unused",
+                "menu_active": "admin.pin.unused"
+            }
+        ]
+    },
+    "savings_loans": {
+        "header": "Finances",
+        "keyword": ["Savings","Loans","Fixed Box","Target Savings","Farm Yield","Loan Products","Cooperate Finance"],
+        "title": "Savings & Loans",
+        "icon": "las la-piggy-bank",
+        "menu_active": "admin.savings*|admin.loans*",
+        "submenu": [
+            {
+                "keyword": ["Savings Settings","Interest Rate","Savings Rate"],
+                "title": "Savings Settings",
+                "route_name": "admin.savings.settings",
+                "menu_active": "admin.savings.settings"
+            },
+            {
+                "keyword": ["All Savings","User Savings"],
+                "title": "All Savings",
+                "route_name": "admin.savings.index",
+                "menu_active": "admin.savings.index"
+            },
+            {
+                "keyword": ["Farm Cycles","Farm","Cycles"],
+                "title": "Farm Cycles",
+                "route_name": "admin.savings.cycles",
+                "menu_active": "admin.savings.cycles*"
+            },
+            {
+                "keyword": ["Pending Loans","Loan Applications","Approve Loans"],
+                "title": "Pending Loans",
+                "route_name": "admin.loans.pending",
+                "menu_active": "admin.loans.pending"
+            },
+            {
+                "keyword": ["All Loans","Loan Management"],
+                "title": "All Loans",
+                "route_name": "admin.loans.index",
+                "menu_active": "admin.loans.index"
+            },
+            {
+                "keyword": ["Loan Products","Loan Settings","Loan Configuration"],
+                "title": "Loan Products",
+                "route_name": "admin.loans.products",
+                "menu_active": "admin.loans.products"
+            }
+        ]
+    },
+    "Fractional Farm Ownership": {
+        "title": "Manage FFO",
+        "icon": "las la-key",
+        "counters": [],
+        "menu_active": "admin.dividend*",
+        "submenu": [
+            {
+                "keyword": [ "dividend","Item", "Shares"],
+                "title": "Dashboard",
+                "icon": "lab la-product-hunt",
+                "route_name": "admin.dividend.index",
+                "menu_active": "admin.dividend.index"
+            },
+            {
+                "keyword": ["dividend ","Shares","dividend history","Inactive stockist"],
+                "title": "FFO history ",
+                "route_name": "admin.dividend.history",
+                "menu_active": "admin.dividend.history"
+            },
+            
+            {
+                "keyword": ["All investors","investors","Flexi load","Active stockist","Inactive stockist"],
+                "title": "FFO investors",
+                "route_name": "admin.dividend.investors",
+                "menu_active": "admin.dividend.investors"
+            },
+           
+            {
+                "keyword": ["FFO dividend"],
+                "title": "POST FFO Dividend",
+                "route_name": "admin.dividend.create",
+                "menu_active": "admin.dividend.create"
+            }
+
+            
+        ]
+    },
+    "affiliate": {
+        "title": "Affiliate",
+        "icon": "las la-link",
+        "counters": [],
+        "menu_active": [
+            "admin.affiliate.dashboard",
+            "admin.affiliate.order*",
+            "admin.affiliate.affiliates",
+            "admin.affiliate.settings*"
+        ],
+        "submenu": [
+            {
+                "keyword": [
+                    "Affiliate",
+                    "Dashboard"
+                ],
+                "title": "Dashboard",
+                "route_name": "admin.affiliate.dashboard",
+                "menu_active": "admin.affiliate.dashboard"
+            },
+            {
+                "keyword": [
+                    "Affiliate",
+                    "Orders",
+                    "Shop Orders"
+                ],
+                "title": "Orders",
+                "route_name": "admin.affiliate.orders",
+                "menu_active": "admin.affiliate.orders*"
+            },
+            {
+                "keyword": [
+                    "Affiliate",
+                    "Affiliates",
+                    "Members"
+                ],
+                "title": "Affiliates",
+                "route_name": "admin.affiliate.affiliates",
+                "menu_active": "admin.affiliate.affiliates"
+            },
+            {
+                "keyword": [
+                    "Affiliate",
+                    "Settings"
+                ],
+                "title": "Settings",
+                "route_name": "admin.affiliate.settings",
+                "menu_active": "admin.affiliate.settings"
+            }
+        ]
+    },
+    "ad_manager": {
+        "keyword": [
+            "Ad Manager",
+            "Ads",
+            "Adverts",
+            "Social share",
+            "Marketing"
+        ],
+        "title": "Ad Manager",
+        "icon": "las la-bullhorn",
+        "route_name": "admin.ads.index",
+        "menu_active": "admin.ads*"
+    },
+    "deposits": {
+        "title": "Deposits",
+        "icon": "las la-file-invoice-dollar",
+        "counters": [
+            "pendingDepositsCount"
+        ],
+        "menu_active": "admin.deposit*",
+        "submenu": [
+            {
+                "keyword": [
+                    "Pending Deposits",
+                    "Deposits",
+                    "Deposit management",
+                    "Deposit control",
+                    "Deposit status",
+                    "Deposit activity"
+                ],
+                "title": "Pending Deposits",
+                "route_name": "admin.deposit.pending",
+                "menu_active": "admin.deposit.pending",
+                "counter": "pendingDepositsCount",
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "Approved Deposits",
+                    "Deposits",
+                    "Deposit management",
+                    "Deposit activity"
+                ],
+                "title": "Approved Deposits",
+                "route_name": "admin.deposit.approved",
+                "menu_active": "admin.deposit.approved",
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "Successful Deposits",
+                    "Deposits",
+                    "Deposit management",
+                    "Deposit activity"
+                ],
+                "title": "Successful Deposits",
+                "route_name": "admin.deposit.successful",
+                "menu_active": "admin.deposit.successful",
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "Rejected Deposits",
+                    "Deposits",
+                    "Deposit management",
+                    "Deposit activity"
+                ],
+                "title": "Rejected Deposits",
+                "route_name": "admin.deposit.rejected",
+                "menu_active": "admin.deposit.rejected",
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "Initiated Deposits",
+                    "Deposits",
+                    "Deposit management",
+                    "Deposit activity"
+                ],
+                "title": "Initiated Deposits",
+                "route_name": "admin.deposit.initiated",
+                "menu_active": "admin.deposit.initiated",
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "All Deposits",
+                    "Deposits",
+                    "Deposit management",
+                    "Deposit control",
+                    "Deposit activity"
+                ],
+                "title": "All Deposits",
+                "route_name": "admin.deposit.list",
+                "menu_active": "admin.deposit.list",
+                "params": {
+                    "user_id": ""
+                }
+            }
+        ]
+    },
+    "withdrawals": {
+        "title": "Withdrawals",
+        "icon": "la la-bank",
+        "counters": [
+            "pendingWithdrawCount"
+        ],
+        "menu_active": "admin.withdraw.data*",
+        "submenu": [
+            {
+                "keyword": [
+                    "Pending Withdrawals",
+                    "Withdrawals",
+                    "Withdrawal management",
+                    "Withdrawal control",
+                    "Withdrawal status",
+                    "Withdrawal activity"
+                ],
+                "title": "Pending Withdrawals",
+                "route_name": "admin.withdraw.data.pending",
+                "menu_active": "admin.withdraw.data.pending",
+                "counter": "pendingWithdrawCount",
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "Approved Withdrawals",
+                    "Withdrawals",
+                    "Withdrawal management",
+                    "Withdrawal activity"
+                ],
+                "title": "Approved Withdrawals",
+                "route_name": "admin.withdraw.data.approved",
+                "menu_active": "admin.withdraw.data.approved",
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "Rejected Withdrawals",
+                    "Withdrawals",
+                    "Withdrawal management",
+                    "Withdrawal activity"
+                ],
+                "title": "Rejected Withdrawals",
+                "route_name": "admin.withdraw.data.rejected",
+                "menu_active": "admin.withdraw.data.rejected",
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "All Withdrawals",
+                    "Withdrawals",
+                    "Withdrawal management",
+                    "Withdrawal control",
+                    "Withdrawal activity"
+                ],
+                "title": "All Withdrawals",
+                "route_name": "admin.withdraw.data.all",
+                "menu_active": "admin.withdraw.data.all",
+                "params": {
+                    "user_id": ""
+                }
+            }
+        ]
+    },
+    "plan": {
+        "title": "Manage Investment",
+        "icon": "las la-paper-plane",
+        "counters": [],
+        "menu_active": "admin.plan*",
+        "submenu": [{
+                "keyword": ["All Investment","Investment","Flexi load","project"],
+                "title": "All Investment",
+                "route_name": "admin.plan.index",
+                "menu_active": "admin.plan.index"
+            }
+        ]
+    },
+    "affiliate_audit": {
+        "header": "Audit",
+        "title": "Affiliate Audit",
+        "icon": "las la-search-dollar",
+        "counters": [],
+        "menu_active": [
+            "admin.affiliate.funnel",
+            "admin.affiliate.audit"
+        ],
+        "submenu": [
+            {
+                "keyword": [
+                    "Affiliate",
+                    "Funnel",
+                    "Analytics"
+                ],
+                "title": "Funnel Report",
+                "route_name": "admin.affiliate.funnel",
+                "menu_active": "admin.affiliate.funnel"
+            },
+            {
+                "keyword": [
+                    "Affiliate",
+                    "Audit",
+                    "Financial"
+                ],
+                "title": "Financial Audit",
+                "route_name": "admin.affiliate.audit",
+                "menu_active": "admin.affiliate.audit"
+            }
+        ]
+    },
+    "reports": {
+        "title": "Report",
+        "icon": "la la-list",
+        "menu_active": "admin.report*",
+        "submenu": [
+            {
+                "keyword": [
+                    "Financial Report",
+                    "Report",
+                    "Income",
+                    "Outflow",
+                    "Profit",
+                    "Loss",
+                    "Company standing"
+                ],
+                "title": "Financial Report",
+                "route_name": "admin.report.financial",
+                "menu_active": "admin.report.financial"
+            },
+            {
+                "keyword": [
+                    "Transaction Log",
+                    "Report",
+                    "Transaction report",
+                    "Transaction history",
+                    "Transaction activity",
+                    "balance sheet",
+                    "balance log",
+                    "balance history"
+                ],
+                "title": "Transaction History",
+                "route_name": "admin.report.transaction",
+                "menu_active": [
+                    "admin.report.transaction",
+                    "admin.report.transaction.search"
+                ],
+                "params": {
+                    "user_id": ""
+                }
+            },
+            {
+                "keyword": [
+                    "Invest History",
+                    "Record",
+                    "Summary",
+                    "Review",
+                    "Finance"
+                ],
+                "title": "Invest History",
+                "route_name": "admin.report.invest",
+                "menu_active": [
+                    "admin.report.invest"
+                ]
+            },
+            
+            {
+                "keyword": [
+                    "Referral Commission",
+                    "Referral fee",
+                    "Bonus",
+                    "Referral reward"
+                ],
+                "title": "Referral Commission",
+                "route_name": "admin.report.referral.commission",
+                "menu_active": [
+                    "admin.report.referral.commission"
+                ]
+            },
+            {
+                "keyword": [
+                    "Stage-Out Commission",
+                    "StepOut fee",
+                    "Bonus",
+                    "Stage Out reward"
+                ],
+                "title": "Stage-Out Commission",
+                "route_name": "admin.report.stageOut.commission",
+                "menu_active": [
+                    "admin.report.stageOut.commission"
+                ]
+            },
+            {
+                "keyword": [
+                    "Stage Twice",
+                    "Double bonus",
+                    "Duplicate stage out",
+                    "Double paid",
+                    "Stage bonus twice"
+                ],
+                "title": "Stage Twice",
+                "route_name": "admin.report.stage.twice",
+                "menu_active": [
+                    "admin.report.stage.twice"
+                ]
+            },
+            
+            {
+                "keyword": [
+                    "Login History",
+                    "Report",
+                    "Login report",
+                    "Login history",
+                    "Login activity"
+                ],
+                "title": "Login History",
+                "route_name": "admin.report.login.history",
+                "menu_active": [
+                    "admin.report.login.history",
+                    "admin.report.login.ipHistory"
+                ]
+            },
+            {
+                "keyword": [
+                    "Notification History",
+                    "Report",
+                    "Notification report",
+                    "Notification history",
+                    "Notification activity",
+                    "email log",
+                    "email history",
+                    "sms log",
+                    "sms history",
+                    "push notification log",
+                    "push notification history"
+                ],
+                "title": "Notification History",
+                "route_name": "admin.report.notification.history",
+                "menu_active": "admin.report.notification.history"
+            }
+        ]
+    },
+    "flashcard": {
+        "header": "Administration",
+        "keyword": ["Flashcard", "Flash card", "Announcement", "Media upload", "Video upload", "Image upload"],
+        "title": "Flashcards",
+        "icon": "las la-photo-video",
+        "route_name": "admin.flashcard.index",
+        "menu_active": "admin.flashcard*"
+    },
+    "admins": {
+        "title": "Manage Admin",
+        "icon": "las la-paper-plane",
+        "counters": [],
+        "menu_active": "admin.admins*",
+        "submenu": [{
+                "keyword": ["Manage Admins"],
+                "title": "All Admin",
+                "route_name": "admin.admins.index",
+                "menu_active": "admin.admins*"
+            }
+        ]
+    },
+    "roles": {
+        "title": "Admin Roles",
+        "icon": "las la-paper-plane",
+        "counters": [],
+        "menu_active": "admin.roles*",
+        "submenu": [{
+                "keyword": ["Manage Roles"],
+                "title": "All Roles",
+                "route_name": "admin.roles.index",
+                "menu_active": "admin.roles*"
+            }
+        ]
+    },
+    "permissions": {
+        "title": "Admin Permissions",
+        "icon": "las la-paper-plane",
+        "counters": [],
+        "menu_active": "admin.permissions*",
+        "submenu": [{
+                "keyword": ["Manage permissions"],
+                "title": "All Permissions",
+                "route_name": "admin.permissions.index",
+                "menu_active": "admin.permissions*"
+            }
+        ]
+    },
+    "system_setting": {
+        "keyword": [
+            "System Setting",
+            "setting",
+            "System configuration",
+            "System preferences",
+            "Configuration management",
+            "System setup"
+        ],
+        "title": "System Setting",
+        "icon": "las la-life-ring",
+        "route_name": "admin.setting.system",
+        "menu_active": [
+            "admin.setting.system",
+            "admin.setting.general",
+            "admin.cron*",
+            "admin.setting.system.configuration",
+            "admin.setting.logo.icon",
+            "admin.extensions.index",
+            "admin.language.manage",
+            "admin.language.key",
+            "admin.seo",
+            "admin.kyc.setting",
+            "admin.frontend.templates",
+            "admin.frontend.manage.*",
+            "admin.maintenance.mode",
+            "admin.setting.cookie",
+            "admin.setting.custom.css",
+            "admin.setting.sitemap",
+            "admin.setting.robot",
+            "admin.setting.notification.global.email",
+            "admin.setting.notification.global.sms",
+            "admin.setting.notification.global.push",
+            "admin.setting.notification.email",
+            "admin.setting.notification.sms",
+            "admin.setting.notification.push",
+            "admin.setting.notification.templates",
+            "admin.setting.notification.template.edit",
+            "admin.frontend.index",
+            "admin.frontend.sections*",
+            "admin.gateway*",
+            "admin.withdraw.method*"
+        ]
+    },
+    "support_ticket": {
+        "title": "Support Ticket",
+        "icon": "la la-ticket",
+        "counters": [
+            "pendingTicketCount"
+        ],
+        "menu_active": "admin.ticket*",
+        "submenu": [
+            {
+                "keyword": [
+                    "Pending Ticket",
+                    "Support Ticket",
+                    "Ticket management",
+                    "Ticket control",
+                    "Ticket status",
+                    "Ticket activity"
+                ],
+                "title": "Pending Ticket",
+                "route_name": "admin.ticket.pending",
+                "menu_active": "admin.ticket.pending",
+                "counter": "pendingTicketCount"
+            },
+            {
+                "keyword": [
+                    "Closed Ticket",
+                    "Support Ticket",
+                    "Ticket management",
+                    "Ticket activity"
+                ],
+                "title": "Closed Ticket",
+                "route_name": "admin.ticket.closed",
+                "menu_active": "admin.ticket.closed"
+            },
+            {
+                "keyword": [
+                    "Answered Ticket",
+                    "Support Ticket",
+                    "Ticket management",
+                    "Ticket activity"
+                ],
+                "title": "Answered Ticket",
+                "route_name": "admin.ticket.answered",
+                "menu_active": "admin.ticket.answered"
+            },
+            {
+                "keyword": [
+                    "All Ticket",
+                    "Support Ticket",
+                    "Ticket management",
+                    "Ticket control",
+                    "Ticket activity"
+                ],
+                "title": "All Ticket",
+                "route_name": "admin.ticket.index",
+                "menu_active": "admin.ticket.index"
+            }
+        ]
+    },
+    "notice": {
+        "keyword": [
+            "Notice",
+            "Announcement",
+            "Alert",
+            "Notification",
+            "Message"
+        ],
+        "title": "Notice",
+        "icon": "las la-exclamation-triangle",
+        "route_name": "admin.setting.notice",
+        "menu_active": "admin.setting.notice"
+    }
+}

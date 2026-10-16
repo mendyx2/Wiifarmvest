@@ -1,0 +1,420 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+Route::namespace('User\Auth')->name('user.')->middleware(['guest', 'XssSanitizer'])->group(function () { 
+
+    Route::controller('LoginController')->group(function () {
+        Route::get('/login', 'showLoginForm')->name('login');
+        Route::post('/login', 'login');
+        Route::get('logout', 'logout')->middleware('auth')->withoutMiddleware('guest')->name('logout');
+    });
+
+    Route::controller('RegisterController')->middleware(['guest'])->group(function () {
+        Route::get('register', 'showRegistrationForm')->name('register');
+        Route::get('signup', 'showRegistrationForm')->name('register1');
+        // Route::get('signup', 'showRegistrationForm1')->name('register1');
+        Route::post('register', 'register');
+        //Route::post('register2', 'register2')->name('register2');
+        Route::post('check-user', 'checkUser')->name('checkUser')->withoutMiddleware('guest');
+    }); 
+
+    Route::controller('ForgotPasswordController')->prefix('password')->name('password.')->group(function () {
+        Route::get('reset', 'showLinkRequestForm')->name('request');
+        Route::post('email', 'sendResetCodeEmail')->name('email');
+        Route::get('code-verify', 'codeVerify')->name('code.verify');
+        Route::post('verify-code', 'verifyCode')->name('verify.code');
+    });
+
+    Route::controller('ResetPasswordController')->group(function () {
+        Route::post('password/reset', 'reset')->name('password.update');
+        Route::get('password/reset/{token}', 'showResetForm')->name('password.reset');
+    });
+});
+
+Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
+    Route::get('user-data', 'User\UserController@userData')->name('data');
+    Route::get('user-data1', 'User\UserController@userData')->name('data1');
+    Route::post('user-data-submit', 'User\UserController@userDataSubmit')->name('data.submit');
+
+    //authorization
+    Route::middleware('registration.complete')->namespace('User')->controller('AuthorizationController')->group(function () {
+        Route::get('authorization', 'authorizeForm')->name('authorization');
+        Route::get('resend-verify/{type}', 'sendVerifyCode')->name('send.verify.code');
+        Route::post('verify-email', 'emailVerification')->name('verify.email');
+        Route::post('verify-mobile', 'mobileVerification')->name('verify.mobile');
+        Route::post('verify-g2fa', 'g2faVerification')->name('2fa.verify');
+    }); 
+
+    //['middleware' => ['XssSanitizer']],
+    Route::middleware(['check.status', 'registration.complete'])->group(function () {
+
+
+         
+        Route::namespace('User')->group(function () {
+
+            Route::controller('UserController')->group(function () {
+               
+                Route::get('dashboard', 'home')->name('home');
+                Route::get('notifications', 'notifications')->name('notifications');
+                Route::post('notifications/mark-read', 'markNotificationsRead')->name('notifications.mark.read');
+                Route::get('downline', 'downline')->name('downline');
+                Route::post('downline1', 'downline1')->name('downline1');
+               
+                
+                //stockist
+               
+                Route::get('sales', 'salesStockistOrders')->name('stock.sales');
+                //Stockist Orders
+
+                Route::get('sorders', 'sorders')->name('sorders');
+
+                Route::get('download-attachments/{file_hash}', 'downloadAttachment')->name('download.attachment');
+                Route::get('view-attachment/{file_hash}', 'viewAttachment')->name('view.attachment');
+
+                //2FA
+                Route::get('twofactor', 'show2faForm')->name('twofactor');
+                Route::post('twofactor/enable', 'create2fa')->name('twofactor.enable');
+                Route::post('twofactor/disable', 'disable2fa')->name('twofactor.disable');
+
+                //2FA food production
+                Route::get('twofactor1', 'show2faForm1')->name('twofactor1');
+                Route::post('twofactor/enable1', 'create2fa1')->name('twofactor.enable1');
+                Route::post('twofactor/disable1', 'disable2fa1')->name('twofactor.disable1');
+
+
+                //KYC
+                Route::get('kyc-form', 'kycForm')->name('kyc.form');
+                Route::get('kyc-data', 'kycData')->name('kyc.data');
+                Route::post('kyc-submit', 'kycSubmit')->name('kyc.submit');
+                Route::get('kyc/user-search', 'userSearch')->name('kyc.user.search');
+
+                // Guarantor
+                Route::get('guarantor-requests', 'guarantorRequests')->name('guarantor.requests');
+                Route::post('guarantor-requests/{id}/accept', 'guarantorAccept')->name('guarantor.accept');
+                Route::post('guarantor-requests/{id}/decline', 'guarantorDecline')->name('guarantor.decline');
+
+                //Report
+                Route::get('deposit/history', 'depositHistory')->name('deposit.history');
+                Route::get('deposit/history1', 'depositHistory1')->name('deposit.history1');
+
+                Route::get('transactions', 'transactions')->name('transactions');
+                Route::get('transactions1', 'transactions1')->name('transactions1');
+
+                //Balance Transfer
+                Route::get('transfer', 'indexTransfer')->name('balance.transfer');
+                Route::post('search-user', 'searchUser')->name('search.user');
+                Route::post('add-device-token', 'addDeviceToken')->name('add.device.token');
+                
+                //Orders
+                //Route::get('orders', 'orders')->name('orders');
+                Route::post('check-code', 'checkCode')->name('checkCode');
+
+                 //Orders food production
+                Route::get('orders1', 'orders1')->name('orders1');
+                
+                //purchase
+                Route::post('purchase', 'purchase')->name('purchase');
+                Route::post('purchase1', 'purchase1')->name('purchase1');
+                Route::post('purchaseDone', 'purchaseDone')->name('purchaseDone');
+
+                 // Legacy restock request to the company: Mega stockists only
+                 Route::post('restock', 'restockGoods')->name('restock')->middleware('stockist.mega');
+                  //product
+                Route::get('/products/{catId?}', 'products')->name('products');
+                Route::get('/product/{id}/{slug}', 'productDetails')->name('product.details');
+                Route::get('/products1/{catId?}', 'products1')->name('products1');
+                Route::get('/product1/{id}/{slug}', 'productDetails1')->name('product.details1');
+                Route::post('products/search', 'searchState')->name('product.search');   
+            });
+            
+            
+            // FlashcardController routes
+            Route::controller('FlashcardController')->group(function () {
+                
+                Route::post('/flashcard/{id}/dismiss',  'dismiss')
+                    ->name('flashcard.dismiss');
+                Route::get('/flashcards', 'index')
+                    ->name('flashcards.index');
+
+            }); 
+
+            // Order routes
+            Route::controller('ProductController')->group(function () {
+                
+                Route::get('/pp/products','index')->name('products.index');
+                Route::post('/pp/products/search', 'search')->name('products.search');
+                Route::get('/pp/products/{product}/price/{state}', 'getProductPrice')->name('products.price');
+
+            });
+
+          
+
+            // Order routes
+            Route::controller('OrderController')->group(function () {
+                
+                Route::get('/checkout', 'checkout')->name('checkout');
+                Route::post('/process-payment', 'processPayment')->name('process.payment');
+
+                Route::get('/orders', 'index')->name('orders.index');
+                Route::get('/orders/{order}',  'show')->name('orders.show');
+
+            });
+
+             // Cart routes
+            Route::controller('CartController')->group(function (){
+                Route::get('/cart', 'index')->name('cart.index');
+                Route::post('/cart/add/{product}', 'addToCart')->name('cart.add');
+                Route::put('/cart/update/{cartItem}',  'updateCart')->name('cart.update');
+                Route::delete('/cart/remove/{cartItem}', 'removeFromCart')->name('cart.remove');
+            });
+
+          
+            // Stockist routes
+            Route::controller('StockistController')->group(function (){
+                Route::get('/redeem', 'redeemForm')->name('redeem.form');
+                Route::post('/redeem', 'redeemProduct')->name('redeem.product');
+              
+                
+                Route::get('/find-stockist', 'findStockist')->name('stockist.find');
+                Route::post('/search-stockists',  'searchStockists')->name('stockist.search');
+
+                Route::get('/redeem', 'redeemForm')->name('stockist.redeem.form');
+
+                
+
+            });
+
+           
+
+            // Stockist dashboard routes (protected by auth and stockist middleware)
+            Route::controller('StockistController')->middleware(['stockist'])->prefix('stockist')->name('stockist.')->group(function () {
+                //stockist profile
+                Route::get('/profile',  'profile')->name('profile');
+                Route::post('/profile/basic-info', 'updateBasicInfo')->name('profile.basic-info');
+                Route::post('/profile/location', 'updateLocation')->name('profile.location');
+                Route::post('/profile/opening-hours', 'updateOpeningHours')->name('profile.opening-hours');
+                Route::post('/profile/services', 'updateServices')->name('profile.services');
+                Route::get('/profile/data', 'getProfileData')->name('profile.data');
+
+                   
+                Route::get('/setup', 'setup')->name('setup');
+                Route::post('/setup', 'storeSetup')->name('setup.store');
+                
+               
+                
+                
+                Route::get('/dashboard', 'dashboard')->name('dashboard');
+
+                Route::post('/verify-invoice', 'verifyInvoice')->name('verify.invoice');
+                
+                Route::post('/process-redemption', 'processRedemption')->name('process.redemption');
+                Route::get('/history', 'redemptionHistory')->name('history');
+                Route::get('/redemptions', 'redemptionsReport')->name('redemptions');
+            });
+
+
+           
+    
+            // Product Catalog & Cart
+
+            Route::controller('StockistInventoryController')->middleware(['stockist'])->prefix('stockist')->name('stockist.')->group(function () {
+
+                 Route::get('/inventory',  'dashboard')->name('inventory.dashboard');
+
+                // Ordering from the company: Mega stockists only (Minis buy from a Mega)
+                Route::middleware('stockist.mega')->group(function () {
+                    Route::get('/inventory/catalog',  'productsCatalog')->name('inventory.catalog');
+                    Route::post('/inventory/cart/add', 'addToCart')->name('inventory.cart.add');
+                    Route::post('/inventory/cart/update', 'updateCart')->name('inventory.cart.update');
+                    Route::get('/inventory/cart', 'getCart')->name('inventory.cart.get');
+                    Route::get('/inventory/checkout', 'checkout')->name('inventory.checkout');
+                    Route::post('/inventory/order/place', 'placeOrder')->name('inventory.order.place');
+                });
+
+                // Order history stays open to every stockist (a Mini's earlier company orders)
+                Route::get('/inventory/orders', 'orderHistory')->name('inventory.orders');
+                Route::get('/inventory/orders/{order}', 'orderDetails')->name('inventory.order.details');
+                
+                // Inventory Management
+                Route::post('/inventory/levels/update', 'updateInventoryLevels')->name('inventory.levels.update');
+            });
+
+            // Point of Sale
+            Route::controller('StockistPosController')->middleware(['stockist'])->prefix('stockist/pos')->name('stockist.pos.')->group(function () {
+                Route::get('/', 'index')->name('index');
+                Route::post('/checkout', 'checkout')->name('checkout');
+            });
+
+            // Stock transfers: Mini stockists buy from a Mega stockist, who confirms
+            Route::controller('StockTransferController')->middleware(['stockist'])->prefix('stockist/transfers')->name('stockist.transfers.')->group(function () {
+                Route::get('/', 'index')->name('index');
+                Route::get('/new', 'create')->name('create');
+                Route::post('/', 'store')->name('store')->middleware('throttle:10,1');
+                Route::get('/{id}', 'show')->name('show')->whereNumber('id');
+                Route::post('/{id}/confirm', 'confirm')->name('confirm')->whereNumber('id')->middleware('throttle:20,1');
+                Route::post('/{id}/decline', 'decline')->name('decline')->whereNumber('id')->middleware('throttle:20,1');
+                Route::post('/{id}/cancel', 'cancel')->name('cancel')->whereNumber('id')->middleware('throttle:20,1');
+            });
+
+            // Welcome Back Package redemption
+            Route::controller('StockistWelcomePackageController')->middleware(['stockist'])->prefix('stockist/welcome-pack')->name('stockist.welcome-pack.')->group(function () {
+                Route::get('/', 'index')->name('index');
+                Route::post('/verify', 'verify')->name('verify');
+                Route::post('/redeem', 'redeem')->name('redeem');
+            });
+
+            // Affiliate Program — every member gets this, no extra gating middleware
+            Route::controller('AffiliateController')->prefix('affiliate')->name('affiliate.')->group(function () {
+                Route::get('/', 'dashboard')->name('dashboard');
+                Route::get('/orders', 'orders')->name('orders');
+                Route::get('/ads', 'ads')->name('ads');
+                Route::post('/ads/{ad}/share', 'adShared')->name('ads.share')->whereNumber('ad')->middleware('throttle:60,1');
+            });
+
+            // Redeem Affiliate Products — separate from the internal repurchase
+            // redemption flow above (no unilevel/PV logic; single-shot pickup)
+            Route::controller('StockistAffiliateRedemptionController')->middleware(['stockist'])->prefix('stockist/affiliate')->name('stockist.affiliate.')->group(function () { 
+                Route::get('/', 'redeemForm')->name('redeem');
+                Route::post('/verify', 'verify')->name('verify');
+                Route::post('/confirm', 'confirm')->name('confirm');
+            });
+
+            //Profile setting
+            Route::controller('ProfileController')->group(function () {
+                Route::get('profile-setting', 'profile')->name('profile.setting');
+                Route::post('profile-setting', 'submitProfile'); 
+                Route::get('change-password', 'changePassword')->name('change.password');
+                Route::post('change-password', 'submitPassword');
+                // food production
+
+                Route::get('profile-setting1', 'profile1')->name('profile.setting1');
+                Route::post('profile-setting1', 'submitProfile1');
+                Route::get('change-password1', 'changePassword1')->name('change.password1');
+                Route::post('change-password1', 'submitPassword1');
+            }); 
+
+            //E-pin Recharge
+            Route::controller('EpinController')->group(function () {
+
+                Route::get('/e-pin/recharge', 'epin')->name('epin.recharge');
+                Route::get('/e-pin/recharge/log', 'epinRechargeLog')->name('recharge.log');
+               
+                Route::post('/pin/generate', 'pinGenerate')->name('pin.generate');
+            });
+ 
+
+            // Withdraw
+            Route::controller('WithdrawController')->prefix('withdraw')->name('withdraw')->group(function () {
+                //Route::middleware('kyc')->group(function () {
+                    Route::get('/', 'withdrawMoney');
+                    Route::post('/', 'withdrawStore')->name('.money');
+                    Route::get('preview', 'withdrawPreview')->name('.preview');
+                    Route::post('preview', 'withdrawSubmit')->name('.submit');
+                //});
+                Route::get('history', 'withdrawLog')->name('.history');
+
+            });
+
+
+
+
+            // Withdraw food production
+            Route::controller('WithdrawController')->prefix('withdraw1')->name('withdraw1')->group(function () {
+                //Route::middleware('kyc')->group(function () {
+                    Route::get('/now', 'withdrawMoney1')->name('.now');
+                    Route::post('/', 'withdrawStore1')->name('.money1');
+                    Route::get('preview1', 'withdrawPreview1')->name('.preview1');
+                    Route::post('preview1', 'withdrawSubmit1')->name('.submit1');
+                //});
+                Route::get('history1', 'withdrawLog1')->name('.history1');
+               
+            });
+
+            //MatricController.php
+            Route::controller('MatrixController')->prefix('matrix')->name('matrix.')->group(function () {
+
+                Route::post('/activate', 'activateMatrix')->name('activate');
+            });
+
+            Route::controller('DistributorController')->prefix('add-distributor')->name('distributor.')->group(function () {
+                Route::get('/',              'showForm')->name('index');
+                Route::post('/',             'store')->name('store');
+                Route::post('/check-visa',   'checkVisaBalance')->name('check.visa');
+            });
+           
+            
+            Route::controller('TestController')->prefix('test')->name('test.')->group(function () {
+                Route::get('/', 'anotherTest')->name('test');
+            });
+
+            Route::controller('PlanController')->prefix('plan')->name('plan.')->group(function () {
+             Route::get('/', 'planIndex')->name('index');
+               // Route::get('/investment', 'planIndex1')->name('investment');
+               // Route::get('/reservation', 'reservation')->name('reservation');
+                //Route::post('/', 'planStore')->name('purchase');
+                //Route::post('/', 'reserveStore')->name('reserve');
+                Route::post('/generate-pdf', 'generatePdf')->name('payment-receipt.generate-pdf');
+                
+                Route::get('/portfolio', 'investmentPortfolio')->name('portfolio');
+                Route::get('/{investmentId}/details', 'investmentDetails')->name('details');
+            });
+
+            Route::controller('PlanController')->group(function () {
+                Route::get('/shares', 'shares')->name('shares');
+                Route::post('/shares', 'sharesStore')->name('shares.purchase');
+
+                Route::get('investment/portfolio', 'investmentPortfolio')->name('investment.portfolio');
+                Route::get('investment/{investmentId}/details', 'investmentDetails')->name('investment.details');
+
+                Route::get('bv-log', 'bvlog')->name('bv.log');
+                Route::get('pv-log', 'pvlog')->name('pv.log');
+                Route::get('awards', 'myAwards')->name('awards');
+                Route::get('repurchase-award', 'repurchaseAward')->name('repurchase.award');
+                Route::get('acb', [\App\Http\Controllers\User\AcbController::class, 'index'])->name('acb');
+                Route::get('my-tree', 'myTree')->name('my.tree');
+
+                Route::get('my-stages', 'myTreeStages')->name('my.stages');
+
+                Route::get('my-tree/{id}', 'myTreeStage')->name('my.treeStage');
+                Route::get('referrals', 'myRefLog')->name('my.ref');
+                Route::get('referrals1', 'myRefLog1')->name('my.ref1');
+                Route::get('binary-summery', 'binarySummery')->name('binary.summery');
+                Route::get('binary-list', 'binaryList')->name('binary.list');
+                Route::get('tree/{user}', 'otherTree')->name('other.tree');
+                Route::get('tree/search', 'otherTree')->name('other.tree.search');
+            });
+
+            // Bonus Transfer
+            Route::controller('BonusTransferController')->prefix('bonus-transfer')->name('bonus.transfer.')->group(function () {
+                Route::get('/',               'index')->name('index');
+                Route::post('/transfer',      'transfer')->name('submit');
+                Route::post('/transfer-all',  'transferAll')->name('all');
+                Route::get('/check-purchase', 'checkPurchase')->name('check.purchase');
+            });
+
+            // My Project  
+            Route::controller('ProjectController')->prefix('my-project')->name('project.')->group(function () {
+                Route::get('/',         'index')->name('index');
+                Route::post('/upgrade', 'upgrade')->name('upgrade');
+            });
+
+            
+        });
+
+        // Payment
+        Route::prefix('deposit')->name('deposit.')->controller('Gateway\PaymentController')->group(function () {
+            Route::any('/', 'deposit')->name('index');
+            
+
+            Route::post('insert', 'depositInsert')->name('insert');
+            Route::post('insert1', 'depositInsert1')->name('insert1');
+            Route::get('confirm', 'depositConfirm')->name('confirm');
+            Route::get('confirm1', 'depositConfirm1')->name('confirm1');
+            Route::get('manual', 'manualDepositConfirm')->name('manual.confirm');
+            Route::get('manual1', 'manualDepositConfirm1')->name('manual.confirm1');
+            Route::post('manual', 'manualDepositUpdate')->name('manual.update');
+            Route::post('manual1', 'manualDepositUpdate1')->name('manual.update1');
+        });
+    });
+});

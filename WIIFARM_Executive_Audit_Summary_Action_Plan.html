@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wiifarmvest - Executive Action Summary</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 10mm 14mm 10mm 14mm;
+  }
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #1f2937;
+    background: #ffffff;
+    font-size: 8.5pt;
+    line-height: 1.32;
+  }
+  .header {
+    border-bottom: 2.5px solid #0f766e;
+    padding-bottom: 5px;
+    margin-bottom: 7px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .header-left h1 {
+    font-size: 15pt;
+    font-weight: 800;
+    color: #0f766e;
+    letter-spacing: -0.5px;
+    margin-bottom: 1px;
+    text-transform: uppercase;
+  }
+  .header-left .subtitle {
+    font-size: 9pt;
+    font-weight: 600;
+    color: #374151;
+  }
+  .header-right {
+    text-align: right;
+    font-size: 7.5pt;
+    color: #6b7280;
+    line-height: 1.35;
+  }
+  .callout-box {
+    background: #f0fdfa;
+    border-left: 3.5px solid #0d9488;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-bottom: 7px;
+    font-size: 8.2pt;
+    color: #134e4a;
+  }
+  .callout-box strong {
+    color: #042f2e;
+  }
+  .section {
+    margin-bottom: 6px;
+  }
+  .section-title {
+    font-size: 8.8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 2.5px 6px;
+    border-radius: 3px;
+    margin-bottom: 3.5px;
+  }
+  .priority-urgent {
+    background: #fee2e2;
+    color: #991b1b;
+    border-left: 3px solid #dc2626;
+  }
+  .priority-high {
+    background: #fef3c7;
+    color: #92400e;
+    border-left: 3px solid #f59e0b;
+  }
+  .priority-medium {
+    background: #dbeafe;
+    color: #1e40af;
+    border-left: 3px solid #3b82f6;
+  }
+  .priority-governance {
+    background: #f3f4f6;
+    color: #374151;
+    border-left: 3px solid #6b7280;
+  }
+  ul.item-list {
+    list-style-type: none;
+    padding-left: 0;
+  }
+  ul.item-list li {
+    position: relative;
+    padding-left: 13px;
+    margin-bottom: 3px;
+    font-size: 8.2pt;
+  }
+  ul.item-list li::before {
+    content: "•";
+    position: absolute;
+    left: 2px;
+    font-size: 11pt;
+    line-height: 1;
+    color: #4b5563;
+  }
+  .item-title {
+    font-weight: 700;
+    color: #111827;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 6.8pt;
+    font-weight: 700;
+    padding: 0.5px 4px;
+    border-radius: 2px;
+    margin-left: 4px;
+    text-transform: uppercase;
+  }
+  .tag-danger { background: #fee2e2; color: #b91c1c; }
+  .tag-warn { background: #fef3c7; color: #b45309; }
+  .tag-info { background: #dbeafe; color: #1d4ed8; }
+  .tag-neutral { background: #e5e7eb; color: #374151; }
+  .item-desc {
+    color: #374151;
+    margin-top: 0.5px;
+  }
+  .action-point {
+    color: #065f46;
+    font-weight: 600;
+  }
+  .footer {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 3px;
+    margin-top: 5px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 7pt;
+    color: #9ca3af;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>Executive Action Summary</h1>
+    <div class="subtitle">Wiifarmvest Technical Audit & Compensation Alignment</div>
+  </div>
+  <div class="header-right">
+    <div><strong>Target:</strong> Wiifarm Cooperative Society of Nigeria</div>
+    <div><strong>Reference:</strong> Blueprint v1.0 & Audit Findings</div>
+    <div><strong>Date:</strong> October 2026 &bull; Single-Page Brief</div>
+  </div>
+</div>
+
+<div class="callout-box">
+  <strong>Executive Summary:</strong> The core platform handles member registrations, e-wallets, and banking reliably. However, immediate intervention is required to <strong>halt critical bonus overpayments (money leakage)</strong>, <strong>fix an affiliate underpayment bug</strong>, and <strong>implement missing leadership and reward features</strong> required by the business blueprint.
+</div>
+
+<div class="section">
+  <div class="section-title priority-urgent">
+    1. Critical Financial Risks: Stop Money Leakage & Payout Errors (Immediate)
+  </div>
+  <ul class="item-list">
+    <li>
+      <span class="item-title">Indirect Referral Overpayment</span> <span class="tag tag-danger">Severe Cash Leakage (+8%)</span>
+      <div class="item-desc"><strong>Current State:</strong> The system pays 13% across 5 upline levels (6%, 3%, 2%, 1%, 1%), whereas the business blueprint strictly caps this pool at 5.0%. Total acquisition payouts currently exceed 30% against a 22% limit.</div>
+      <div class="item-desc action-point"><strong>Required Fix:</strong> Recalibrate the 5 upline tiers to total exactly 5.0% (e.g., 2%, 1%, 1%, 0.5%, 0.5%) to immediately stop profit erosion.</div>
+    </li>
+    <li>
+      <span class="item-title">Registration Key-In Bonus</span> <span class="tag tag-danger">100% Budget Overrun</span>
+      <div class="item-desc"><strong>Current State:</strong> The data entry bonus is hardcoded at 2.0% per enrollment instead of the blueprint-mandated 1.0%, doubling planned costs.</div>
+      <div class="item-desc action-point"><strong>Required Fix:</strong> Update the payout rate from 2.0% down to 1.0% across all member registrations.</div>
+    </li>
+    <li>
+      <span class="item-title">Affiliate Store Commission Bug</span> <span class="tag tag-danger">Severe Underpayment Glitch</span>
+      <div class="item-desc"><strong>Current State:</strong> When a marketer sells a retail product with a percentage commission (e.g., 10% on a ₦40,000 purchase = ₦4,000), the system mistakenly credits a flat ₦10.</div>
+      <div class="item-desc action-point"><strong>Required Fix:</strong> Correct the store commission payout so marketers automatically receive their legitimate percentage earnings.</div>
+    </li>
+  </ul>
+</div>
+
+<div class="section">
+  <div class="section-title priority-high">
+    2. Stability & Crash Prevention: Repair Broken Features (Within 1 Week)
+  </div>
+  <ul class="item-list">
+    <li>
+      <span class="item-title">Leadership Bonus System Crashes</span> <span class="tag tag-warn">System Outage Risk</span>
+      <div class="item-desc"><strong>Current State:</strong> The leadership bonus module references core database components that were never created. Triggering this calculation crashes the platform.</div>
+      <div class="item-desc action-point"><strong>Required Fix:</strong> Build the missing database structures so the 4% leadership bonus can run smoothly without error.</div>
+    </li>
+    <li>
+      <span class="item-title">Repeat Purchase Bonuses Disabled</span> <span class="tag tag-warn">Feature Turned Off</span>
+      <div class="item-desc"><strong>Current State:</strong> The feature that awards upline sponsors when existing members purchase additional products was manually disabled in the system.</div>
+      <div class="item-desc action-point"><strong>Required Fix:</strong> Re-enable the upline repeat purchase pipeline so ongoing sales volume is properly credited.</div>
+    </li>
+  </ul>
+</div>
+
+<div class="section">
+  <div class="section-title priority-medium">
+    3. Missing Blueprint Features: Deliver Promised Member Benefits (2–3 Weeks)
+  </div>
+  <ul class="item-list">
+    <li>
+      <span class="item-title">Stockist Sponsor Bonus (3.0%)</span> <span class="tag tag-info">Missing Incentive</span>
+      <div class="item-desc"><strong>Current State:</strong> The blueprint promises a 3% reward to members who recruit a stockist store, but the software has no mechanism to track or pay this.</div>
+      <div class="item-desc action-point"><strong>Required Fix:</strong> Link stockists to their sponsoring members in the database and automate the 3% monthly override.</div>
+    </li>
+    <li>
+      <span class="item-title">Global Profit-Sharing Pool (1.25%)</span> <span class="tag tag-info">Missing Distribution</span>
+      <div class="item-desc"><strong>Current State:</strong> A 1.25% revenue share for top achievers is stipulated in the blueprint but currently has no tracking or payout tool.</div>
+      <div class="item-desc action-point"><strong>Required Fix:</strong> Implement a quarterly profit-sharing pool calculator for qualified leaders.</div>
+    </li>
+    <li>
+      <span class="item-title">Wholesale Carton Packaging Option</span> <span class="tag tag-info">Wholesale Requirement</span>
+      <div class="item-desc"><strong>Current State:</strong> Inventory only tracks individual pieces rather than standard 15-pack cartons specified in operations.</div>
+      <div class="item-desc action-point"><strong>Required Fix:</strong> Add wholesale carton units (1 carton = 15 packs) to product catalog and stockist ordering forms.</div>
+    </li>
+  </ul>
+</div>
+
+<div class="section">
+  <div class="section-title priority-governance">
+    4. Financial Governance & Pool Separation (Phase 4)
+  </div>
+  <ul class="item-list">
+    <li>
+      <span class="item-title">Automated Revenue Split Ledgers:</span>
+      <span class="item-desc">Currently, all incoming revenue enters a single account and bonuses are paid out of general cashflow. Program the system to automatically divide all revenue into the 4 designated pools (<strong>30% Company, 10% Executive, 5% Operations, 55% Compensation Reserve</strong>) before payouts occur to ensure absolute financial safety.</span>
+    </li>
+  </ul>
+</div>
+
+<div class="footer">
+  <div>Wiifarm Cooperative Society of Nigeria &bull; Confidential Executive Briefing</div>
+  <div>Page 1 of 1</div>
+</div>
+
+</body>
+</html>

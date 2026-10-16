@@ -1,0 +1,313 @@
+<?php
+
+namespace App\Http\Controllers\User;
+
+use App\Constants\Status;
+use App\Exceptions\InsufficientBalanceException;
+use App\Http\Controllers\Controller;
+use App\Lib\FormProcessor;
+use App\Models\AdminNotification;
+use App\Models\Loan;
+use App\Models\Withdrawal;
+use App\Models\WithdrawMethod;
+use App\Services\WalletService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class WithdrawController extends Controller
+{
+
+    private function checkWithdrawalBlock()
+    {
+        $user = auth()->user();
+        if ($user->withdrawal_blocked) {
+            $notify[] = ['error', 'Your withdrawal access has been suspended. Please contact support.'];
+            return redirect()->route('user.withdraw.history')->withNotify($notify);
+        }
+        return null;
+    }
+
+    private function checkBankDetails()
+    {
+        $user = auth()->user();
+        if (empty($user->bname) || empty($user->aname) || empty($user->ano) || strlen((string) $user->ano) <= 9) {
+            $notify[] = ['error', 'Please complete your bank account details before making a withdrawal. Ensure your account number is valid (more than 9 digits).'];
+            return redirect()->route('user.profile.setting')->withNotify($notify);
+        }
+        return null;
+    }
+
+    private function checkPendingLoans()
+    {
+        $hasPending = Loan::where('user_id', auth()->id())
+                          ->where('status', 'pending')
+                          ->exists();
+
+        if ($hasPending) {
+            $notify[] = ['error', 'You cannot withdraw while you have a pending loan application. Please wait for it to be approved or rejected.'];
+            return back()->withNotify($notify);
+        }
+        return null;
+    }
+
+    public function withdrawMoney()
+    {
+        $redirect = $this->checkWithdrawalBlock() ?? $this->checkPendingLoans() ?? $this->checkBankDetails();
+        if ($redirect) return $redirect;
+
+        $withdrawMethod = WithdrawMethod::active()->get();
+        $pageTitle = 'Withdraw Money';
+        return view('Template::user.withdraw.methods', compact('pageTitle','withdrawMethod'));
+    }
+
+    public function withdrawMoney1()
+    {
+        $redirect = $this->checkWithdrawalBlock() ?? $this->checkPendingLoans() ?? $this->checkBankDetails();
+        if ($redirect) return $redirect;
+
+        $withdrawMethod = WithdrawMethod::active()->get();
+        $pageTitle = 'Withdraw Money';
+        return view('Template::user.withdraw.methods1', compact('pageTitle','withdrawMethod'));
+    }
+
+    public function withdrawStore(Request $request)
+    {
+        $redirect = $this->checkWithdrawalBlock() ?? $this->checkPendingLoans();
+        if ($redirect) return $redirect;
+
+        $request->validate([
+            'method_code' => 'required',
+            'amount' => 'required|numeric'
+        ]);
+        $method = WithdrawMethod::where('id', $request->method_code)->active()->firstOrFail();
+        $user = auth()->user();
+        if ($request->amount < $method->min_limit) {
+            $notify[] = ['error', 'Your requested amount is smaller than minimum amount'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+        if ($request->amount > $method->max_limit) {
+            $notify[] = ['error', 'Your requested amount is larger than maximum amount'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+
+        if ($request->amount > $user->balance) {
+            $notify[] = ['error', 'Insufficient balance for withdrawal'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+
+
+        $charge = $method->fixed_charge + ($request->amount * $method->percent_charge / 100);
+        $afterCharge = $request->amount - $charge;
+
+        if ($afterCharge <= 0) {
+            $notify[] = ['error', 'Withdraw amount must be sufficient for charges'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+
+        $finalAmount = $afterCharge * $method->rate;
+
+        $withdraw = new Withdrawal();
+        $withdraw->method_id = $method->id; // wallet method ID
+        $withdraw->user_id = $user->id;
+        $withdraw->amount = $request->amount;
+        $withdraw->currency = $method->currency;
+        $withdraw->rate = $method->rate;
+        $withdraw->charge = $charge;
+        $withdraw->final_amount = $finalAmount;
+        $withdraw->after_charge = $afterCharge;
+        $withdraw->trx = getTrx();
+        $withdraw->save();
+        session()->put('wtrx', $withdraw->trx);
+        return to_route('user.withdraw.preview');
+    }
+
+    public function withdrawStore1(Request $request)
+    {
+        $redirect = $this->checkWithdrawalBlock() ?? $this->checkPendingLoans();
+        if ($redirect) return $redirect;
+
+        $request->validate([
+            'method_code' => 'required',
+            'amount' => 'required|numeric'
+        ]);
+        $method = WithdrawMethod::where('id', $request->method_code)->active()->firstOrFail();
+        $user = auth()->user();
+        if ($request->amount < $method->min_limit) {
+            $notify[] = ['error', 'Your requested amount is smaller than minimum amount'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+        if ($request->amount > $method->max_limit) {
+            $notify[] = ['error', 'Your requested amount is larger than maximum amount'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+
+        if ($request->amount > $user->balance) {
+            $notify[] = ['error', 'Insufficient balance for withdrawal'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+
+
+        $charge = $method->fixed_charge + ($request->amount * $method->percent_charge / 100);
+        $afterCharge = $request->amount - $charge;
+
+        if ($afterCharge <= 0) {
+            $notify[] = ['error', 'Withdraw amount must be sufficient for charges'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+
+        $finalAmount = $afterCharge * $method->rate;
+
+        $withdraw = new Withdrawal();
+        $withdraw->method_id = $method->id; // wallet method ID
+        $withdraw->user_id = $user->id;
+        $withdraw->amount = $request->amount;
+        $withdraw->currency = $method->currency;
+        $withdraw->rate = $method->rate;
+        $withdraw->charge = $charge;
+        $withdraw->final_amount = $finalAmount;
+        $withdraw->after_charge = $afterCharge;
+        $withdraw->trx = getTrx();
+        $withdraw->save();
+        session()->put('wtrx', $withdraw->trx);
+        return to_route('user.withdraw1.preview1');
+    }
+
+    public function withdrawPreview()
+    {
+        $withdraw = Withdrawal::with('method','user')->where('trx', session()->get('wtrx'))->where('status', Status::PAYMENT_INITIATE)->orderBy('id','desc')->firstOrFail();
+        $pageTitle = 'Withdraw Preview';
+        return view('Template::user.withdraw.preview', compact('pageTitle','withdraw'));
+    }
+
+    public function withdrawPreview1()
+    {
+        $withdraw = Withdrawal::with('method','user')->where('trx', session()->get('wtrx'))->where('status', Status::PAYMENT_INITIATE)->orderBy('id','desc')->firstOrFail();
+        $pageTitle = 'Withdraw Preview';
+        return view('Template::user.withdraw.preview1', compact('pageTitle','withdraw'));
+    }
+
+
+    public function withdrawSubmit(Request $request)
+    {
+        return $this->submitWithdrawal($request, 'user.withdraw.history');
+    }
+
+    public function withdrawSubmit1(Request $request)
+    {
+        return $this->submitWithdrawal($request, 'user.withdraw1.history1');
+    }
+
+    /**
+     * Confirm an initiated withdrawal and take the money.
+     *
+     * The withdrawal row is locked and re-checked so a double submit can only
+     * move it INITIATE → PENDING once, and the debit goes through
+     * WalletService so a parallel purchase can't spend the same balance. Both
+     * happen in one transaction: either the request is pending AND the money
+     * is gone, or neither.
+     */
+    private function submitWithdrawal(Request $request, string $historyRoute)
+    {
+        $redirect = $this->checkWithdrawalBlock() ?? $this->checkPendingLoans();
+        if ($redirect) return $redirect;
+
+        $withdraw = Withdrawal::with('method','user')->where('trx', session()->get('wtrx'))->where('status', Status::PAYMENT_INITIATE)->orderBy('id','desc')->firstOrFail();
+
+        $method = $withdraw->method;
+        if ($method->status == Status::DISABLE) {
+            abort(404);
+        }
+
+        $formData = @$method->form->form_data ?? [];
+
+        $formProcessor = new FormProcessor();
+        $validationRule = $formProcessor->valueValidation($formData);
+        $request->validate($validationRule);
+        $userData = $formProcessor->processFormData($request, $formData);
+
+        $user = auth()->user();
+        if ($user->ts) {
+            $response = verifyG2fa($user,$request->authenticator_code);
+            if (!$response) {
+                $notify[] = ['error', 'Wrong verification code'];
+                return back()->withNotify($notify)->withInput($request->all());
+            }
+        }
+
+        try {
+            $submitted = DB::transaction(function () use ($withdraw, $user, $userData) {
+                $locked = Withdrawal::lockForUpdate()->find($withdraw->id);
+
+                if (!$locked || $locked->status != Status::PAYMENT_INITIATE) {
+                    return false;
+                }
+
+                app(WalletService::class)->debit(
+                    $user,
+                    (float) $withdraw->amount,
+                    'withdraw',
+                    'Withdraw request via ' . $withdraw->method->name,
+                    $withdraw->trx,
+                    charge: (float) $withdraw->charge,
+                );
+
+                $locked->status = Status::PAYMENT_PENDING;
+                $locked->withdraw_information = $userData;
+                $locked->save();
+
+                return true;
+            });
+        } catch (InsufficientBalanceException) {
+            $notify[] = ['error', 'Your request amount is larger then your current balance.'];
+            return back()->withNotify($notify)->withInput($request->all());
+        }
+
+        if (!$submitted) {
+            $notify[] = ['error', 'This withdrawal has already been submitted.'];
+            return to_route($historyRoute)->withNotify($notify);
+        }
+
+        $adminNotification = new AdminNotification();
+        $adminNotification->user_id = $user->id;
+        $adminNotification->title = 'New withdraw request from '.$user->username;
+        $adminNotification->click_url = urlPath('admin.withdraw.data.details',$withdraw->id);
+        $adminNotification->save();
+
+        notify($user, 'WITHDRAW_REQUEST', [
+            'method_name' => $withdraw->method->name,
+            'method_currency' => $withdraw->currency,
+            'method_amount' => showAmount($withdraw->final_amount,currencyFormat:false),
+            'amount' => showAmount($withdraw->amount,currencyFormat:false),
+            'charge' => showAmount($withdraw->charge,currencyFormat:false),
+            'rate' => showAmount($withdraw->rate,currencyFormat:false),
+            'trx' => $withdraw->trx,
+            'post_balance' => showAmount($user->balance,currencyFormat:false),
+        ]);
+
+        $notify[] = ['success', 'Withdraw request sent successfully'];
+        return to_route($historyRoute)->withNotify($notify);
+    }
+
+    public function withdrawLog(Request $request)
+    {
+        $pageTitle = "Withdrawal Log";
+        $withdraws = Withdrawal::where('user_id', auth()->id())->where('status', '!=', Status::PAYMENT_INITIATE);
+        if ($request->search) {
+            $withdraws = $withdraws->where('trx',$request->search);
+        }
+        $withdraws = $withdraws->with('method')->orderBy('id','desc')->paginate(getPaginate());
+        return view('Template::user.withdraw.log', compact('pageTitle','withdraws'));
+    }
+
+    public function withdrawLog1(Request $request)
+    {
+        $pageTitle = "Withdrawal Log";
+        $withdraws = Withdrawal::where('user_id', auth()->id())->where('status', '!=', Status::PAYMENT_INITIATE);
+        if ($request->search) {
+            $withdraws = $withdraws->where('trx',$request->search);
+        }
+        $withdraws = $withdraws->with('method')->orderBy('id','desc')->paginate(getPaginate());
+        return view('Template::user.withdraw.log1', compact('pageTitle','withdraws'));
+    }
+
+}

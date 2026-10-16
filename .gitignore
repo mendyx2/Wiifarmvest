@@ -1,0 +1,9 @@
+/core/vendor
+/core/node_modules
+/core/.env
+/core/storage/logs/*.log
+/core/storage/framework/cache/*
+/core/storage/framework/sessions/*
+/core/storage/framework/views/*
+.DS_Store
+Thumbs.db
