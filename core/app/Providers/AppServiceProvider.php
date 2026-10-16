@@ -42,16 +42,13 @@ class AppServiceProvider extends ServiceProvider
     {
         if (!cache()->get('SystemInstalled')) {
             $envFilePath = base_path('.env');
-            if (!file_exists($envFilePath)) {
-                header('Location: install');
-                exit;
-            }
-            $envContents = file_get_contents($envFilePath);
-            if (empty($envContents)) {
-                header('Location: install');
-                exit;
-            } else {
+            if (file_exists($envFilePath) && !empty(file_get_contents($envFilePath))) {
                 cache()->put('SystemInstalled', true);
+            } elseif (env('DB_HOST') || env('APP_KEY') || env('APP_ENV') === 'production') {
+                cache()->put('SystemInstalled', true);
+            } else {
+                header('Location: install');
+                exit;
             }
         }
 
