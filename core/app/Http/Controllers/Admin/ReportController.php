@@ -114,7 +114,9 @@ class ReportController extends Controller
 
     protected function bvData($scope = null)
     {
-        if ($scope) {
+        // $scope comes from ?type= in the URL. Only allow the real query scopes:
+        // calling any other static method by name (e.g. ?type=truncate) would run it.
+        if (in_array($scope, ['leftBV', 'rightBV', 'cutBV', 'paidBV'], true)) {
             $logs = BvLog::$scope();
         } else {
             $logs = BvLog::query();

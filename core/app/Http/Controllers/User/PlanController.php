@@ -203,7 +203,9 @@ class PlanController extends Controller
     }
     protected function pvData($scope = null)
     {
-        if ($scope) {
+        // $scope comes from ?type= in the URL. Only allow the real query scopes:
+        // calling any other static method by name (e.g. ?type=truncate) would run it.
+        if (in_array($scope, ['leftPV', 'rightPV', 'cutPV', 'paidPV'], true)) {
             $logs = PvLog::$scope();
         } else {
             $logs = PvLog::query();
@@ -632,13 +634,6 @@ class PlanController extends Controller
         return view('Template::user.myRef', compact('pageTitle', 'logs'));
     }
 
-    public function myRefLog1()
-    {
-        $pageTitle = "My Referral";
-        
-        $logs      = User::where('ref_by', auth()->id())->where('profile_complete', 1)->latest()->paginate(getPaginate());
-        return view('Template::user.myRef1', compact('pageTitle', 'logs'));
-    }
  
     public function myTree()
     {  
