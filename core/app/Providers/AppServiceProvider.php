@@ -33,6 +33,9 @@ class AppServiceProvider extends ServiceProvider
         // Bind the matching-bonus interface to its concrete implementation.
         // Swap the concrete class here to change behaviour without touching any caller.
         $this->app->bind(MatchingBonusServiceInterface::class, MatchingBonusService::class);
+
+        // Read the Vite build manifest from <repo>/build (the web root), not core/public.
+        $this->app->singleton(\Illuminate\Foundation\Vite::class, \App\Support\Vite::class);
     }
 
     /**

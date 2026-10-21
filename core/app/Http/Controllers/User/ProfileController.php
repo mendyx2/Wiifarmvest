@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BankDetailHistory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
+use Inertia\Inertia;
 
 class ProfileController extends Controller
 {
@@ -156,7 +157,14 @@ class ProfileController extends Controller
     public function changePassword()
     {
         $pageTitle = 'Change Password';
-        return view('Template::user.password', compact('pageTitle'));
+
+        // Migrated to React + Inertia (resources/js/Pages/User/ChangePassword.tsx).
+        // The legacy Blade view (Template::user.password) is kept until the
+        // React page has been verified in production.
+        return Inertia::render('User/ChangePassword', [
+            'securePassword' => (bool) gs('secure_password'),
+            'submitUrl'      => route('user.change.password'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function changePassword1()

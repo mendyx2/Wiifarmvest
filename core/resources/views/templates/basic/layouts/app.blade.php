@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title> {{ gs()->siteName(__($pageTitle)) }}</title>
+    <title inertia> {{ gs()->siteName(__($pageTitle)) }}</title>
     @include('partials.seo')
     <!-- Bootstrap CSS --> 
     <meta name="theme-color" content="#135D26">

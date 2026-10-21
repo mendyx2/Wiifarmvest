@@ -1,8 +1,15 @@
 [phases.setup]
-nixPkgs = ["php83", "php83Packages.composer"]
+nixPkgs = ["php83", "php83Packages.composer", "nodejs_22"]
 
 [phases.install]
-cmds = ["cd core && composer install --no-dev --optimize-autoloader --no-interaction"]
+cmds = [
+    "cd core && composer install --no-dev --optimize-autoloader --no-interaction",
+    "cd core && npm ci",
+]
+
+[phases.build]
+# Compiles the React + TypeScript pages (core/resources/js) into <repo>/build
+cmds = ["cd core && npm run build"]
 
 [start]
 cmd = "php -S 0.0.0.0:${PORT:-8080} server.php"

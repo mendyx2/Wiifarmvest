@@ -13,6 +13,7 @@
         "ezyang/htmlpurifier": "^4.17",
         "google/apiclient": "^2.15",
         "guzzlehttp/guzzle": "^7.8",
+        "inertiajs/inertia-laravel": "^2.0",
         "intervention/image": "^3.6",
         "laramin/utility": "^1.0",
         "laravel/framework": "^11.0",
