@@ -353,7 +353,8 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             });
 
             Route::controller('PlanController')->group(function () {
-                Route::get('/shares', 'shares')->name('shares');
+                // Removed duplicate page (buying is the Buy Shares pop-up on the portfolio).
+                Route::get('/shares', fn () => to_route('user.investment.portfolio'))->name('shares');
                 Route::post('/shares', 'sharesStore')->name('shares.purchase');
 
                 Route::get('investment/portfolio', 'investmentPortfolio')->name('investment.portfolio');

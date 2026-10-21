@@ -374,54 +374,6 @@ class PlanController extends Controller
 
     
 
-    public function shares()
-    {
-        $pageTitle = 'Shares Dashboard';
-        $user      = auth()->user();
-
-        $plans = Plan::orderBy('price', 'asc')->active()->get();
-
-        $investments = Rinvestment::where('user_id', $user->id)
-            ->with('plan')
-            ->get();
-
-        $totalUnits = $investments->sum('units');
-        $totalValue = $investments->sum(fn($inv) => $inv->units * $inv->unit_cost);
-
-        $weeklyGrowth = Shtransaction::where('user_id', $user->id)
-            ->whereBetween('created_at', [now()->subDays(7), now()])
-            ->where('type', 'credit')
-            ->completed()
-            ->sum('amount');
-
-        $historyLabels = [];
-        $historyData = [];
-        for ($i = 6; $i >= 0; $i--) {
-            $day = now()->subDays($i);
-            $historyLabels[] = $day->format('D');
-            $historyData[] = Shtransaction::where('user_id', $user->id)
-                ->where('type', 'credit')
-                ->completed()
-                ->whereDate('created_at', $day->toDateString())
-                ->sum('amount');
-        }
-
-        $goalTarget = 50000;
-        $goalPercent = $goalTarget > 0 ? min(100, ($totalValue / $goalTarget) * 100) : 0;
-
-        return view('Template::user.shares', compact(
-            'pageTitle',
-            'plans',
-            'investments',
-            'totalUnits',
-            'totalValue',
-            'weeklyGrowth',
-            'historyLabels',
-            'historyData',
-            'goalTarget',
-            'goalPercent'
-        ));
-    }
     // remember to edit the one at admin/controller/ManageUsersController.php
     public function sharesStore(Request $request)
     {
@@ -489,54 +441,26 @@ class PlanController extends Controller
             DB::commit();
         } catch (InsufficientBalanceException) {
             DB::rollBack();
-            return $this->sharesPurchaseFailed($request, 'Insufficient Balance.', 422);
+            return $this->sharesPurchaseFailed('Insufficient Balance.');
         } catch (\Throwable $e) {
             DB::rollBack();
             report($e);
-            return $this->sharesPurchaseFailed($request, 'Error completing purchase.', 500);
+            return $this->sharesPurchaseFailed('Error completing purchase.');
         }
 
         // The purchase is committed from here on, so nothing below may report
-        // it as failed. (Building this reply used to sit inside the try block:
-        // a wrong route name made every AJAX purchase answer "Error completing
-        // purchase" after the money had already been taken.)
+        // it as failed. (The removed /user/shares page got a JSON reply built
+        // inside the try block; a wrong route name in it made every purchase
+        // there answer "Error completing purchase" after the money was taken.)
         $message = 'Purchased ' . $quantity . ' units of ' . $plan->name . ' successfully.';
-
-        if ($this->wantsSharesJson($request)) {
-            $owned      = $user->rinvestment()->get();
-            $ownedValue = $owned->sum(fn ($i) => $i->units * $i->unit_cost);
-            return response()->json([
-                "status" => "success",
-                "message" => $message,
-                "totalUnits" => $owned->sum('units'),
-                "totalValue" => showAmount($ownedValue),
-                "newInvestment" => [
-                    'plan_name' => $plan->name,
-                    'units' => $quantity,
-                    'unit_cost' => showAmount($plan->price),
-                    'total' => showAmount($totalPayable),
-                    'status' => 'Active',
-                    'details_url' => route('user.plan.details', $rinvest->id),
-                ],
-                "goalPercent" => min(100, ($ownedValue / 50000) * 100),
-            ]);
-        }
 
         $notify[] = ['success', $message];
         return redirect()->route('user.plan.portfolio')->withNotify($notify);
     }
 
-    /** The old Shares page posts with fetch() and expects JSON; Inertia pages expect a redirect. */
-    private function wantsSharesJson(Request $request): bool
-    {
-        return $request->ajax() && !$request->header('X-Inertia');
-    }
 
-    private function sharesPurchaseFailed(Request $request, string $message, int $status)
+    private function sharesPurchaseFailed(string $message)
     {
-        if ($this->wantsSharesJson($request)) {
-            return response()->json(["status" => "error", "message" => $message], $status);
-        }
         $notify[] = ['error', $message];
         return redirect()->route('user.plan.portfolio')->withNotify($notify);
     }
