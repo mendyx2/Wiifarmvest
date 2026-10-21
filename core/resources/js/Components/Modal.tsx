@@ -10,6 +10,7 @@ type Props = {
     /** Static: clicking the backdrop or pressing Escape does not close it. */
     staticBackdrop?: boolean;
     labelledBy?: string;
+    size?: 'sm' | 'lg' | 'xl';
 };
 
 /**
@@ -17,9 +18,16 @@ type Props = {
  * Closes on Escape and backdrop click, locks page scrolling, moves focus into
  * the dialog and gives it back to the button that opened it.
  */
-export default function Modal({ open, onClose, children, contentClassName = '', contentStyle, staticBackdrop = false, labelledBy }: Props) {
+export default function Modal({ open, onClose, children, contentClassName = '', contentStyle, staticBackdrop = false, labelledBy, size }: Props) {
     const dialog = useRef<HTMLDivElement>(null);
     const fallbackId = useId();
+
+    // Parents usually pass a new onClose function on every render. Keep the
+    // latest one in a ref so the effect below runs only when the dialog opens
+    // or closes; otherwise each keystroke in an input inside the dialog would
+    // re-run it and pull focus back to the dialog.
+    const closeRef = useRef(onClose);
+    closeRef.current = onClose;
 
     useEffect(() => {
         if (!open) return;
@@ -28,7 +36,7 @@ export default function Modal({ open, onClose, children, contentClassName = '', 
         dialog.current?.focus();
 
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && !staticBackdrop) onClose();
+            if (e.key === 'Escape' && !staticBackdrop) closeRef.current();
         };
         document.addEventListener('keydown', onKey);
 
@@ -37,7 +45,7 @@ export default function Modal({ open, onClose, children, contentClassName = '', 
             document.body.classList.remove('modal-open');
             previouslyFocused?.focus();
         };
-    }, [open, onClose, staticBackdrop]);
+    }, [open, staticBackdrop]);
 
     if (!open) return null;
 
@@ -51,10 +59,10 @@ export default function Modal({ open, onClose, children, contentClassName = '', 
                 aria-modal="true"
                 aria-labelledby={labelledBy ?? fallbackId}
                 onMouseDown={(e) => {
-                    if (e.target === e.currentTarget && !staticBackdrop) onClose();
+                    if (e.target === e.currentTarget && !staticBackdrop) closeRef.current();
                 }}
             >
-                <div className="modal-dialog modal-dialog-centered">
+                <div className={`modal-dialog modal-dialog-centered ${size ? `modal-${size}` : ''}`}>
                     <div className={`modal-content ${contentClassName}`} style={contentStyle}>
                         {children}
                     </div>

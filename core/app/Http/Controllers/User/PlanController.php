@@ -49,31 +49,12 @@ class PlanController extends Controller
             ->with('plan', 'shtransactions')
             ->get();
 
-        // Calculate totals 
+        // Calculate totals
         $totalUnits = $investments->sum('units');
-        $totalInvestmentValue = $investments->sum(fn($inv) => $inv->units * $inv->plan->price); 
+        $totalInvestmentValue = $investments->sum(fn($inv) => $inv->units * $inv->plan->price);
 
-        $weeklyGrowth = Shtransaction::where('user_id', $user->id)
-            ->whereBetween('created_at', [now()->subDays(7), now()])
-            ->where('type', 'credit')
-            ->completed()
-            ->sum('amount');
-
-        $historyLabels = [];
-        $historyData = [];
-
-        for ($i = 6; $i >= 0; $i--) {
-            $day = now()->subDays($i);
-            $label = $day->format('D');
-            $val = Shtransaction::where('user_id', $user->id)
-                ->where('type', 'credit')
-                ->completed()
-                ->whereDate('created_at', $day->toDateString())
-                ->sum('amount');
-
-            $historyLabels[] = $label;
-            $historyData[] = $val;
-        }
+        // (A weekly-growth figure and a 7-day chart series were computed here with
+        // 8 extra queries, but the page never used them; they were removed.)
 
         // Get all dividends for user
         $dividendTransactions = Shtransaction::where('user_id', $user->id)
@@ -95,19 +76,53 @@ class PlanController extends Controller
             ->groupBy(fn($t) => $t->rinvestment->plan->name)
             ->map(fn($group) => [
                 'plan' => $group->first()->rinvestment->plan->name,
-                'amount' => $group->sum('amount')
+                'amount' => showAmount($group->sum('amount')),
             ])
             ->values();
 
-        return view('Template::user.investment-portfolio', compact(
-            'pageTitle',
-            'investments',
-            'totalUnits',
-            'totalInvestmentValue', 
-            'totalDividends',
-            'dividendTransactions',
-            'dividendsByPlan'
-        ));
+        // Migrated to React + Inertia (resources/js/Pages/User/InvestmentPortfolio.tsx).
+        // Legacy view: Template::user.investment-portfolio
+        return Inertia::render('User/InvestmentPortfolio', [
+            'totalUnits'      => (int) $totalUnits,
+            'investmentValue' => showAmount($totalInvestmentValue),
+            'totalDividends'  => showAmount($totalDividends),
+            'investments'     => $investments->map(fn ($inv) => [
+                'id'         => $inv->id,
+                'plan'       => $inv->plan->name ?? 'N/A',
+                'date'       => $inv->created_at->format('M d, Y - h:i'),
+                'units'      => $inv->units,
+                'unitCost'   => showAmount($inv->unit_cost),
+                'totalValue' => showAmount($inv->units * $inv->unit_cost),
+                'url'        => route('user.investment.details', $inv->id),
+            ])->values(),
+            'dividendsByPlan' => $dividendsByPlan,
+            'dividends'       => self::dividendRows($dividendTransactions),
+            // Buy Shares pop-up
+            'plans' => Plan::active()->get()->map(fn ($plan) => [
+                'id'         => $plan->id,
+                'name'       => $plan->name,
+                'price'      => (float) $plan->price,
+                'priceLabel' => showAmount($plan->price),
+            ])->values(),
+            'balance'     => showAmount($user->balance),
+            'purchaseUrl' => route('user.shares.purchase'),
+        ])->withViewData(compact('pageTitle'));
+    }
+
+    /** Dividend transactions as the React pages show them. */
+    private static function dividendRows($paginator)
+    {
+        return $paginator->through(fn ($t) => [
+            'id'        => $t->id,
+            'date'      => $t->created_at->format('M d, Y'),
+            'time'      => $t->created_at->format('H:i'),
+            'reference' => $t->reference,
+            'plan'      => $t->rinvestment->plan->name ?? 'N/A',
+            'units'     => $t->units_held,
+            'perUnit'   => showAmount($t->amount_per_unit),
+            'amount'    => showAmount($t->amount),
+            'status'    => in_array($t->status, ['completed', 'pending'], true) ? $t->status : 'failed',
+        ]);
     }
 
     /**
@@ -138,19 +153,40 @@ class PlanController extends Controller
             ->completed()
             ->sum('amount') ?? 0;
 
-        return view('Template::user.investment-details', compact(
-            'pageTitle',
-            'investment',
-            'dividends',
-            'totalDividends'
-        ));
+        // ROI guarded against a zero amount (the Blade view divided by zero).
+        $invested = (float) $investment->five;
+        $roi      = $invested > 0 ? ($totalDividends / $invested) * 100 : 0;
+        $recent   = $dividends->getCollection()->take(5);
+
+        // Migrated to React + Inertia (resources/js/Pages/User/InvestmentDetails.tsx).
+        // Legacy view: Template::user.investment-details
+        return Inertia::render('User/InvestmentDetails', [
+            'investment' => [
+                'id'          => $investment->id,
+                'plan'        => $investment->plan->name ?? 'Investment',
+                'date'        => $investment->created_at->format('M d, Y H:i'),
+                'units'       => $investment->units,
+                'unitCost'    => showAmount($investment->unit_cost),
+                'total'       => showAmount($investment->unit_cost * $investment->units),
+                'invested'    => showAmount($invested),
+                'totalReturn' => showAmount($invested + $totalDividends),
+            ],
+            'totalDividends' => showAmount($totalDividends),
+            'roi'            => round($roi, 2),
+            'dividends'      => self::dividendRows($dividends),
+            'recent'         => $recent->map(fn ($d) => ['id' => $d->id, 'date' => $d->created_at->format('M d, Y'), 'reference' => $d->reference, 'amount' => showAmount($d->amount)])->values(),
+            'moreCount'      => max(0, $dividends->total() - $recent->count()),
+            // Receipt / certificate downloads are plain form posts (the reply is a PDF file).
+            'pdfUrl'       => route('user.plan.payment-receipt.generate-pdf'),
+            'portfolioUrl' => route('user.investment.portfolio'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function myAwards()
     {
         $pageTitle  = 'My Awards';
         $user       = auth()->user();
-        $allAwards  = Award::active()->orderBy('sort_order')->get();
+        $allAwards  = Award::active()->with('prerequisite')->orderBy('sort_order')->get();
         $earnedMap  = UserAward::where('user_id', $user->id)
                         ->get()
                         ->keyBy('award_id');
@@ -161,9 +197,43 @@ class PlanController extends Controller
         $currentRightPv = (float) ($matrix->pv_right ?? 0);
         $currentTotalPv = $currentLeftPv + $currentRightPv;
 
-        return view('Template::user.awards', compact(
-            'pageTitle', 'allAwards', 'earnedMap', 'currentLeftPv', 'currentRightPv', 'currentTotalPv'
-        ));
+        $pct = fn ($have, $need) => $need > 0 ? min(100, round($have / $need * 100)) : 100;
+
+        // Migrated to React + Inertia (resources/js/Pages/User/Awards.tsx).
+        // Legacy view: Template::user.awards
+        return Inertia::render('User/Awards', [
+            'stats' => [
+                'total'  => $allAwards->count(),
+                'earned' => $earnedMap->count(),
+                'paid'   => $earnedMap->where('status', 1)->count(),
+            ],
+            'awards' => $allAwards->map(function ($award) use ($earnedMap, $currentLeftPv, $currentRightPv, $currentTotalPv, $pct) {
+                $earned = $earnedMap->get($award->id);
+                $state  = !$earned ? 'locked' : ($earned->status == 1 ? 'paid' : 'earned');
+                $locked = $state === 'locked';
+                // Progress only means something while locked: pairing PV is used up
+                // by matching payouts, so earned/paid awards always show complete.
+                $leg = fn ($have, $need) => [
+                    'text' => $locked ? number_format($have, 0) . ' / ' . number_format($need, 0) : number_format($need, 0),
+                    'pct'  => $locked ? $pct($have, $need) : 100,
+                ];
+                return [
+                    'id'           => $award->id,
+                    'order'        => $award->sort_order,
+                    'name'         => $award->name,
+                    'description'  => \Illuminate\Support\Str::limit($award->description, 72) ?: 'No description provided.',
+                    'image'        => $award->image_url,
+                    'state'        => $state,
+                    'total'        => $leg($currentTotalPv, $award->required_total_pv),
+                    'left'         => $leg($currentLeftPv, $award->required_left_pv),
+                    'right'        => $leg($currentRightPv, $award->required_right_pv),
+                    'reward'       => showAmount($award->payment_amount),
+                    'paidAmount'   => $state === 'paid' ? showAmount($earned->paid_amount ?? $award->payment_amount) : null,
+                    'prerequisite' => $award->prerequisite?->name,
+                    'date'         => $state === 'paid' ? ($earned->paid_at?->format('M d, Y') ?? '—') : ($earned ? ($earned->earned_at?->format('M d, Y') ?? '—') : null),
+                ];
+            })->values(),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function repurchaseAward()
@@ -175,7 +245,26 @@ class PlanController extends Controller
         $awards         = RepurchaseAward::active()->get();
         $walletBalance  = (float) ($user->repurchase_award ?? 0);
 
-        return view('Template::user.repurchase_award', compact('pageTitle', 'totalPv', 'awards', 'walletBalance'));
+        // Migrated to React + Inertia (resources/js/Pages/User/RepurchaseAward.tsx).
+        // Legacy view: Template::user.repurchase_award
+        return Inertia::render('User/RepurchaseAward', [
+            'totalPv'       => number_format($totalPv, 2),
+            'walletBalance' => '₦' . number_format($walletBalance, 2),
+            'hasBalance'    => $walletBalance > 0,
+            'awards'        => $awards->map(function ($award) use ($totalPv) {
+                $required = (float) $award->required_pv;
+                return [
+                    'id'        => $award->id,
+                    'title'     => $award->title,
+                    'required'  => number_format($required, 2),
+                    'qualified' => $totalPv >= $required,
+                    'pct'       => $required > 0 ? min(100, round($totalPv / $required * 100, 1)) : 100,
+                    'remaining' => number_format(max(0, $required - $totalPv), 2),
+                    'reward'    => '₦' . number_format($award->amount, 2),
+                ];
+            })->values(),
+            'transferUrl' => route('user.bonus.transfer.index'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function pvlog(Request $request){

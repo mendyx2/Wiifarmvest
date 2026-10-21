@@ -77,7 +77,7 @@ gets replaced, one page at a time.
 | **1. Pilot page** | Change Password (`/user/change-password`) | ✅ Done |
 | **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | ✅ Done: 8 pages (Steps 9–22); BV log skipped because its page is broken (Step 18) |
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
-| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects · 4c network trees · 4d shop/cart/orders · 4e stockist area | 🟡 In progress: 4a done (Steps 32–37) |
+| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects · 4c network trees · 4d shop/cart/orders · 4e stockist area | 🟡 In progress: 4a and 4b done (Steps 32–46) |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
@@ -1140,6 +1140,232 @@ page shows **only your own tickets**.
 - Submit KYC with a real ID photo, then approve and reject it in admin.
 - Nominate a guarantor and accept it from that user's account.
 - Open a ticket with an attachment, reply to it from admin, then close it.
+
+### Step 38: 🔴 Fix: successful share purchases were reported as failed (own commit)
+
+**Found while reading `PlanController@sharesStore`** for the Buy Shares pop-up.
+
+**What happened:**
+
+- After the purchase was committed, the AJAX branch built its reply
+  **inside the `try` block**, using `route('plan.details')`.
+- That route name does not exist (it is `user.plan.details`), so building
+  the reply threw.
+- The `catch` then answered **500 "Error completing purchase."**, even though
+  the money had already been debited, the investment created and the plan
+  units taken.
+- The `rollBack()` in the catch did nothing, because the transaction was
+  already committed.
+
+**Who was affected:** the standalone `/user/shares` page, which posts with
+`fetch` + `X-Requested-With`. Nothing in the menus links to it, but it can be
+reached by its address. The portfolio's Buy Shares pop-up posted a normal
+form and was not affected. Inertia requests also send `X-Requested-With`, so
+the React pop-up would have hit the same bug.
+
+**Proven** on a test database: ₦20,000 → ₦15,000, 1 investment created, and
+the reply was the 500 error.
+
+**Fix:**
+
+- The transaction is committed first; the reply is built afterwards with the
+  correct route name.
+- The reply also no longer calls `->sum(fn)` on a query builder (another
+  error in the same code).
+- Inertia requests get the normal redirect. Only the old page gets JSON.
+
+**Verified:** the old page's request now gets 200 "Purchased 5 units…".
+Every rejection (closed plan, < 5 units, not enough balance) charges nothing.
+
+> **Action:** check the database for `shares_purchase` transactions from
+> users who then bought again within minutes. They may have been told their
+> first purchase failed.
+
+### Step 39: 🔴 Fix: anyone could download another user's investment receipt (own commit)
+
+**What was wrong:** `PlanController@generatePdf` looked the investment up by
+the posted `rivest_id` only. The ids are sequential, so any logged-in user
+could download **another user's payment receipt or certificate**. Those show
+the owner's name, address, phone and email.
+
+**Proven:** logged in as user 7, the PDF of user 20's investment was
+downloaded, and it contained user 20's address.
+
+**Fix:** the lookup is limited to `user_id = auth()->id()`. Another user's id
+now gets "Cannot download this receipt".
+
+### Step 40: Scoped page CSS, and a helper script
+
+**The problem.** With Inertia, a page's imported CSS **stays loaded after you
+navigate away**. The investment pages' CSS restyles generic classes
+(`.card`, `.card-body`, `.badge-light` …), so after visiting the portfolio,
+those rules would have applied to every later page.
+
+**New:** `core/scripts/extract-page-css.mjs`
+
+- It moves a Blade view's `<style>` block into `Pages/User/<Name>.css`.
+- Every rule is wrapped in `.page-<name> { … }` (native CSS nesting). The
+  Vite build flattens it to `.page-<name> .card` for older browsers.
+- `@keyframes` and `@font-face` stay at the top level.
+- It refuses CSS that contains Blade syntax, and warns about `html`, `body`
+  and `:root` rules, which cannot be scoped.
+
+Usage:
+
+```bash
+node scripts/extract-page-css.mjs resources/views/templates/basic/user/awards.blade.php \
+     resources/js/Pages/User/Awards.css page-awards
+```
+
+The page component then wraps its content in `<div className="page-awards">`.
+
+**Verified:**
+
+- All 281 built selectors of the four new stylesheets start with `.page-…`.
+- In the browser, a `.card-body` inside the portfolio gets 24px; one outside
+  it keeps the layout's normal 0px.
+
+The two `body { background }` rules were dropped; the dashboard layout
+overrides them with `!important`. (PvLog.css and Withdraw.css were checked:
+all their selectors already use page-specific prefixes.)
+
+### Step 41: Investment portfolio and Buy Shares (`/user/investment/portfolio`)
+
+**New:** `Pages/User/InvestmentPortfolio.tsx` (+ scoped CSS)
+
+- Key figures, the investment cards, the dividend summary per plan, and the
+  dividend history with pagination.
+- **Buy Shares pop-up:** plan, units (minimum 5, raised when leaving the
+  field), live total (`₦…`), balance.
+  - It posts to `user.shares.purchase`.
+  - On success it closes, and the page reloads its data with the toast.
+- **"Start Investing"** (shown when there are no investments) linked to
+  `/user/plan`, which fails (see Step 45). It now opens the Buy Shares pop-up.
+
+**Changed:** `PlanController@investmentPortfolio`
+
+- It sends display-ready data.
+- **Removed 8 wasted queries:** a weekly-growth figure and a 7-day series
+  were computed on every visit but never shown.
+
+### Step 42: Investment details (`/user/investment/{id}/details`)
+
+**New:** `Pages/User/InvestmentDetails.tsx` (+ scoped CSS)
+
+- Details, the dividends for this investment, performance (ROI bar) and
+  recent activity.
+- **Receipt / certificate:** plain HTML form posts with the CSRF token,
+  because the reply is a PDF download, not a page.
+
+**Changed:** `PlanController@investmentDetails`
+
+- **The ROI is guarded against a zero amount.** The Blade view divided by
+  `five` and crashed when it was 0.
+- "And N more dividends…" now counts correctly. Blade compared the page size
+  with itself, so it could never show.
+
+### Step 43: Awards, Repurchase award, ACB
+
+**New:**
+
+- `Pages/User/Awards.tsx` (+ scoped CSS): award cards (locked, earned,
+  paid), PV progress per leg, prerequisite chip, dates.
+  - **The prerequisite is now eager-loaded:** one query instead of one per
+    award.
+- `Pages/User/RepurchaseAward.tsx`: PV, wallet with a transfer link,
+  progress per tier, "How it works". Its CSS is in the global `main.css`.
+- `Pages/User/Acb.tsx` (+ scoped CSS): balance, rates and payment history.
+  - **Display fix:** Blade wrote `@{{ $memberUser }}`, which Blade outputs
+    literally, so every row said **"from {{ $memberUser }}"**. It now shows
+    the member's username.
+
+**Changed:** `myAwards`, `repurchaseAward` and `AcbController@index`. ACB is
+still only for ACB members (403 otherwise).
+
+### Step 44: My project (`/user/my-project`)
+
+**New:**
+
+- `Pages/User/MyProject.tsx`:
+  - Project cards with the same badge rules as Blade, including a same-tier
+    project, which gets no badge.
+  - The upgrade pop-up shows the price breakdown, PV gain and sponsor bonus
+    estimate (as before), plus a VISA shortfall warning.
+- `Components/PageTitleBar.tsx`: the `layouts.breadcrumb` title with the
+  Cart button. It will be reused by the shop pages.
+
+**Unchanged:** `ProjectController@upgrade`. All its guards were tested:
+insufficient VISA, upgrades switched off, already on that project, same
+tier, unknown project. VISA stays untouched in every case.
+
+### Step 45: Pages left on Blade, and broken links found
+
+| Page | Status |
+|---|---|
+| `/user/plan` (`user.plan.index`) | **Already broken**: the route points to `PlanController@planIndex`, which does not exist. The menu does not link to it; the old portfolio button and the land page did. `plan.blade.php` also uses the missing route `user.plan.reserve`. |
+| `/user/shares` (`user.shares`) | Not linked anywhere; buying works through the portfolio pop-up. Its purchase bug is fixed (Step 38). **Decision for you:** remove it as a duplicate of the Buy Shares pop-up, or keep it. |
+| `reservation` | Its route is commented out, so it cannot be reached. |
+
+**Route-name scan.** A script checked every `route('…')`, `to_route('…')`
+and `urlPath('…')` in `app/` and the views against the real routes. Leaving
+out the old `_old` / `dashboard2` files and false positives (`'ipn.' .
+$alias`), these names **do not exist**:
+
+- `LoginController:146` → `user.land`. After login, `section = 2` users are
+  sent to a route that does not exist.
+- `LoanController:242,255` → `user.loans.index`
+- `SavingsController:232,242,466` → `user.savings.index`
+- `TransferController:98,147` → `user.transfer.index`
+- `StockistController:189` → `stockist.dashboard`; `:692` → `stockist.setup`
+  (probably meant `user.stockist.…`)
+- `Admin/AdminUserController:185,234,247` → `admin.users.index`
+- `LeadershipBonusService:324` → `user.leadership`
+- `StockistMiddleware:15` → `login`
+- `bonus/transfer.blade.php:290` → `user.bonus.purchase-status`
+- `blog.blade.php`, `blog_details.blade.php`, `sections/blog.blade.php` →
+  `blog.details` (the public blog pages)
+- `components/email/button.blade.php` → `order.tracking`
+- `admin/frontend/section.blade.php:358` → `admin.frontend.import`
+
+Each of these fails (an error page) when that line runs. The stockist,
+transfer and bonus ones will be handled when those pages are migrated
+(4d/4e); the rest need a decision about where they should go.
+
+### Step 46: Fix in the shared Modal: typing inside a pop-up lost focus
+
+**Found by the Buy Shares test.** `Modal`'s effect depended on `onClose`.
+Parents pass a new function on every render, so **each keystroke in an
+input inside a pop-up re-ran the effect and moved focus back to the
+dialog**: you could type one character only. The earlier pop-ups had no
+text inputs, so it did not show until now.
+
+**Fix:** the latest `onClose` is kept in a ref, and the effect runs only when
+the pop-up opens or closes. The same fix was applied to `Lightbox`.
+
+The test now types "3", then "30", and checks the field keeps focus.
+
+### Verification for 4b
+
+- **Real controllers against a test database:**
+  - Portfolio totals and per-plan dividends; closed plans are absent from
+    the pop-up; no other user's data.
+  - Details: ROI 5%, and 0 for the zero-amount case (no crash). Another
+    user's investment is not found.
+  - Awards: paid, locked at 42%, inactive hidden.
+  - Repurchase tiers; ACB rows, and 403 for non-members.
+  - Project cards, and all 5 upgrade guards (VISA untouched).
+- **Browser: 35/35** on the real build, including the CSS-leak check, the
+  pop-up maths and typing, the receipt download as a real file, and the
+  upgrade breakdown.
+- **All suites: 187 browser checks, 0 failures.**
+
+**To test on staging:**
+
+- Buy shares from the pop-up.
+- Download a receipt and a certificate.
+- Upgrade a project with enough VISA, then check the sponsor's bonus,
+  cash-back and PV. **This is the one money path not run end to end here**,
+  because it calls about ten commission helpers.
 
 ---
 

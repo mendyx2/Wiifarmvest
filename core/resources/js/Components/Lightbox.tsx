@@ -1,20 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTrans } from '@/lib/i18n';
 
 /** Full-screen image viewer: click outside, × or Escape closes it. */
 export default function Lightbox({ src, onClose }: { src: string | null; onClose: () => void }) {
     const t = useTrans();
 
+    // Latest onClose in a ref, so the effect only runs when an image opens or closes.
+    const closeRef = useRef(onClose);
+    closeRef.current = onClose;
+
     useEffect(() => {
         if (!src) return;
-        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
         document.addEventListener('keydown', onKey);
         document.body.style.overflow = 'hidden';
         return () => {
             document.removeEventListener('keydown', onKey);
             document.body.style.overflow = '';
         };
-    }, [src, onClose]);
+    }, [src]);
 
     if (!src) return null;
 

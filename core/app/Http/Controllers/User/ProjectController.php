@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
 class ProjectController extends Controller
 {
@@ -28,7 +29,50 @@ class ProjectController extends Controller
         }
         $projects = $query->get(); 
 
-        return view('Template::user.my_project', compact('pageTitle', 'user', 'currentProject', 'projects'));
+        $visa       = (float) ($user->visa ?? 0);
+        $currentAmt = $currentProject ? (float) $currentProject->amount : 0.0;
+        $money      = fn ($n) => gs('cur_sym') . showAmount($n, currencyFormat: false);
+
+        // Migrated to React + Inertia (resources/js/Pages/User/MyProject.tsx).
+        // Legacy view: Template::user.my_project
+        return Inertia::render('User/MyProject', [
+            'visa'      => $money($visa),
+            'current'   => $currentProject ? ['id' => $currentProject->id, 'title' => $currentProject->title, 'amount' => $money($currentAmt), 'pv' => (float) $currentProject->pv] : null,
+            'projects'  => $projects->map(function ($project) use ($currentProject, $currentAmt, $visa, $money) {
+                $cost = round((float) $project->amount - $currentAmt, 2);
+                $isCurrent = $currentProject && $currentProject->id === $project->id;
+                return [
+                    'id'          => $project->id,
+                    'title'       => $project->title,
+                    'icon'        => $project->icon,
+                    'color'       => $project->color,
+                    'amount'      => $money($project->amount),
+                    'amountValue' => (float) $project->amount,
+                    'pv'          => (float) $project->pv,
+                    'pvLabel'     => showAmount($project->pv, currencyFormat: false),
+                    'direct'      => showAmount($project->direct_commission, currencyFormat: false),
+                    'indirect'    => showAmount($project->indirect_commission, currencyFormat: false),
+                    'pairing'     => $project->pairing_per_day > 0 ? $money($project->pairing_per_day) : null,
+                    'cashBack'    => $project->cash_back > 0 ? showAmount($project->cash_back, currencyFormat: false) . '%' : null,
+                    'upgradeBonus' => (float) $project->upgrade_bonus,
+                    'upgradeBonusLabel' => $project->upgrade_bonus > 0 ? showAmount($project->upgrade_bonus, currencyFormat: false) . '%' : null,
+                    'monthlyFee'  => $project->monthly_maintenance > 0 ? $money($project->monthly_maintenance) : null,
+                    'description' => $project->description ? \Illuminate\Support\Str::limit($project->description, 80) : null,
+                    'isCurrent'   => $isCurrent,
+                    // Projects at or above the current tier are listed; anything higher (or any, with no project yet) is an upgrade.
+                    'upgradable'  => !$isCurrent && (!$currentProject || $project->sort_order > $currentProject->sort_order),
+                    'available'   => !$isCurrent && (!$currentProject || $project->sort_order > $currentProject->sort_order) && (bool) $project->upgrade_allowed,
+                    'cost'        => $cost,
+                    'costLabel'   => $money($cost),
+                    'shortfall'   => $visa < $cost ? $money($cost - $visa) : null,
+                ];
+            })->values(),
+            'curSym'     => gs('cur_sym'),
+            'upgradeUrl' => route('user.project.upgrade'),
+            // Title bar (was the layouts.breadcrumb partial): cart button with item count.
+            'cartUrl'    => route('user.cart.index'),
+            'cartCount'  => (int) $user->cart_item_count,
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function upgrade(Request $request)
