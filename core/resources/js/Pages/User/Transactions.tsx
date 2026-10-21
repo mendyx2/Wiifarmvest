@@ -1,8 +1,9 @@
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { useState, type FormEvent } from 'react';
 import EmptyState from '@/Components/EmptyState';
 import Pagination from '@/Components/Pagination';
 import { useTrans } from '@/lib/i18n';
+import { visitWithQuery } from '@/lib/search';
 import type { PageProps, Paginated } from '@/types';
 
 /** Already formatted by UserController@transactions (currency, dates, locale). */
@@ -35,9 +36,7 @@ export default function Transactions({ transactions, remarks, filters }: Props) 
 
     function applyFilters(event: FormEvent) {
         event.preventDefault();
-        // Only send filters that are set, so the URL stays clean (?trx_type=+ etc.).
-        const query = Object.fromEntries(Object.entries(values).filter(([, v]) => v !== ''));
-        router.get(url.split('?')[0], query, { preserveState: true, preserveScroll: true });
+        visitWithQuery(url, values);
     }
 
     const set = (key: keyof Filters) => (e: { target: { value: string } }) =>

@@ -1,5 +1,6 @@
 import { Head, useForm } from '@inertiajs/react';
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, type FormEvent } from 'react';
+import { useCopy } from '@/lib/clipboard';
 import { useTrans } from '@/lib/i18n';
 import type { PageProps } from '@/types';
 
@@ -16,23 +17,9 @@ const AUTHENTICATOR_URL = 'https://play.google.com/store/apps/details?id=com.goo
 
 export default function TwoFactor({ enabled, secret, qrCodeUrl, enableUrl, disableUrl }: Props) {
     const t = useTrans();
-    const [copied, setCopied] = useState(false);
+    const { copied, copy } = useCopy();
     const keyInput = useRef<HTMLInputElement>(null);
     const form = useForm({ key: secret ?? '', code: '' });
-
-    async function copySecret() {
-        if (!secret) return;
-        try {
-            // navigator.clipboard only exists on HTTPS pages.
-            await navigator.clipboard.writeText(secret);
-        } catch {
-            // Older fallback, as the Blade page used: select the key and copy it.
-            keyInput.current?.select();
-            if (!document.execCommand('copy')) return;
-        }
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-    }
 
     function submit(event: FormEvent) {
         event.preventDefault();
@@ -74,7 +61,7 @@ export default function TwoFactor({ enabled, secret, qrCodeUrl, enableUrl, disab
                                             readOnly
                                             onFocus={(e) => e.target.select()}
                                         />
-                                        <button type="button" className="input-group-text" onClick={copySecret} aria-label={t('Copy')}>
+                                        <button type="button" className="input-group-text" onClick={() => secret && copy(secret, keyInput.current)} aria-label={t('Copy')}>
                                             <i className={copied ? 'fas fa-check' : 'fas fa-copy'} />
                                         </button>
                                     </div>

@@ -36,6 +36,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use App\Support\PaymentPresenter;
 use App\Models\GatewayCurrency;
 use App\Models\NotificationLog;
 use App\Models\GuarantorRequest;
@@ -266,8 +267,30 @@ class UserController extends Controller
     public function depositHistory(Request $request)
     {
         $pageTitle = 'Deposit History';
-        $deposits  = auth()->user()->deposits()->searchable(['trx'])->with(['gateway'])->orderBy('id', 'desc')->paginate(getPaginate());
-        return view('Template::user.deposit_history', compact('pageTitle', 'deposits'));
+        $deposits  = auth()->user()->deposits()->searchable(['trx'])->with(['gateway'])->orderBy('id', 'desc')->paginate(getPaginate())->withQueryString();
+
+        // Migrated to React + Inertia (resources/js/Pages/User/DepositHistory.tsx).
+        // Legacy view: Template::user.deposit_history
+        return Inertia::render('User/DepositHistory', [
+            'deposits' => $deposits->through(fn ($deposit) => [
+                'id'            => $deposit->id,
+                'trx'           => $deposit->trx,
+                'gateway'       => $deposit->method_code < 5000 ? (string) @$deposit->gateway->name : 'Google Pay',
+                'date'          => showDateTime($deposit->created_at),
+                'ago'           => diffForHumans($deposit->created_at),
+                'total'         => showAmount($deposit->amount + $deposit->charge),
+                'amount'        => showAmount($deposit->amount),
+                'charge'        => showAmount($deposit->charge),
+                'rate'          => showAmount(1) . ' = ' . showAmount($deposit->rate, currencyFormat: false) . ' ' . $deposit->method_currency,
+                'finalAmount'   => showAmount($deposit->final_amount, currencyFormat: false) . ' ' . $deposit->method_currency,
+                'status'        => PaymentPresenter::depositStatus($deposit),
+                'manual'        => PaymentPresenter::isManual($deposit),
+                'details'       => PaymentPresenter::isManual($deposit) ? PaymentPresenter::details($deposit->detail) : [],
+                'adminFeedback' => $deposit->status == Status::PAYMENT_REJECT ? $deposit->admin_feedback : null,
+            ]),
+            'search'     => (string) $request->search,
+            'depositUrl' => route('user.deposit.index'),
+        ])->withViewData(compact('pageTitle'));
     }
 
 

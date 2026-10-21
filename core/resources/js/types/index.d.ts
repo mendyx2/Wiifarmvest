@@ -38,6 +38,14 @@ export interface Paginated<T> {
     links: PaginationLink[];
 }
 
+/** One field a user filled in for a manual deposit / withdrawal (App\Support\PaymentPresenter::details). */
+export interface PaymentDetail {
+    name: string;
+    /** Text value, or a download URL when isFile is true */
+    value: string | null;
+    isFile: boolean;
+}
+
 /** Page props = the page's own props + the shared props. */
 export type PageProps<T extends Record<string, unknown> = Record<string, unknown>> = T & SharedProps;
 

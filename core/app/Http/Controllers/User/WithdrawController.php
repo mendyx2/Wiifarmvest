@@ -9,6 +9,8 @@ use App\Lib\FormProcessor;
 use App\Models\AdminNotification;
 use App\Models\Loan;
 use App\Models\Withdrawal;
+use App\Support\PaymentPresenter;
+use Inertia\Inertia;
 use App\Models\WithdrawMethod;
 use App\Services\WalletService;
 use Illuminate\Http\Request;
@@ -295,8 +297,42 @@ class WithdrawController extends Controller
         if ($request->search) {
             $withdraws = $withdraws->where('trx',$request->search);
         }
-        $withdraws = $withdraws->with('method')->orderBy('id','desc')->paginate(getPaginate());
-        return view('Template::user.withdraw.log', compact('pageTitle','withdraws'));
+        $withdraws = $withdraws->with('method')->orderBy('id','desc')->paginate(getPaginate())->withQueryString();
+
+        // Totals moved here from the old view's @php block.
+        $userId = auth()->id();
+        $sum    = fn ($status) => gs('cur_sym') . number_format(Withdrawal::where('user_id', $userId)->where('status', $status)->sum('amount'), 2);
+        $user   = auth()->user();
+
+        // Migrated to React + Inertia (resources/js/Pages/User/WithdrawHistory.tsx).
+        // Legacy view: Template::user.withdraw.log
+        return Inertia::render('User/WithdrawHistory', [
+            'withdraws' => $withdraws->through(fn ($withdraw) => [
+                'id'            => $withdraw->id,
+                'trx'           => $withdraw->trx,
+                'gateway'       => __(@$withdraw->method->name),
+                'date'          => $withdraw->created_at->format('M d, Y'),
+                'time'          => $withdraw->created_at->format('h:i A'),
+                'net'           => showAmount($withdraw->amount - $withdraw->charge),
+                'amount'        => showAmount($withdraw->amount),
+                'charge'        => showAmount($withdraw->charge),
+                'rate'          => '1 ' . gs('cur_text') . ' = ' . showAmount($withdraw->rate, currencyFormat: false) . ' ' . __($withdraw->currency),
+                'finalAmount'   => showAmount($withdraw->final_amount, currencyFormat: false) . ' ' . __($withdraw->currency),
+                'status'        => PaymentPresenter::withdrawStatus($withdraw),
+                'details'       => PaymentPresenter::details($withdraw->withdraw_information),
+                'adminFeedback' => $withdraw->status == Status::PAYMENT_REJECT ? $withdraw->admin_feedback : null,
+            ]),
+            'stats' => [
+                'withdrawn' => $sum(Status::PAYMENT_SUCCESS),
+                'pending'   => $sum(Status::PAYMENT_PENDING),
+                'rejected'  => $sum(Status::PAYMENT_REJECT),
+                'requests'  => Withdrawal::where('user_id', $userId)->where('status', '!=', Status::PAYMENT_INITIATE)->count(),
+            ],
+            'blocked'     => (bool) $user->withdrawal_blocked,
+            'blockReason' => $user->withdrawal_blocked ? $user->withdrawal_block_reason : null,
+            'search'      => (string) $request->search,
+            'withdrawUrl' => route('user.withdraw'),
+        ])->withViewData(compact('pageTitle'));
     }
 
 

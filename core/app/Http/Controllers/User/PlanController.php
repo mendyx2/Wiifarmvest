@@ -18,6 +18,7 @@ use App\Models\Rinvestment;
 use App\Models\Investment;
 use App\Models\Shtransaction;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use App\Http\Controllers\Controller;
 use App\Services\MatrixPlacementService;
 use App\Services\WalletService;
@@ -188,7 +189,7 @@ class PlanController extends Controller
             default   => 'PV Log',
         };  
 
-        $logs = $this->pvData($type)->where('user_id', $uid)->latest('id')->paginate(getPaginate());
+        $logs = $this->pvData($type)->where('user_id', $uid)->latest('id')->paginate(getPaginate())->withQueryString();
 
         // Summary totals (always computed against the full user dataset)
         $totalLeft  = PvLog::leftPV()->where('user_id',  $uid)->sum('amount');
@@ -196,10 +197,32 @@ class PlanController extends Controller
         $totalCut   = PvLog::cutPV()->where('user_id',   $uid)->sum('amount');
         $totalAll   = PvLog::paidPV()->where('user_id',  $uid)->sum('amount');
 
-        return view('Template::user.pvLog', compact(
-            'pageTitle', 'logs',
-            'totalLeft', 'totalRight', 'totalCut', 'totalAll'
-        ));
+        $first = $logs->firstItem() ?? 1;
+
+        // Migrated to React + Inertia (resources/js/Pages/User/PvLog.tsx).
+        // Legacy view: Template::user.pvLog
+        return Inertia::render('User/PvLog', [
+            'logs' => $logs->through(function ($log) use (&$first) {
+                $isCredit = $log->trx_type == '+';
+                return [
+                    'id'       => $log->id,
+                    'number'   => $first++,
+                    'details'  => $log->details ?: 'PV Transaction',
+                    'isCredit' => $isCredit,
+                    // "cut" = PV deducted, otherwise the leg it was added to
+                    'kind'     => !$isCredit ? 'cut' : ($log->position == 1 ? 'left' : 'right'),
+                    'amount'   => getAmount($log->amount),
+                    'date'     => $log->created_at ? date('d M Y, g:i A', strtotime($log->created_at)) : '—',
+                ];
+            }),
+            'type'   => in_array($type, ['leftPV', 'rightPV', 'cutPV'], true) ? $type : '',
+            'totals' => [
+                'left'  => getAmount($totalLeft),
+                'right' => getAmount($totalRight),
+                'cut'   => getAmount($totalCut),
+                'paid'  => getAmount($totalAll),
+            ],
+        ])->withViewData(compact('pageTitle'));
     }
     protected function pvData($scope = null)
     {
@@ -631,7 +654,26 @@ class PlanController extends Controller
     {
         $pageTitle = "My Referral";
         $logs      = User::where('ref_by', auth()->id())->latest()->paginate(getPaginate());
-        return view('Template::user.myRef', compact('pageTitle', 'logs'));
+        $first     = $logs->firstItem() ?? 1;
+        $refUrl    = route('user.register') . '?ref=' . auth()->user()->username;
+
+        // Migrated to React + Inertia (resources/js/Pages/User/Referrals.tsx).
+        // Legacy view: Template::user.myRef
+        return Inertia::render('User/Referrals', [
+            // Only name, username and join date of each referral: never their email, phone or balance.
+            'referrals' => $logs->through(function ($ref) use (&$first) {
+                return [
+                    'id'       => $ref->id,
+                    'number'   => $first++,
+                    'fullname' => $ref->fullname,
+                    'username' => $ref->username,
+                    'joined'   => showDateTime($ref->created_at, 'd M Y'),
+                    'ago'      => diffForHumans($ref->created_at),
+                ];
+            }),
+            'refUrl'  => $refUrl,
+            'refCode' => strtoupper(auth()->user()->username),
+        ])->withViewData(compact('pageTitle'));
     }
 
  

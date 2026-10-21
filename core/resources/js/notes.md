@@ -75,8 +75,8 @@ gets replaced, one page at a time.
 |---|---|---|
 | **0. Foundation** | Vite, React 19, TypeScript, Inertia (server and client), root view inside the Blade layout, shared props, i18n bridge, CSRF, flash toasts, Railway build | ✅ Done |
 | **1. Pilot page** | Change Password (`/user/change-password`) | ✅ Done |
-| **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | 🟡 In progress: 4 pages done (Steps 9–14) |
-| **3. Shared component library** | `DataTable`, `Pagination`, `Modal`, `FormField`, `Select`, `FileUpload`, `StatCard`, `Badge`, `EmptyState`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite | 🟡 Started: `Pagination`, `EmptyState`, `TextField`, `PasswordInput` |
+| **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | ✅ Done: 8 pages (Steps 9–22); BV log skipped because its page is broken (Step 18) |
+| **3. Shared component library** | `DataTable`, `Pagination`, `Modal`, `FormField`, `Select`, `FileUpload`, `StatCard`, `Badge`, `EmptyState`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite | 🟡 Started: `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal`, plus the `useCopy`, `visitWithQuery` and `useTrans` helpers |
 | **4. Complex user flows** | Deposit and payment gateways (external redirects use `Inertia::location()`), withdraw, investments/projects, shop/cart/orders, stockist area, KYC, support tickets, genealogy and binary trees | Later |
 | **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
@@ -509,12 +509,258 @@ In the controller method, replace the `return Inertia::render(...)` with the
 `Template::...` view named in the comment just above it. The old Blade files
 have not been deleted.
 
-### Remaining in Phase 2
+### Step 16: Duplicate `*1` pages removed
 
-Deposit history, withdraw history, PV/BV logs, referrals (`myRef`), and the
-`*1` duplicate routes (`transactions1`, `profile_setting1`,
-`twofactor1`/`show2faForm1`, `password1`). The duplicates need a decision:
-keep and migrate them, or redirect them to the main pages.
+**Decision (owner):** "if it is a duplicate page, remove it."
+
+**What these pages were.** Users with `section = 2` (sent to `user.land`
+after login) had a second copy of several account pages: the `*1` routes,
+using the `layouts.master2` layout.
+
+Before removing anything, I checked that they really are duplicates:
+
+- **Same controller logic.** The only differences:
+  - `myRefLog1` also filtered on `profile_complete = 1`.
+  - `submitProfile1` did not ask for a mobile number.
+- **Same menu.** `master2` includes the same sidebar
+  (`partials.dashboard`) as `master`; it only adds flashcards.
+- **The second menu is unreachable.** `partials/dashboard2.blade.php`,
+  which links to the `*1` pages, is only used by `layouts.master1`, which
+  only `user/welcome.blade.php` uses, and no route renders that page.
+
+**Removed:**
+
+| Removed duplicate | Old URL now redirects to |
+|---|---|
+| `show2faForm1`, `create2fa1`, `disable2fa1` + `twofactor1.blade.php` | `/user/twofactor` |
+| `transactions1` + `transactions1.blade.php` | `/user/transactions` |
+| `profile1`, `submitProfile1` + `profile_setting1.blade.php` | `/user/profile-setting` |
+| `changePassword1`, `submitPassword1` + `password1.blade.php` | `/user/change-password` |
+| `depositHistory1` + `deposit_history1.blade.php` | `/user/deposit/history` |
+| `withdrawLog1` + `withdraw/log1.blade.php` | `/user/withdraw/history` |
+| `myRefLog1` + `myRef1.blade.php` | `/user/referrals` |
+
+How the redirects work:
+
+- **The old GET URLs keep their route names** and redirect, so bookmarks
+  and the old menu still work. The query string is kept, so
+  `?search=TRX9` survives.
+- **`deposit/history1` *must* keep working.** The old deposit flow saved it
+  as the `success_url` / `failed_url` on deposits already in the database.
+  `PaymentController` now sends users to the main page directly.
+- **The duplicate POST routes are deleted**, because only the deleted forms
+  used them.
+
+**Verified:**
+
+- All 7 old URLs return 302 to the right page, with the query string kept.
+- The 3 old POST URLs return 404/405.
+- `route:list` loads.
+
+**Not removed yet.** These are also `*1` duplicates, but they are payment or
+shop *flows*, not simple pages. They will be checked and removed in the phase
+that migrates those flows:
+
+- the deposit flow (`insert1`, `confirm1`, `manual1`)
+- the withdraw flow (`withdraw1/now`, `preview1`)
+- the shop pages (`orders1`, `products1`, `product1`, `purchase1`)
+- the registration pages (`user-data1`, `register1`)
+
+**Small behaviour change:** `section = 2` users now see the main profile
+form, which requires a mobile number (9–11 digits).
+
+### Step 17: 🔴 Security fix: PV/BV log `?type=` could wipe tables
+
+**Found while migrating the PV log.** `PlanController@pvData` ran
+`PvLog::$scope()`, with `$scope` taken straight from `?type=` in the URL.
+PHP then calls *whatever static method is named*.
+
+**Proven on a throwaway SQLite database:** a logged-in user visiting
+`/user/pv-log?type=truncate` **emptied the entire `pv_logs` table for every
+user** (3 rows → 0). PV history is what binary commissions are calculated
+from.
+
+`Admin\ReportController@bvData` had the same flaw for `BvLog`. It is
+admin-only, but it is a plain GET link, so an attacker could trigger it by
+getting a logged-in admin to load a page containing
+`<img src=".../admin/report/bv-log?type=truncate">`.
+
+**Fix (its own commit):** only the real scopes are accepted:
+
+- PV: `leftPV`, `rightPV`, `cutPV`, `paidPV`
+- BV: `leftBV`, `rightBV`, `cutBV`, `paidBV`
+
+Anything else is treated as "show all".
+
+**Verified:** the same request now leaves the table intact (4 rows before
+and after) and shows the normal "All" view. The other `Model::$scope()`
+calls (admin users, deposits, withdrawals) only ever receive hard-coded
+strings, so they are safe.
+
+> **Action for you:** deploy this fix as soon as possible, even before the
+> rest of the migration. Also check the database backups: if `pv_logs` or
+> `bv_logs` were ever unexpectedly emptied, this is a likely cause.
+
+### Step 18: BV log is not migrated (the page is already broken)
+
+`routes/user.php` points `user/bv-log` (`user.bv.log`) to
+`PlanController@bvlog`, but **that method does not exist**, so the page
+currently fails with a server error. Only the unused `dashboard_old`
+sidebar links to it.
+
+I did not invent a page for it. Decide whether users should have a BV log at
+all; if not, delete the route.
+
+### Step 19: Shared pieces for the history pages
+
+**New PHP:** `core/app/Support/PaymentPresenter.php`
+
+- `depositStatus()` / `withdrawStatus()`: return the status as data
+  (label, colour, "when") instead of the HTML string that
+  `Deposit::statusBadge` built.
+- `details()`: the form a user filled in for a manual payment. Files become
+  the same encrypted download link as before.
+
+**New React:**
+
+- `Components/Modal.tsx`. A Bootstrap-styled dialog driven by React state,
+  without jQuery or bootstrap.js:
+  - Escape and backdrop click close it. There is a `staticBackdrop` option
+    for notices that must be acknowledged.
+  - It locks page scrolling while open.
+  - Focus moves into the dialog and returns to the button that opened it.
+  - It sets `role="dialog"`, `aria-modal` and `aria-labelledby`.
+- `lib/clipboard.ts` → `useCopy()`. Copies with the Clipboard API, falls back
+  to `execCommand` on HTTP, and shows a tick briefly afterwards. The 2FA page
+  now uses it too.
+- `lib/search.ts` → `visitWithQuery()`. A search or filter form reloads the
+  page data (no full reload), drops empty values and starts at page 1. The
+  Transactions page now uses it too.
+- A `PaymentDetail` type in `types/index.d.ts`.
+
+**XSS fixed in passing.** The old jQuery pop-ups on the deposit and
+withdraw pages built their HTML from the user's submitted form values and
+the admin's feedback text without escaping. React escapes everything; this
+was tested with `<img onerror>` and `<script>` payloads.
+
+### Step 20: Deposit history (`/user/deposit/history`)
+
+**New:** `Pages/User/DepositHistory.tsx`
+
+- Header with a "Deposit Now" link. The deposit page is still Blade, so this
+  is a plain `<a>`.
+- Search box.
+- Rows: gateway, transaction number, date, amount with charge, conversion,
+  status badge.
+- Manual deposits get a details pop-up (submitted fields, attachment link,
+  admin feedback). Automatic ones get a tick.
+- Empty state and pagination.
+
+**Changed:** `UserController@depositHistory` sends pre-formatted rows,
+`search` and `depositUrl`.
+
+### Step 21: Withdraw history (`/user/withdraw/history`)
+
+**New:** `Pages/User/WithdrawHistory.tsx`
+
+- Four totals: withdrawn, pending, rejected, number of requests. These were
+  database queries inside the old view; they are now in the controller.
+- Search, rows, details pop-up and pagination.
+- If an admin suspended withdrawals, the **"Withdraw Suspended"** notice
+  opens on load. It is static: only "I Understand" or × closes it. The reason
+  is shown as text.
+
+**Changed:** `WithdrawController@withdrawLog` sends:
+
+- `withdraws`, `stats`, `search` and `withdrawUrl`
+- `blocked` and `blockReason` (the reason only when blocked)
+
+### Step 22: Referrals and PV log
+
+**New:** `Pages/User/Referrals.tsx`
+
+- Stats, referral code, and the referral link with a copy button (shows a
+  toast).
+- WhatsApp, Telegram, Facebook, X and Email share links, all URL-encoded and
+  opened with `rel="noopener"`.
+- Member cards with coloured initials, and pagination.
+- **Privacy:** `PlanController@myRefLog` now sends only each referral's name,
+  username and join date. The Blade view had every column of the referred
+  users' records available to it.
+
+**New:** `Pages/User/PvLog.tsx` and `Pages/User/PvLog.css`
+
+- **CSS moved as-is.** The PV page's 340 lines of CSS lived only in
+  `pvLog.blade.php`. They are now a stylesheet the page imports, which Vite
+  builds into its own file and loads only on this page.
+- Stats and tabs (All / Left / Right). The "Cut" card and tab stay hidden,
+  as they were commented out in Blade.
+  - Tabs are Inertia links (`?type=`), so switching only fetches data.
+- Feed rows with leg badges, and pagination that keeps `?type=`.
+
+### Step 23: Verification for Steps 16–22
+
+1. `npm run build` passes.
+2. **PHP:** the real controllers were run against fixtures with two users'
+   data:
+   - Only the user's own deposits and withdrawals are returned; initiated
+     ones are hidden, as before.
+   - Totals are correct (₦10,000 / ₦3,000 / ₦500 / 3 requests).
+   - The search `DEP2` works.
+   - Attachments become encrypted download links.
+   - Referrals contain no email address.
+   - PV `?type=leftPV` filters correctly, and `?type=truncate` is harmless.
+3. **Browser: 32/32 new checks**, fed the *real controller output*,
+   including XSS payloads:
+   - **Deposit pop-up:**
+     - It opens with focus inside and locks page scrolling.
+     - The payload is shown as text.
+     - It shows the attachment link and the admin feedback.
+     - Escape and backdrop click close it, and focus returns to the button.
+   - **Search:** sends an XHR request (no full reload).
+   - **Withdraw:**
+     - The suspended notice opens on load and stays open until
+       acknowledged.
+     - Totals, status badges, pagination and the details pop-up.
+   - **Referrals:**
+     - Member numbers and avatar colours.
+     - The share links are URL-encoded.
+     - Copy shows "Copied!" and a toast.
+   - **PV log:**
+     - The page CSS chunk loads.
+     - The stat values, and the row kinds and signs.
+     - The tab click fetches `?type=leftPV` and updates the title.
+   - **No `alert()` ever ran.**
+4. The earlier suites still pass (30/30 Phase 2, 14/14 pilot).
+5. The admin keyword scanner now finds 195 React text strings.
+
+### Phase 2 summary
+
+| Page | URL | React page |
+|---|---|---|
+| Change password (pilot) | `/user/change-password` | `User/ChangePassword` |
+| Transactions | `/user/transactions` | `User/Transactions` |
+| Notifications | `/user/notifications` | `User/Notifications` |
+| Two-factor | `/user/twofactor` | `User/TwoFactor` |
+| Profile | `/user/profile-setting` | `User/ProfileSetting` |
+| Deposit history | `/user/deposit/history` | `User/DepositHistory` |
+| Withdraw history | `/user/withdraw/history` | `User/WithdrawHistory` |
+| Referrals | `/user/referrals` | `User/Referrals` |
+| PV log | `/user/pv-log` | `User/PvLog` |
+
+**Still to test on staging (real MySQL):** open each page, then:
+
+- open the deposit and withdraw detail pop-ups;
+- check the "suspended" notice with a blocked test user;
+- copy the referral link;
+- switch the PV tabs.
+
+### Known issue (not caused by this work)
+
+`php artisan route:cache` and `config:cache` fail on the original code too.
+`config/app.php` uses `require_once('timezone.php')`, so the second time the
+config loads, `$timezone` is undefined. It is a one-line fix (`require`
+instead of `require_once`), left for you to approve.
 
 ---
 
