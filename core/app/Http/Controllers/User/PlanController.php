@@ -248,7 +248,9 @@ class PlanController extends Controller
             'rivest_id' => 'required|numeric',
         ]);
 
-        $rinvest = Rinvestment::with('user')->find($request->rivest_id);
+        // Only the logged-in user's own investments: the receipt shows the
+        // owner's name, address, phone and email.
+        $rinvest = Rinvestment::with('user')->where('user_id', auth()->id())->find($request->rivest_id);
         if (!$rinvest) {
             $notify[] = ['error', 'Cannot download this receipt CODE:FF-109 '];
             return back()->withNotify($notify);
