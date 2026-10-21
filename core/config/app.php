@@ -1,6 +1,8 @@
 <?php
 use Illuminate\Support\Facades\Facade;
-require_once('timezone.php');
+// Not require_once: Laravel loads this file more than once (config:cache, route:cache),
+// and $timezone must be defined every time. The admin General Settings page writes timezone.php.
+require __DIR__ . '/timezone.php';
 return [
 
     /*

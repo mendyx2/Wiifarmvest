@@ -5,7 +5,7 @@ Route::namespace('Auth')->group(function () {
     Route::middleware('admin.guest')->group(function () {
         Route::controller('LoginController')->group(function () {
             Route::get('/', 'showLoginForm')->name('login');
-            Route::post('/', 'login')->name('login');
+            Route::post('/', 'login'); // same URL as the GET route above, which owns the name
             Route::get('logout', 'logout')->middleware('admin')->withoutMiddleware('admin.guest')->name('logout');
         });
          
@@ -135,7 +135,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::post('add-sub-balance-visa/{id}', 'addSubBalanceVisa')->name('add.sub.balance.visa')->middleware('admin.role:super-admin');
         Route::post('add-sub-balance-product-wallet/{id}', 'addSubBalanceProductWallet')->name('add.sub.balance.product.wallet')->middleware('admin.role:super-admin');
         Route::get('send-notification/{id}', 'showNotificationSingleForm')->name('notification.single');
-        Route::post('send-notification/{id}', 'sendNotificationSingle')->name('notification.single');
+        Route::post('send-notification/{id}', 'sendNotificationSingle'); // same URL as the GET route, which owns the name
         Route::get('login/{id}', 'login')->name('login');
         Route::post('status/{id}', 'status')->name('status');
         Route::post('withdrawal-block/{id}', 'toggleWithdrawalBlock')->name('withdrawal.block');
@@ -190,7 +190,8 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('/', 'allStockists')->name('index');
         Route::get('activeStockist', 'activeStockist')->name('activeStockist');
         Route::get('inactiveStockist', 'inactiveStockist')->name('inactiveStockist');
-        Route::get('changeUserStockistStatus', 'changeUserStockistStatus')->name('changeUserStockistStatus');
+        // Unnamed: the name belongs to the POST status/{id} route below (the one the stockist form uses).
+        Route::get('changeUserStockistStatus', 'changeUserStockistStatus');
         
         Route::get('detail/{id}', 'detail')->name('detail'); 
 
@@ -374,7 +375,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
         // Logo-Icon
         Route::get('setting/logo-icon', 'logoIcon')->name('setting.logo.icon');
-        Route::post('setting/logo-icon', 'logoIconUpdate')->name('setting.logo.icon');
+        Route::post('setting/logo-icon', 'logoIconUpdate'); // same URL as the GET route, which owns the name
 
         //Custom CSS
         Route::get('custom-css', 'customCss')->name('setting.custom.css');
