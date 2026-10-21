@@ -19,6 +19,7 @@ use App\Models\Investment;
 use App\Models\Shtransaction;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use App\Support\TreePresenter;
 use App\Http\Controllers\Controller;
 use App\Services\MatrixPlacementService;
 use App\Services\WalletService;
@@ -710,30 +711,57 @@ class PlanController extends Controller
     {  
        
         $tree      = showMatrixTree(auth()->user()->id);
-        //dd($tree);
         $pageTitle = "My Tree";
-        $user      = auth()->user();  
-        return view('Template::user.myTree', compact('pageTitle', 'tree', 'user'));
+        return $this->renderTree($pageTitle, $tree, auth()->user());
+    }
+
+    /**
+     * Genealogy tree page (own tree, or a downline member's tree).
+     * Migrated to React + Inertia (resources/js/Pages/User/MyTree.tsx).
+     * Legacy view: Template::user.myTree
+     */
+    private function renderTree(string $pageTitle, array $tree, User $owner)
+    {
+        return Inertia::render('User/MyTree', [
+            'owner'     => ['fullname' => $owner->fullname, 'username' => $owner->username],
+            'nodes'     => TreePresenter::nodes($tree, slots: true),
+            'images'    => TreePresenter::images(),
+            'searchUrl' => route('user.other.tree.search'),
+        ])->withViewData(compact('pageTitle'));
+    }
+
+    /**
+     * Stage tree page. Migrated to React + Inertia (resources/js/Pages/User/MyStages.tsx).
+     * Legacy view: Template::user.myStages
+     */
+    private function renderStageTree(string $pageTitle, array $tree, $stage)
+    {
+        $user = auth()->user();
+        return Inertia::render('User/MyStages', [
+            'owner'     => ['fullname' => $user->fullname, 'username' => $user->username],
+            'stage'     => (int) $stage,
+            'stages'    => collect(range(1, 5))->map(fn ($s) => ['number' => $s, 'url' => route('user.my.treeStage', $s)]),
+            'nodes'     => TreePresenter::nodes($tree, slots: false),
+            'images'    => TreePresenter::images(),
+            'searchUrl' => route('user.other.tree.search'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function myTreeStages()
     {     
         $stt = returnCurrentMatrixStage(auth()->user()->id);
-        //dd($st); 
-        if($stt->stage_id == 6){
+        if ($stt && $stt->stage_id == 6) {
             $stt = Matrix::where('user_id', auth()->user()->id)->where('stage_id', 5)->first();
         }
-        $st = $stt->stage_id;
+        // returnCurrentMatrixStage() returns false for a user without an active
+        // matrix row; the page used to crash on ->stage_id. Show stage 1 then.
+        $st = $stt ? $stt->stage_id : 1;
         // $tree      = showMatrixStageTree(auth()->user()->id, $st);
 
         //$tree      = showMatrixTree(auth()->user()->id);
         $tree      = showMatrixStageTree(auth()->user()->id, $st);
-       
-        //dd($tree);
         $pageTitle = "My Tree";
-        
-        $user      = auth()->user();
-        return view('Template::user.myStages', compact('pageTitle', 'tree', 'user', 'st'));
+        return $this->renderStageTree($pageTitle, $tree, $st);
     }
  
     public function myTreeStage($stage = 1)
@@ -741,10 +769,8 @@ class PlanController extends Controller
         $st =  sanitizeInput($stage); 
 
         $tree      = showMatrixStageTree(auth()->user()->id, $st);
-        //dd($tree);
-        $pageTitle = "My Tree";  
-        $user      = auth()->user();
-        return view('Template::user.myStages', compact('pageTitle', 'tree', 'user', 'st'));
+        $pageTitle = "My Tree";
+        return $this->renderStageTree($pageTitle, $tree, $st);
     }
 
      public function otherTree(Request $request, $username = null)
@@ -779,7 +805,7 @@ class PlanController extends Controller
             // end here
             $tree      = showMatrixTree($user->id);
             $pageTitle = "Tree of " . $user->fullname;
-            return view('Template::user.myTree', compact('pageTitle', 'tree', 'user'));
+            return $this->renderTree($pageTitle, $tree, $user);
         }
 
         $notify[] = ['error', 'Tree Not Found !'];
@@ -890,7 +916,34 @@ class PlanController extends Controller
             ['path' => $request->url(), 'query' => $request->query()]
         );
 
-        return view('Template::user.binaryList', compact('pageTitle', 'paginator', 'notInTree', 'searchUsername', 'total'));
+        $first = $paginator->firstItem() ?? 1;
+        $slot  = fn ($member, $child, $side) => $child
+            ? ['username' => $child->username]
+            : ['url' => route('user.distributor.index') . '?parent=' . urlencode($member->username) . '&position=' . $side];
+
+        // Migrated to React + Inertia (resources/js/Pages/User/BinaryList.tsx).
+        // Legacy view: Template::user.binaryList
+        return Inertia::render('User/BinaryList', [
+            'members' => $paginator->through(function ($m) use (&$first, $slot) {
+                return [
+                    'id'       => $m->id,
+                    'number'   => $first++,
+                    'fullname' => $m->fullname,
+                    'username' => $m->username,
+                    'level'    => $m->_level,
+                    'leg'      => $m->_leg,
+                    'plan'     => $m->_project->title ?? null,
+                    'left'     => $slot($m, $m->_left_user, 'left'),
+                    'right'    => $slot($m, $m->_right_user, 'right'),
+                    'joined'   => showDateTime($m->created_at, 'd M Y'),
+                    'ago'      => diffForHumans($m->created_at),
+                ];
+            }),
+            'total'          => $total,
+            'search'         => $searchUsername,
+            'notInTree'      => $notInTree,
+            'distributorUrl' => route('user.distributor.index'),
+        ])->withViewData(compact('pageTitle'));
     }
 
 

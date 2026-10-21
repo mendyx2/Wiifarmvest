@@ -53,57 +53,6 @@ class UserController extends Controller
     {
         $this->matrixService = $matrixService;
     }
-    public function downline(){
-        
-        $pageTitle  = 'User Downliner';
-
-        
-        $matric = Matrix::where('user_id', auth()->id())
-            ->where('stage_id', 1)->first();
-        
-       // $total_Downline_count = $this->matrixService->countTotalDownliner($matric);
-        //$total_Down = $total_Downline_count - 1;
-
-
-        return view('Template::user.downline', compact('pageTitle'));
-    
-    }
-    public function downline1(Request $request){
-
-        
-        $request->validate([
-            'username'  => 'required',
-        ]);
-
-        $pageTitle  = 'User Downliner';
-
-        $username = sanitizeInput($request->username);
-        $user = User::where('username', $username)->first();
-        if ($user) {
-            $total_Downline_count = $this->matrixService->checkIfIdIs_A_Downline($user->id, auth()->id());
-            if ($total_Downline_count) {
-                $userID = $total_Downline_count->user_id;
-                //dd($userID);
-                $matric = Matrix::where('user_id', $userID)->first();
-                $tree      = showMatrixTree($userID);
-
-                return view('Template::user.downline1', compact('pageTitle',  'matric', 'tree'));
-
-
-            }else{
-
-                $notify[] = ['error', 'User is not in your tree'];
-               return to_route('user.downline')->withNotify($notify);
-            }
-
-            
-            
-        }else {
-            $notify[] = ['error', 'User does not exist'];
-            return to_route('user.downline')->withNotify($notify);
-        }
-        
-    }
 
     public function home()
     {   $user = User::find(auth()->id());

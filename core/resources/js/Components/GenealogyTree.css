@@ -1,0 +1,12 @@
+/* Members in the tree are <button>s (keyboard accessible); the old page used
+   <div>s. Remove the browser's button look and keep the layout's hover colour. */
+.tree-node-wrap button.user {
+    background: transparent;
+    border: 0;
+    font: inherit;
+    color: inherit;
+}
+.tree-node-wrap button.user:hover,
+.tree-node-wrap button.user:focus-visible {
+    background: #F0FDF4;
+}

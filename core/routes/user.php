@@ -58,8 +58,8 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::get('dashboard', 'home')->name('home');
                 Route::get('notifications', 'notifications')->name('notifications');
                 Route::post('notifications/mark-read', 'markNotificationsRead')->name('notifications.mark.read');
-                Route::get('downline', 'downline')->name('downline');
-                Route::post('downline1', 'downline1')->name('downline1');
+                // Removed duplicate page: searching a member's tree is on the My Tree page.
+                Route::get('downline', fn () => to_route('user.my.tree'))->name('downline');
                
                 
                 //stockist

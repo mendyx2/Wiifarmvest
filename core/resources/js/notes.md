@@ -77,7 +77,7 @@ gets replaced, one page at a time.
 | **1. Pilot page** | Change Password (`/user/change-password`) | ✅ Done |
 | **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | ✅ Done: 8 pages (Steps 9–22); BV log skipped because its page is broken (Step 18) |
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
-| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects · 4c network trees · 4d shop/cart/orders · 4e stockist area | 🟡 In progress: 4a and 4b done (Steps 32–46) |
+| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects · 4c network trees · 4d shop/cart/orders · 4e stockist area | 🟡 In progress: 4a, 4b and 4c done (Steps 32–52) |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
@@ -1366,6 +1366,140 @@ The test now types "3", then "30", and checks the field keeps focus.
 - Upgrade a project with enough VISA, then check the sponsor's bonus,
   cash-back and PV. **This is the one money path not run end to end here**,
   because it calls about ten commission helpers.
+
+### Step 47: Duplicate Shares page removed (owner: "remove the duplicates")
+
+`/user/shares` was a second place to buy shares, next to the Buy Shares
+pop-up on the investment portfolio. Nothing linked to it.
+
+**Removed:**
+
+- `PlanController@shares`, `shares.blade.php`.
+- The JSON reply in `sharesStore`, which only that page used. Failures now
+  always redirect back to the portfolio with an error toast.
+
+**Kept:** the purchase route itself (`POST /user/shares`,
+`user.shares.purchase`), used by the pop-up.
+
+**Old URL:** `GET /user/shares` redirects to the investment portfolio.
+
+**Re-tested:** valid purchase, closed plan, fewer than 5 units, not enough
+balance. The balance always matches.
+
+`/user/plan` is **not** a duplicate (it is a broken page), so it is still
+waiting for your decision (Step 45).
+
+### Step 48: Duplicate downline pages removed
+
+`/user/downline` + `POST /user/downline1` (search for a member and show their
+tree) did the same as the tree page's "Search username" (`otherTree`), with
+the same "is this user in your tree?" check. No menu linked to them.
+
+**Removed:**
+
+- `UserController@downline` and `@downline1`.
+- `downline.blade.php` and `downline1.blade.php`.
+- `myStages2.blade.php` (no controller rendered it).
+
+**Old URL:** `GET /user/downline` redirects to My Tree.
+
+### Step 49: TreePresenter and the GenealogyTree component
+
+**New PHP:** `app/Support/TreePresenter.php`
+
+- Turns the 15-slot tree (keys `a`–`o`) into data: username, stage, sponsor,
+  pairing PV, ranking PV, and a link to their tree.
+- **3 batched queries** instead of the old `showSingleUserinTree_new()`
+  helper's 3 queries per node. A whole tree page is now about 21 queries,
+  roughly 45 fewer.
+- Empty positions under an existing member become "slot" links to the
+  distributor form, with the parent and side pre-filled (as before). These
+  appear on My Tree only, not on the stage trees.
+- The helper built its HTML with values that were not escaped; React
+  escapes everything.
+
+**New React:**
+
+- `Components/GenealogyTree.tsx`:
+  - The 4 levels and the connector lines, with the same markup and CSS as
+    the Blade page.
+  - The member pop-up: stage, sponsor, pairing PV with bars, ranking PV,
+    and "View their tree" (no full reload).
+  - The phone auto-scale, so the tree shrinks to fit the screen.
+  - Members are real buttons, so they work with the keyboard;
+    `GenealogyTree.css` keeps their old look and green hover.
+  - **Small fix:** the pop-up avatar's letter was always "U", because it was
+    taken from the text " Username: …". The avatar image is shown instead.
+- `Components/TreeSearch.tsx`: the "Search username" box.
+
+### Step 50: My Tree, My Stages, a member's tree, Binary List
+
+**New:**
+
+- `Pages/User/MyTree.tsx`: My Tree, and the tree of a downline member.
+- `Pages/User/MyStages.tsx`: stage trees, with the stage 1–5 tabs.
+- `Pages/User/BinaryList.tsx`: the table on desktop and cards on phones;
+  search, "not in your tree", empty state, and pagination.
+
+**Changed:** `PlanController`
+
+- `myTree`, `myTreeStages`, `myTreeStage` and `otherTree` now share
+  `renderTree()` / `renderStageTree()`.
+- `binaryList` sends display-ready rows.
+- **Unchanged:** the "is this member in your downline?" check, and the
+  validation on tree search.
+
+**Crash fix:** `myTreeStages` read `->stage_id` from
+`returnCurrentMatrixStage()`, which returns `false` for a user without an
+active matrix row. **"My Stages" in the sidebar failed for those users.**
+It now shows stage 1.
+
+**Not changed, but worth knowing:**
+
+- `binaryList` loads **every user's** stage-1 matrix row into memory on each
+  visit, to walk the tree. That is fine now, but it will slow down as the
+  network grows. Worth replacing with a stored path or nested-set column
+  later.
+- `/user/binary-summery` points to a method that does not exist (another
+  broken route, like `/user/plan`).
+
+### Step 51: Verification for 4c
+
+- **The real controllers were run on a small test network** (7 → 20, 21;
+  20 → 22, plus one outsider):
+
+  | Case | Result |
+  |---|---|
+  | Tree nodes | correct, with stage, sponsor and PV |
+  | Empty slots | correct slot links |
+  | Stage pages | no slot links |
+  | Another member's tree | yours: shown; the outsider: "User is not in your tree" |
+  | Search for an unknown username | validation error |
+  | Binary list | levels, legs, plans and slots correct; search and "not in tree" work |
+  | "My Stages" with no active matrix | loads instead of crashing |
+
+- **Old URLs:** `/user/downline` → My Tree, `/user/shares` → portfolio;
+  `POST /user/downline1` no longer exists. `route:cache` still works.
+- **Browser: 20/20 checks** on the real build, with the dashboard layout's
+  CSS loaded:
+  - The 1/2/4/8 layout and the connectors.
+  - Members as buttons that keep the old look and hover.
+  - Enter opens the pop-up, with the PV bars.
+  - "View their tree" and search without a full reload.
+  - The tree **scales to fit a 375px phone** (scale 0.61).
+  - Stage tabs, and the binary list on desktop and phone.
+- **All suites: 207 browser checks, 0 failures.** The keyword scanner finds
+  585 React strings.
+
+### Step 52: Phase 4 status
+
+| Batch | Status |
+|---|---|
+| 4a KYC and tickets | ✅ |
+| 4b investments, awards, ACB, projects | ✅ |
+| 4c network trees | ✅ |
+| 4d shop, cart and orders | next |
+| 4e stockist area | after 4d |
 
 ---
 
