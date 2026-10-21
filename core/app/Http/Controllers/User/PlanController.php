@@ -394,45 +394,59 @@ class PlanController extends Controller
 
             //Process the share pass to upline up to 7th Gen
             $this->sharesUplinerCommision($user, $trx_no, $totalPayable);
-            
 
             DB::commit();
-
-            $newInvestment = $rinvest->fresh();
-
-            $notify[] = ['success', 'Purchased ' . $quantity . ' units of ' . $plan->name . ' successfully.'];
-
-            if ($request->ajax()) {
-                return response()->json([
-                    "status" => "success",
-                    "message" => "Purchased $quantity units of $plan->name successfully.",
-                    "totalUnits" => $user->rinvestment()->sum('units'),
-                    "totalValue" => showAmount($user->rinvestment()->sum(fn($i) => $i->units * $i->unit_cost)),
-                    "newInvestment" => [
-                        'plan_name' => $plan->name,
-                        'units' => $quantity,
-                        'unit_cost' => showAmount($plan->price),
-                        'total' => showAmount($totalPayable),
-                        'status' => 'Active',
-                        'details_url' => route('plan.details', $newInvestment->id),
-                    ],
-                    "goalPercent" => min(100, ($user->rinvestment()->sum(fn($i) => $i->units * $i->unit_cost)/50000)*100),
-                ]);
-            }
         } catch (InsufficientBalanceException) {
             DB::rollBack();
-            if ($request->ajax()) {
-                return response()->json(["status" => "error", "message" => "Insufficient Balance."], 422);
-            }
-            $notify[] = ['error', 'Insufficient Balance.'];
+            return $this->sharesPurchaseFailed($request, 'Insufficient Balance.', 422);
         } catch (\Throwable $e) {
             DB::rollBack();
-            if ($request->ajax()) {
-                return response()->json(["status" => "error", "message" => "Error completing purchase."], 500);
-            }
-            $notify[] = ['error', 'Error completing purchase.'];
+            report($e);
+            return $this->sharesPurchaseFailed($request, 'Error completing purchase.', 500);
         }
 
+        // The purchase is committed from here on, so nothing below may report
+        // it as failed. (Building this reply used to sit inside the try block:
+        // a wrong route name made every AJAX purchase answer "Error completing
+        // purchase" after the money had already been taken.)
+        $message = 'Purchased ' . $quantity . ' units of ' . $plan->name . ' successfully.';
+
+        if ($this->wantsSharesJson($request)) {
+            $owned      = $user->rinvestment()->get();
+            $ownedValue = $owned->sum(fn ($i) => $i->units * $i->unit_cost);
+            return response()->json([
+                "status" => "success",
+                "message" => $message,
+                "totalUnits" => $owned->sum('units'),
+                "totalValue" => showAmount($ownedValue),
+                "newInvestment" => [
+                    'plan_name' => $plan->name,
+                    'units' => $quantity,
+                    'unit_cost' => showAmount($plan->price),
+                    'total' => showAmount($totalPayable),
+                    'status' => 'Active',
+                    'details_url' => route('user.plan.details', $rinvest->id),
+                ],
+                "goalPercent" => min(100, ($ownedValue / 50000) * 100),
+            ]);
+        }
+
+        $notify[] = ['success', $message];
+        return redirect()->route('user.plan.portfolio')->withNotify($notify);
+    }
+
+    /** The old Shares page posts with fetch() and expects JSON; Inertia pages expect a redirect. */
+    private function wantsSharesJson(Request $request): bool
+    {
+        return $request->ajax() && !$request->header('X-Inertia');
+    }
+
+    private function sharesPurchaseFailed(Request $request, string $message, int $status)
+    {
+        if ($this->wantsSharesJson($request)) {
+            return response()->json(["status" => "error", "message" => $message], $status);
+        }
+        $notify[] = ['error', $message];
         return redirect()->route('user.plan.portfolio')->withNotify($notify);
     }
     protected function sharesUplinerCommision(User $user, $trx_no, $totalPayable)
