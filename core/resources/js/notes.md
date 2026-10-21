@@ -76,8 +76,9 @@ gets replaced, one page at a time.
 | **0. Foundation** | Vite, React 19, TypeScript, Inertia (server and client), root view inside the Blade layout, shared props, i18n bridge, CSRF, flash toasts, Railway build | ✅ Done |
 | **1. Pilot page** | Change Password (`/user/change-password`) | ✅ Done |
 | **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | ✅ Done: 8 pages (Steps 9–22); BV log skipped because its page is broken (Step 18) |
-| **3. Shared component library** | `DataTable`, `Pagination`, `Modal`, `FormField`, `Select`, `FileUpload`, `StatCard`, `Badge`, `EmptyState`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite | 🟡 Started: `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal`, plus the `useCopy`, `visitWithQuery` and `useTrans` helpers |
-| **4. Complex user flows** | Deposit and payment gateways (external redirects use `Inertia::location()`), withdraw, investments/projects, shop/cart/orders, stockist area, KYC, support tickets, genealogy and binary trees | Later |
+| **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
+| **4. Other user flows** | Investments/projects, shop/cart/orders, stockist area, KYC (can reuse `DynamicForm`), support tickets, genealogy and binary trees | Next |
+| *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
 | **7. Admin panel** | 186 views. Use a separate root view (`inertia.admin`) and `AdminLayout`, applying the same recipe | Last |
@@ -757,10 +758,238 @@ was tested with `<img onerror>` and `<script>` payloads.
 
 ### Known issue (not caused by this work)
 
-`php artisan route:cache` and `config:cache` fail on the original code too.
-`config/app.php` uses `require_once('timezone.php')`, so the second time the
-config loads, `$timezone` is undefined. It is a one-line fix (`require`
-instead of `require_once`), left for you to approve.
+`php artisan route:cache` and `config:cache` failed on the original code too.
+**This was fixed in Step 24, with your approval.**
+
+---
+
+## Part 3c: Phase 3 change log (deposit and withdraw flows)
+
+### Step 24: Config and route caching fixed (owner approved)
+
+Production should run `php artisan config:cache` and `route:cache` for speed.
+Both failed, for two separate reasons that were already there.
+
+1. **`config/app.php`** used `require_once('timezone.php')`. Laravel loads
+   the config file more than once, so the second time `$timezone` was
+   undefined.
+   - **Fix:** `require __DIR__ . '/timezone.php';`.
+   - The admin General Settings page still writes `timezone.php` the same
+     way.
+2. **`routes/admin.php`** gave the same name to two routes in four places.
+   Without caching, Laravel silently keeps the later one; caching refuses.
+   - `admin.login`, `admin.users.notification.single` and
+     `admin.setting.logo.icon`: a GET and a POST on the *same* URL. The
+     name now stays on the GET only.
+   - `admin.stockist.changeUserStockistStatus`: the name was on both a GET
+     without an id and the POST `status/{id}`. Laravel already resolved it
+     to the POST, which is the one the stockist form uses, so the name now
+     stays on the POST.
+   - In every case `route()` produces exactly the same URL as before.
+
+**Verified:** `config:cache` and `route:cache` both succeed, and all route
+names resolve to the same URLs as before (checked with `tinker`).
+
+### Step 25: Duplicate `*1` deposit/withdraw flows removed
+
+**Decision (owner):** "if it is a duplicate page, remove it."
+
+The duplicate methods were compared line by line with the main ones. **The
+only difference was which `*1` route they redirected to next.** Nothing
+outside the duplicates linked to them.
+
+**Removed:**
+
+- `PaymentController`: `depositInsert1`, `depositConfirm1`,
+  `manualDepositConfirm1` and `manualDepositUpdate1`.
+- `WithdrawController`: `withdrawMoney1`, `withdrawStore1`,
+  `withdrawPreview1` and `withdrawSubmit1`.
+- Their views: `payment/manual1`, `withdraw/methods1` and
+  `withdraw/preview1`.
+- The POST routes `deposit/insert1`, `deposit/manual1`, `withdraw1` and
+  `withdraw1/preview1`.
+
+**Old GET URLs redirect** to the main flow:
+
+| Old URL | Now goes to |
+|---|---|
+| `deposit/confirm1` | `deposit/confirm` |
+| `deposit/manual1` | `deposit/manual` |
+| `withdraw1/now` | `withdraw` |
+| `withdraw1/preview1` | `withdraw/preview` |
+
+The deposit in progress is tracked in the session, so a user halfway through
+the old flow simply continues in the main one.
+
+### Step 26: New shared pieces
+
+**PHP:** `app/Support/FormPresenter.php`
+
+- `fields($formId)`: the form an admin built (gateway or withdraw method) as
+  a plain list for React. Validation is **unchanged** and still on the
+  server (`FormProcessor::valueValidation`).
+- `safeHtml($html)`: admin-written instructions passed through
+  **HTMLPurifier**, which was already installed. Formatting is kept;
+  `<script>` and `onerror=` are removed. The Blade pages printed this HTML
+  completely raw.
+
+**React:**
+
+- `Components/DynamicForm.tsx`. The React version of `<x-viser-form>`.
+  - It supports every field type: text, url, email, date, time, datetime,
+    number, textarea, select, checkbox, radio and file.
+  - Widths, required marks, instruction tooltips and accepted file types
+    match the Blade component.
+  - Server errors show under the right field, including errors on checkbox
+    arrays (`channels.0`).
+  - **KYC can reuse it later.**
+- `lib/money.ts`. `depositQuote()` and `withdrawQuote()` are the fee
+  calculations from the old jQuery code, written once, with comments
+  pointing at the PHP that does the real calculation.
+- `lib/clipboard.ts`. The fallback now copies through a temporary text box.
+  The bank-details copy buttons have no input to select, so on plain HTTP
+  the old fallback would have shown a tick **without copying**. The 2FA and
+  Referrals pages were simplified to match.
+
+### Step 27: Deposit page (`/user/deposit`)
+
+**New:** `Pages/User/Deposit.tsx`
+
+- Gateway list. The selection is a real radio button, so it works with the
+  keyboard (arrow keys) and with the existing `:has(input:checked)` styling.
+- Amount box, quick amounts (₦500 … ₦50,000), and live limit, charge and
+  total, plus conversion rows for foreign currencies and the crypto notice.
+- "Confirm Deposit" stays disabled outside the gateway's limits. The server
+  checks the limits again.
+- The "Company Bank Details" pop-up has copy buttons. Those details were
+  hard-coded in the view; they are now in one place in
+  `PaymentController@deposit`.
+
+**Changed:** `PaymentController@deposit`
+
+- **It sends only the fields the page shows.** The Blade page dumped each
+  whole gateway record as JSON into the HTML. The secret keys were hidden by
+  the model, so nothing leaked, but now there is nothing to leak.
+
+**Changed:** `PaymentController@depositInsert`
+
+- On success it returns `Inertia::location(route('user.deposit.confirm'))`.
+- The confirm step for **automatic gateways stays Blade**: each one loads
+  its provider's own JavaScript or redirects off-site. `Inertia::location`
+  tells the browser to load that step as a normal page.
+- Manual gateways continue to the React page below.
+
+**Small fix:** the "Show All Payment Options" button appeared with exactly 5
+gateways, when there was nothing more to show. It now appears only when
+there are more than 5.
+
+### Step 28: Manual deposit proof (`/user/deposit/manual`)
+
+**New:** `Pages/User/DepositManual.tsx`
+
+- Amount banner, and the steps (Amount ✓, Gateway ✓, Confirm), with
+  `aria-current` on the current step.
+- The admin's payment instructions, sanitised.
+- The admin-built proof form (`DynamicForm`). An upload goes as multipart
+  automatically.
+
+**Changed:** `PaymentController@manualDepositConfirm` sends:
+
+- `amount` and `payAmount`
+- `instructions` (sanitised) and `fields`
+- the URLs
+
+`manualDepositUpdate` (saving the proof) is **unchanged**.
+
+### Step 29: Withdraw page (`/user/withdraw`)
+
+**New:** `Pages/User/Withdraw.tsx` and `Pages/User/Withdraw.css`
+
+- Balance, payout bank account (with an "Edit" link to the profile) and
+  method list.
+- Amount box with live fee, "You Receive" and conversion. "Confirm
+  Withdrawal" is disabled outside the method's limits.
+- "Withdrawal Suspended" notice for blocked users.
+  - Its 110 lines of CSS lived only in `withdraw/methods.blade.php` and were
+    moved to `Withdraw.css`.
+  - **One typo fixed:** a stray `xx` made browsers ignore
+    `align-items: center` on the bank "Edit" link.
+  - The old view also left a `<div>` unclosed in the blocked case.
+
+**Changed:** `WithdrawController@withdrawMoney` sends:
+
+- `balance`, `bank`, `methods` (only display fields)
+- `blocked` and `blockReason`
+- the URLs
+
+`withdrawStore` is **unchanged**; it still redirects to the preview, which
+is now React.
+
+### Step 30: Withdraw preview (`/user/withdraw/preview`)
+
+**New:** `Pages/User/WithdrawPreview.tsx`
+
+- Summary (requested amount, charge, "you receive", amount in the method's
+  currency) and the steps.
+- The method's description, sanitised.
+- The admin-built details form (`DynamicForm`).
+- A Google Authenticator code field when the user has 2FA on. The code is
+  cleared after every attempt; the other fields are kept.
+
+**Changed:** `WithdrawController@withdrawPreview`. `submitWithdrawal`, which
+locks the row, debits through `WalletService` and blocks double submits, is
+**unchanged**.
+
+### Step 31: Verification for Phase 3
+
+1. `npm run build` passes with no warnings (after the CSS typo fix).
+2. **The real controllers were run end to end** against a throwaway database:
+
+   | Case | Result |
+   |---|---|
+   | Deposit below minimum / disabled gateway / no amount | rejected, **no deposit row created** |
+   | Paystack ₦10,000 (1.5% + ₦100) | saved: charge ₦250, total ₦10,250; browser sent to the gateway page (409 + location) |
+   | Gateway page props | **no secret key** anywhere in the props |
+   | Manual deposit: missing fields / bank not in the admin's list | validation errors, nothing saved |
+   | Manual deposit: valid | status "pending review", details saved, admin notified, back to history with a toast |
+   | Withdraw above balance / below minimum / disabled method | rejected |
+   | Withdraw ₦5,000 (1% + ₦50) | charge ₦100; **balance untouched until submit** |
+   | Submit | balance ₦20,000 → **₦15,000**, one ledger entry, status pending |
+   | **Double submit** | rejected, **balance still ₦15,000** |
+   | 2FA user, wrong code | error, balance and status unchanged |
+   | 2FA user, correct code | balance ₦15,000 → ₦13,000 |
+   | Admin HTML containing `<script>` / `onerror` | stripped; formatting kept |
+
+3. **Browser: 43/43 checks** on the real build, fed the real controller
+   output:
+   - **Deposit page:** fee and total calculation, limits, quick amounts,
+     keyboard selection, the POST body, the full-page hand-off to the
+     gateway, the bank pop-up and its copy button.
+   - **Manual proof:** sanitised instructions, field errors, success toast.
+   - **Every `DynamicForm` field type:** multipart upload, checkbox arrays,
+     radio, select, the `channels.0` error.
+   - **Withdraw page:** fees, limits, the POST, the switch to the preview,
+     the blocked notice with its CSS.
+   - **Preview:** 2FA field, code cleared after a wrong attempt.
+4. All earlier suites still pass: **119 browser checks in total, 0
+   failures.**
+5. The admin keyword scanner now finds **280** React text strings.
+
+### Still to test on staging (real MySQL, real gateways)
+
+- A **small real Paystack deposit** from start to finish (the confirm page is
+  unchanged Blade, but test the hand-off).
+- A **manual bank-transfer deposit** with a real receipt upload, then
+  approve it in the admin panel.
+- A **withdrawal** with and without 2FA, then approve it in the admin panel.
+- A user with **withdrawals suspended**.
+
+### Rollback (any Phase 3 page)
+
+As before: restore the `return view(...)` named in the comment above each
+`Inertia::render`.
+
+For `depositInsert`, restore `return to_route('user.deposit.confirm');`.
 
 ---
 

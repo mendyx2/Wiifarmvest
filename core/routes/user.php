@@ -316,16 +316,11 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
 
 
-            // Withdraw food production
-            Route::controller('WithdrawController')->prefix('withdraw1')->name('withdraw1')->group(function () {
-                //Route::middleware('kyc')->group(function () {
-                    Route::get('/now', 'withdrawMoney1')->name('.now');
-                    Route::post('/', 'withdrawStore1')->name('.money1');
-                    Route::get('preview1', 'withdrawPreview1')->name('.preview1');
-                    Route::post('preview1', 'withdrawSubmit1')->name('.submit1');
-                //});
-                Route::get('history1', fn () => to_route('user.withdraw.history', request()->query()))->name('.history1'); // removed duplicate page
-               
+            // Removed duplicate withdraw flow (withdraw1/*): old URLs redirect to the main flow.
+            Route::prefix('withdraw1')->name('withdraw1')->group(function () {
+                Route::get('/now', fn () => to_route('user.withdraw', request()->query()))->name('.now');
+                Route::get('preview1', fn () => to_route('user.withdraw.preview', request()->query()))->name('.preview1');
+                Route::get('history1', fn () => to_route('user.withdraw.history', request()->query()))->name('.history1');
             });
 
             //MatricController.php
@@ -405,13 +400,11 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             
 
             Route::post('insert', 'depositInsert')->name('insert');
-            Route::post('insert1', 'depositInsert1')->name('insert1');
             Route::get('confirm', 'depositConfirm')->name('confirm');
-            Route::get('confirm1', 'depositConfirm1')->name('confirm1');
+            Route::get('confirm1', fn () => to_route('user.deposit.confirm', request()->query()))->name('confirm1'); // removed duplicate flow
             Route::get('manual', 'manualDepositConfirm')->name('manual.confirm');
-            Route::get('manual1', 'manualDepositConfirm1')->name('manual.confirm1');
+            Route::get('manual1', fn () => to_route('user.deposit.manual.confirm', request()->query()))->name('manual.confirm1'); // removed duplicate flow
             Route::post('manual', 'manualDepositUpdate')->name('manual.update');
-            Route::post('manual1', 'manualDepositUpdate1')->name('manual.update1');
         });
     });
 });

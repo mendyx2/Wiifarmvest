@@ -1,5 +1,5 @@
 import { Head, useForm } from '@inertiajs/react';
-import { useRef, type FormEvent } from 'react';
+import type { FormEvent } from 'react';
 import { useCopy } from '@/lib/clipboard';
 import { useTrans } from '@/lib/i18n';
 import type { PageProps } from '@/types';
@@ -18,7 +18,6 @@ const AUTHENTICATOR_URL = 'https://play.google.com/store/apps/details?id=com.goo
 export default function TwoFactor({ enabled, secret, qrCodeUrl, enableUrl, disableUrl }: Props) {
     const t = useTrans();
     const { copied, copy } = useCopy();
-    const keyInput = useRef<HTMLInputElement>(null);
     const form = useForm({ key: secret ?? '', code: '' });
 
     function submit(event: FormEvent) {
@@ -53,7 +52,6 @@ export default function TwoFactor({ enabled, secret, qrCodeUrl, enableUrl, disab
                                     <label className="form--label" htmlFor="setup-key">{t('Setup Key')}</label>
                                     <div className="input-group">
                                         <input
-                                            ref={keyInput}
                                             id="setup-key"
                                             type="text"
                                             value={secret}
@@ -61,7 +59,7 @@ export default function TwoFactor({ enabled, secret, qrCodeUrl, enableUrl, disab
                                             readOnly
                                             onFocus={(e) => e.target.select()}
                                         />
-                                        <button type="button" className="input-group-text" onClick={() => secret && copy(secret, keyInput.current)} aria-label={t('Copy')}>
+                                        <button type="button" className="input-group-text" onClick={() => secret && copy(secret)} aria-label={t('Copy')}>
                                             <i className={copied ? 'fas fa-check' : 'fas fa-copy'} />
                                         </button>
                                     </div>

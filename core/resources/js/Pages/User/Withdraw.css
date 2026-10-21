@@ -1,0 +1,110 @@
+/* Moved from resources/views/templates/basic/user/withdraw/methods.blade.php (@push('style')).
+   Only change: removed a stray "xx" in .wd-bank-edit that made browsers drop align-items: center. */
+/* ── Withdrawal blocked notice ───────────────────────────── */
+.wd-blocked-wrap {
+    max-width: 520px;
+    margin: 60px auto;
+    background: #fff8f8;
+    border: 1.5px solid #f5c6cb;
+    border-radius: 16px;
+    padding: 40px 32px;
+    text-align: center;
+    box-shadow: 0 4px 24px rgba(220,53,69,0.08);
+}
+.wd-blocked-icon {
+    font-size: 3.5rem;
+    color: #dc3545;
+    margin-bottom: 12px;
+    line-height: 1;
+}
+.wd-blocked-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #a71d2a;
+    margin-bottom: 10px;
+}
+.wd-blocked-msg {
+    color: #555;
+    font-size: 0.95rem;
+    margin-bottom: 16px;
+}
+.wd-blocked-reason {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    color: #664d03;
+    margin-bottom: 16px;
+    text-align: left;
+}
+.wd-blocked-reason-label {
+    font-weight: 700;
+    margin-right: 6px;
+}
+.wd-blocked-support {
+    font-size: 0.85rem;
+    color: #888;
+}
+.wd-bank-card {
+    background: #fff;
+    border-radius: 14px;
+    border: 1.5px solid #e8eaf0;
+    overflow: hidden;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+}
+.wd-bank-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: linear-gradient(90deg, #f0f4ff, #f7f9ff);
+    border-bottom: 1px solid #e8eaf0;
+}
+.wd-bank-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #4a5568;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+.wd-bank-label i { margin-right: 5px; color: #4bb94d; }
+.wd-bank-edit {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #0f521a;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid #125c25;
+    transition: background 0.2s, color 0.2s;
+}
+.wd-bank-edit:hover { background: #153d14; color: #fff; }
+.wd-bank-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.wd-bank-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.wd-bank-key {
+    font-size: 0.8rem;
+    color: #000;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+.wd-bank-val {
+    font-size: 0.87rem;
+    font-weight: 600;
+    color: #2d3748;
+    text-align: right;
+}
+.wd-bank-acno {
+    font-family: monospace;
+    letter-spacing: 1px;
+    color: #37d383;
+}

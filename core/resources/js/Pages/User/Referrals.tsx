@@ -1,5 +1,4 @@
 import { Head } from '@inertiajs/react';
-import { useRef } from 'react';
 import Pagination from '@/Components/Pagination';
 import { useCopy } from '@/lib/clipboard';
 import { useTrans } from '@/lib/i18n';
@@ -18,12 +17,11 @@ const AVATAR_COLORS = ['#059669', '#2563EB', '#7C3AED', '#D97706', '#DB2777', '#
 export default function Referrals({ referrals, refUrl, refCode }: Props) {
     const t = useTrans();
     const { copied, copy } = useCopy(2500);
-    const linkInput = useRef<HTMLInputElement>(null);
     const count = referrals.total;
     const share = encodeURIComponent(refUrl);
 
     async function copyLink() {
-        if (await copy(refUrl, linkInput.current)) {
+        if (await copy(refUrl)) {
             window.notify?.('success', t('Referral link copied!'));
         }
     }
@@ -84,7 +82,7 @@ export default function Referrals({ referrals, refUrl, refCode }: Props) {
                         <div className="ref-code-badge">{refCode}</div>
                     </div>
                     <div className="ref-link-group">
-                        <input ref={linkInput} type="text" value={refUrl} readOnly aria-label={t('Referral link')} onFocus={(e) => e.target.select()} />
+                        <input type="text" value={refUrl} readOnly aria-label={t('Referral link')} onFocus={(e) => e.target.select()} />
                         <button type="button" className={`ref-link-copy ${copied ? 'copied' : ''}`} onClick={copyLink}>
                             <i className="las la-copy" />
                             <span>{copied ? t('Copied!') : t('Copy')}</span>
