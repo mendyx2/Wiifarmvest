@@ -269,22 +269,7 @@ class UserController extends Controller
         $deposits  = auth()->user()->deposits()->searchable(['trx'])->with(['gateway'])->orderBy('id', 'desc')->paginate(getPaginate());
         return view('Template::user.deposit_history', compact('pageTitle', 'deposits'));
     }
-    public function depositHistory1(Request $request)
-    {
-        $pageTitle = 'Deposit History';
-        $deposits  = auth()->user()->deposits()->searchable(['trx'])->with(['gateway'])->orderBy('id', 'desc')->paginate(getPaginate());
-        return view('Template::user.deposit_history1', compact('pageTitle', 'deposits'));
-    }
 
-    public function show2faForm1()
-    {
-        $ga        = new GoogleAuthenticator();
-        $user      = auth()->user();
-        $secret    = $ga->createSecret();
-        $qrCodeUrl = $ga->getQRCodeGoogleUrl($user->username . '@' . gs('site_name'), $secret);
-        $pageTitle = '2FA Security';
-        return view('Template::user.twofactor1', compact('pageTitle', 'secret', 'qrCodeUrl'));
-    }
 
     public function show2faForm()
     {
@@ -295,7 +280,7 @@ class UserController extends Controller
         $pageTitle = '2FA Security';
 
         // Migrated to React + Inertia (resources/js/Pages/User/TwoFactor.tsx).
-        // Legacy view: Template::user.twofactor1
+        // Legacy view: Template::user.twofactor
         return Inertia::render('User/TwoFactor', [
             'enabled'    => (bool) $user->ts,
             'secret'     => $user->ts ? null : $secret,
@@ -329,25 +314,6 @@ class UserController extends Controller
     }
 
 
-    public function create2fa1(Request $request)
-    {
-        $user = auth()->user();
-        $request->validate([
-            'key'  => 'required',
-            'code' => 'required',
-        ]);
-        $response = verifyG2fa($user, $request->code, $request->key);
-        if ($response) {
-            $user->tsc = $request->key;
-            $user->ts  = Status::ENABLE;
-            $user->save();
-            $notify[] = ['success', 'Two factor authenticator activated successfully'];
-            return back()->withNotify($notify);
-        } else {
-            $notify[] = ['error', 'Wrong verification code'];
-            return back()->withNotify($notify);
-        }
-    }
 
     public function disable2fa(Request $request)
     {
@@ -368,24 +334,6 @@ class UserController extends Controller
         return back()->withNotify($notify);
     }
 
-    public function disable2fa1(Request $request)
-    {
-        $request->validate([
-            'code' => 'required',
-        ]);
-
-        $user     = auth()->user();
-        $response = verifyG2fa($user, $request->code);
-        if ($response) {
-            $user->tsc = null;
-            $user->ts  = Status::DISABLE;
-            $user->save();
-            $notify[] = ['success', 'Two factor authenticator deactivated successfully'];
-        } else {
-            $notify[] = ['error', 'Wrong verification code'];
-        }
-        return back()->withNotify($notify);
-    }
 
 
     public function transactions()
@@ -421,13 +369,6 @@ class UserController extends Controller
         ])->withViewData(compact('pageTitle'));
     }
 
-    public function transactions1()
-    {
-        $pageTitle    = 'Transactions History';
-        $remarks      = Transaction::where('user_id', auth()->id())->distinct('remark')->orderBy('remark')->whereNotNull('remark')->get('remark');
-        $transactions = Transaction::where('user_id', auth()->id())->searchable(['trx'])->filter(['trx_type', 'remark'])->orderBy('id', 'desc')->paginate(getPaginate());
-        return view('Template::user.transactions1', compact('pageTitle', 'transactions', 'remarks'));
-    }
 
     public function kycForm()
     {

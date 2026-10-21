@@ -110,8 +110,8 @@ class PaymentController extends Controller
         $data->btc_amount = 0;
         $data->btc_wallet = "";
         $data->trx = getTrx();
-        $data->success_url = urlPath('user.deposit.history1');
-        $data->failed_url = urlPath('user.deposit.history1');
+        $data->success_url = urlPath('user.deposit.history');
+        $data->failed_url = urlPath('user.deposit.history');
         $data->save();
         session()->put('Track', $data->trx);
         return to_route('user.deposit.confirm1');
@@ -407,7 +407,7 @@ class PaymentController extends Controller
         ]);
 
         $notify[] = ['success', 'You have deposit request has been taken'];
-        return to_route('user.deposit.history1')->withNotify($notify);
+        return to_route('user.deposit.history')->withNotify($notify);
     }
 
 

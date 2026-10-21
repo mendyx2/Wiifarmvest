@@ -77,10 +77,8 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::post('twofactor/enable', 'create2fa')->name('twofactor.enable');
                 Route::post('twofactor/disable', 'disable2fa')->name('twofactor.disable');
 
-                //2FA food production
-                Route::get('twofactor1', 'show2faForm1')->name('twofactor1');
-                Route::post('twofactor/enable1', 'create2fa1')->name('twofactor.enable1');
-                Route::post('twofactor/disable1', 'disable2fa1')->name('twofactor.disable1');
+                // Removed duplicate page: old URL redirects to the main page.
+                Route::get('twofactor1', fn () => to_route('user.twofactor', request()->query()))->name('twofactor1');
 
 
                 //KYC
@@ -96,10 +94,11 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
                 //Report
                 Route::get('deposit/history', 'depositHistory')->name('deposit.history');
-                Route::get('deposit/history1', 'depositHistory1')->name('deposit.history1');
+                // Removed duplicate page. Kept as a redirect: older deposits store this URL as their success/failed URL.
+                Route::get('deposit/history1', fn () => to_route('user.deposit.history', request()->query()))->name('deposit.history1');
 
                 Route::get('transactions', 'transactions')->name('transactions');
-                Route::get('transactions1', 'transactions1')->name('transactions1');
+                Route::get('transactions1', fn () => to_route('user.transactions', request()->query()))->name('transactions1'); // removed duplicate page
 
                 //Balance Transfer
                 Route::get('transfer', 'indexTransfer')->name('balance.transfer');
@@ -286,12 +285,10 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::post('profile-setting', 'submitProfile'); 
                 Route::get('change-password', 'changePassword')->name('change.password');
                 Route::post('change-password', 'submitPassword');
-                // food production
 
-                Route::get('profile-setting1', 'profile1')->name('profile.setting1');
-                Route::post('profile-setting1', 'submitProfile1');
-                Route::get('change-password1', 'changePassword1')->name('change.password1');
-                Route::post('change-password1', 'submitPassword1');
+                // Removed duplicate pages: old URLs redirect to the main pages.
+                Route::get('profile-setting1', fn () => to_route('user.profile.setting', request()->query()))->name('profile.setting1');
+                Route::get('change-password1', fn () => to_route('user.change.password', request()->query()))->name('change.password1');
             }); 
 
             //E-pin Recharge
@@ -327,7 +324,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                     Route::get('preview1', 'withdrawPreview1')->name('.preview1');
                     Route::post('preview1', 'withdrawSubmit1')->name('.submit1');
                 //});
-                Route::get('history1', 'withdrawLog1')->name('.history1');
+                Route::get('history1', fn () => to_route('user.withdraw.history', request()->query()))->name('.history1'); // removed duplicate page
                
             });
 
@@ -378,7 +375,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
                 Route::get('my-tree/{id}', 'myTreeStage')->name('my.treeStage');
                 Route::get('referrals', 'myRefLog')->name('my.ref');
-                Route::get('referrals1', 'myRefLog1')->name('my.ref1');
+                Route::get('referrals1', fn () => to_route('user.my.ref', request()->query()))->name('my.ref1'); // removed duplicate page
                 Route::get('binary-summery', 'binarySummery')->name('binary.summery');
                 Route::get('binary-list', 'binaryList')->name('binary.list');
                 Route::get('tree/{user}', 'otherTree')->name('other.tree');

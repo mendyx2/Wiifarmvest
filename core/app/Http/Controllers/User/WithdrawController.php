@@ -299,15 +299,5 @@ class WithdrawController extends Controller
         return view('Template::user.withdraw.log', compact('pageTitle','withdraws'));
     }
 
-    public function withdrawLog1(Request $request)
-    {
-        $pageTitle = "Withdrawal Log";
-        $withdraws = Withdrawal::where('user_id', auth()->id())->where('status', '!=', Status::PAYMENT_INITIATE);
-        if ($request->search) {
-            $withdraws = $withdraws->where('trx',$request->search);
-        }
-        $withdraws = $withdraws->with('method')->orderBy('id','desc')->paginate(getPaginate());
-        return view('Template::user.withdraw.log1', compact('pageTitle','withdraws'));
-    }
 
 }
