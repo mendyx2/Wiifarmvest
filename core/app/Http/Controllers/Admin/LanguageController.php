@@ -261,6 +261,8 @@ class LanguageController extends Controller
         foreach ($this->getAllFiles($dirname) as $file) {
             $langKeys = array_merge($langKeys, $this->getLangKeys($file));
         }
+        // React (Inertia) pages translate with t('...') instead of @lang('...').
+        $langKeys = array_merge($langKeys, $this->getReactLangKeys(resource_path('js')));
         $frontendData = Frontend::where('data_keys', '!=', 'seo.data')->get();
         foreach ($frontendData as $frontend) {
             foreach ($frontend->data_values as $key => $frontendValue) {
@@ -309,6 +311,31 @@ class LanguageController extends Controller
         }
         preg_match_all("/@lang\(\\'(.*)\\'\)/",  $finalcode, $keys);
         return $this->fixMultiIssue($keys[1]);
+    }
+
+    /**
+     * Collect the string literals passed to t('...') / t("...") in the React
+     * pages under resources/js (*.ts, *.tsx).
+     */
+    private function getReactLangKeys($dir)
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+
+        $keys = [];
+        $iter = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS));
+        foreach ($iter as $path => $file) {
+            if (!preg_match('/\.tsx?$/', $path)) {
+                continue;
+            }
+            preg_match_all('/\bt\(\s*([\'"])((?:\\\\.|(?!\1).)*)\1/', file_get_contents($path), $matches);
+            foreach ($matches[2] as $key) {
+                $keys[] = stripslashes($key);
+            }
+        }
+
+        return $keys;
     }
 
     private function fixMultiIssue($arr)

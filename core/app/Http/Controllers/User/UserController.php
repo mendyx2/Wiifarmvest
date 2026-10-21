@@ -35,6 +35,7 @@ use App\Lib\GoogleAuthenticator;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 use App\Models\GatewayCurrency;
 use App\Models\NotificationLog;
 use App\Models\GuarantorRequest;
@@ -292,7 +293,16 @@ class UserController extends Controller
         $secret    = $ga->createSecret();
         $qrCodeUrl = $ga->getQRCodeGoogleUrl($user->username . '@' . gs('site_name'), $secret);
         $pageTitle = '2FA Security';
-        return view('Template::user.twofactor1', compact('pageTitle', 'secret', 'qrCodeUrl'));
+
+        // Migrated to React + Inertia (resources/js/Pages/User/TwoFactor.tsx).
+        // Legacy view: Template::user.twofactor1
+        return Inertia::render('User/TwoFactor', [
+            'enabled'    => (bool) $user->ts,
+            'secret'     => $user->ts ? null : $secret,
+            'qrCodeUrl'  => $user->ts ? null : $qrCodeUrl,
+            'enableUrl'  => route('user.twofactor.enable'),
+            'disableUrl' => route('user.twofactor.disable'),
+        ])->withViewData(compact('pageTitle'));
     }
 
 
@@ -384,9 +394,31 @@ class UserController extends Controller
 
         $remarks      = Transaction::where('user_id', auth()->id())->distinct('remark')->orderBy('remark')->whereNotNull('remark')->get('remark');
 
-        $transactions = Transaction::where('user_id', auth()->id())->searchable(['trx'])->filter(['trx_type', 'remark'])->orderBy('id', 'desc')->paginate(getPaginate()); 
+        $transactions = Transaction::where('user_id', auth()->id())->searchable(['trx'])->filter(['trx_type', 'remark'])->orderBy('id', 'desc')->paginate(getPaginate())->withQueryString();
 
-        return view('Template::user.transactions', compact('pageTitle', 'transactions', 'remarks'));
+        // Migrated to React + Inertia (resources/js/Pages/User/Transactions.tsx).
+        // Legacy view: Template::user.transactions (still used by Stockist/Epin logs)
+        return Inertia::render('User/Transactions', [
+            'transactions' => $transactions->through(fn ($trx) => [
+                'id'          => $trx->id,
+                'trx'         => $trx->trx,
+                'isCredit'    => $trx->trx_type == '+',
+                'details'     => __($trx->details),
+                'amount'      => showAmount($trx->amount),
+                'charge'      => $trx->charge > 0 ? showAmount($trx->charge) : null,
+                'postBalance' => showAmount($trx->post_balance),
+                'ago'         => diffForHumans($trx->created_at),
+                'date'        => showDateTime($trx->created_at, 'd M Y'),
+                'dayMonth'    => showDateTime($trx->created_at, 'd M'),
+                'year'        => showDateTime($trx->created_at, 'Y'),
+            ]),
+            'remarks' => $remarks->map(fn ($r) => ['value' => $r->remark, 'label' => keyToTitle($r->remark)])->values(),
+            'filters' => [
+                'search'   => (string) request('search', ''),
+                'trx_type' => (string) request('trx_type', ''),
+                'remark'   => (string) request('remark', ''),
+            ],
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function transactions1()
@@ -1190,12 +1222,27 @@ class UserController extends Controller
         $user          = auth()->user();
         $pageTitle     = 'Notifications';
         $notifications = NotificationLog::where('user_id', $user->id)
+                            ->with('notifyingAdmin')
                             ->orderBy('id', 'desc')
                             ->paginate(getPaginate());
 
+        // Map before marking as read, so this page still highlights what was unread.
+        $notifications->through(fn ($notif) => [
+            'id'        => $notif->id,
+            'subject'   => $notif->subject ?: 'Notification',
+            'message'   => strip_tags($notif->message),
+            'type'      => $notif->notification_type,
+            'unread'    => !$notif->user_read,
+            'adminNote' => (bool) $notif->is_admin_notice,
+            'from'      => $notif->notifyingAdmin ? ($notif->notifyingAdmin->name ?? $notif->notifyingAdmin->username) : null,
+            'time'      => $notif->created_at->format('M d, Y · h:i A'),
+        ]);
+
         NotificationLog::where('user_id', $user->id)->where('user_read', false)->update(['user_read' => true]);
 
-        return view('Template::user.notifications', compact('pageTitle', 'notifications'));
+        // Migrated to React + Inertia (resources/js/Pages/User/Notifications.tsx).
+        // Legacy view: Template::user.notifications
+        return Inertia::render('User/Notifications', compact('notifications'))->withViewData(compact('pageTitle'));
     }
 
     public function markNotificationsRead()

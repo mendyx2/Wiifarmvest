@@ -75,8 +75,8 @@ gets replaced, one page at a time.
 |---|---|---|
 | **0. Foundation** | Vite, React 19, TypeScript, Inertia (server and client), root view inside the Blade layout, shared props, i18n bridge, CSRF, flash toasts, Railway build | ✅ Done |
 | **1. Pilot page** | Change Password (`/user/change-password`) | ✅ Done |
-| **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | Next |
-| **3. Shared component library** | `DataTable`, `Pagination`, `Modal`, `FormField`, `Select`, `FileUpload`, `StatCard`, `Badge`, `EmptyState`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite | Alongside phase 2 |
+| **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | 🟡 In progress: 4 pages done (Steps 9–14) |
+| **3. Shared component library** | `DataTable`, `Pagination`, `Modal`, `FormField`, `Select`, `FileUpload`, `StatCard`, `Badge`, `EmptyState`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite | 🟡 Started: `Pagination`, `EmptyState`, `TextField`, `PasswordInput` |
 | **4. Complex user flows** | Deposit and payment gateways (external redirects use `Inertia::location()`), withdraw, investments/projects, shop/cart/orders, stockist area, KYC, support tickets, genealogy and binary trees | Later |
 | **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
@@ -310,6 +310,211 @@ files and are not committed.
    database. No database dump with the core tables is available in this
    environment. **Test `/user/change-password` on staging before going to
    production.**
+
+---
+
+## Part 3b: Phase 2 change log (simple user pages)
+
+### Step 9: Shared building blocks
+
+**New:** `core/resources/js/types/index.d.ts`. Adds the `Paginated<T>` and
+`PaginationLink` types: the exact shape of a Laravel `LengthAwarePaginator`
+once Inertia sends it to the browser (`data`, `current_page`, `last_page`,
+`total`, `links`, and so on).
+
+**New:** `core/resources/js/Components/Pagination.tsx`
+
+- Renders any Laravel paginator with the same Bootstrap markup
+  (`.pagination`, `.page-item`, `.page-link`) as Blade's
+  `{{ paginateLinks() }}`, so it looks the same.
+- Page links are Inertia `<Link preserveScroll>`. Changing page fetches only
+  JSON and keeps the scroll position.
+- Previous/next use icons instead of the label text, because language files
+  may put HTML entities in those labels.
+- Hidden when there is only one page.
+
+**New:** `core/resources/js/Components/EmptyState.tsx`. The "nothing here yet"
+block. `prefix="txn"` produces the existing `.txn-empty` and
+`.txn-empty-icon` classes.
+
+**New:** `core/resources/js/Components/TextField.tsx`. A labelled input with
+an optional icon and an inline validation error, using the profile page's
+`prof-field` styling and ARIA attributes.
+
+**Pattern used in every controller below:**
+
+- Format money and dates **on the server**, with the existing
+  `showAmount()`, `showDateTime()` and `diffForHumans()`, so currency symbols
+  and language rules stay identical to Blade.
+- Send **only the fields the page displays**, never whole Eloquent models.
+  Props are visible in the page source.
+- Paginated lists use `->through(fn ($row) => [...])`, which keeps the
+  paginator and replaces each row with a small array, and `->withQueryString()`,
+  so page links keep the current filters.
+
+### Step 10: Transactions (`/user/transactions`)
+
+**New:** `Pages/User/Transactions.tsx`
+
+- Filter bar: reference search, type (credit/debit) and remark.
+  - Submitting does `router.get()` with only the filters that are set, for
+    example `?trx_type=%2B`. The page refreshes without a full reload and
+    starts again at page 1.
+- Rows show green for credit and red for debit, the fee (only if there is
+  one), the balance after the transaction, and the relative and full dates.
+- Empty state and pagination.
+
+**Changed:** `UserController@transactions` uses `Inertia::render('User/Transactions', ...)`
+with:
+
+| Prop | Contents |
+|---|---|
+| `transactions` | Paginated and pre-formatted |
+| `remarks` | `{value, label}` for the dropdown |
+| `filters` | The current query values, so the form shows what is filtered |
+
+**Not changed:** `Template::user.transactions` is still used by
+`StockistController` and `EpinController` (recharge logs). Those pages stay
+on Blade for now.
+
+### Step 11: Notifications (`/user/notifications`)
+
+**New:** `Pages/User/Notifications.tsx`
+
+- Unread dot and highlight.
+- Admin "Personal Notice" badge with the sender's name.
+- Email/SMS/Push type badge.
+- Total count, empty state and pagination.
+
+**Changed:** `UserController@notifications`
+
+- Rows are mapped **before** the "mark all as read" update, so unread items
+  are still highlighted on this visit. This matches the Blade behaviour, and
+  the test confirms it.
+- **Improvement:** the sender is now eager-loaded (`->with('notifyingAdmin')`).
+  The Blade page ran one extra database query per notification.
+- `strip_tags()` is still applied on the server. React also escapes all text,
+  so a notification can never inject HTML.
+
+### Step 12: Two-factor security (`/user/twofactor`)
+
+**New:** `Pages/User/TwoFactor.tsx`
+
+- While 2FA is **off**, the page shows:
+  - the QR code and setup key, with a copy button. The copy button uses the
+    Clipboard API on HTTPS and falls back to `execCommand('copy')` on HTTP,
+    like the old jQuery code did.
+  - the help text with a link to the Google Authenticator download.
+  - the "Enable" form.
+- While 2FA is **on**, only the "Disable" form is shown.
+- The code field is cleared after each attempt, and the button is disabled
+  while sending.
+
+**Changed:** `UserController@show2faForm`
+
+- Uses `Inertia::render('User/TwoFactor', ...)`.
+- The **secret and QR code are only sent while 2FA is off**. Once enabled,
+  nothing about the key reaches the browser.
+- The form posts to `user.twofactor.enable` / `user.twofactor.disable`. The
+  Blade view posted to the identical `...enable1` / `...disable1` copies.
+
+**Visual change:** the old view used the `master2` layout. The React page
+uses the normal dashboard layout (`master`), so the page now has the same
+sidebar as every other account page.
+
+### Step 13: Profile settings (`/user/profile-setting`)
+
+**New:** `Pages/User/ProfileSetting.tsx`
+
+- Personal info, bank details and address sections, plus the bank-details
+  history table.
+- Profile photo: choosing a file shows an instant preview. The temporary
+  preview URL is released when the photo changes.
+- With a photo attached, Inertia sends the form as `multipart/form-data`
+  automatically. `ProfileController@submitProfile` is **unchanged**.
+- Validation errors show under each field, and the typed values are kept.
+- Email stays read-only but is still sent, because `submitProfile` validates
+  it. Country stays disabled.
+
+**Changed:** `ProfileController@profile` sends:
+
+- `profile`: the 15 fields the form shows, plus the photo URL.
+- `bankHistories`: the bank-details history.
+- `submitUrl`.
+
+### Step 14: The admin Language manager now finds React text
+
+**Problem found:** the admin "fetch keywords" button
+(`LanguageController@getKeys`) only scanned `.blade.php` files for
+`@lang('...')`, so translators could never see text from the React pages.
+
+**Changed:** `core/app/Http/Controllers/Admin/LanguageController.php`. A new
+`getReactLangKeys()` method also scans `resources/js/**/*.ts(x)` for
+`t('...')` / `t("...")`. It is verified to find all 106 keys, including ones
+with apostrophes and `:placeholders`.
+
+**Rule from now on:** always write the English text **directly inside**
+`t('...')`.
+
+```tsx
+const labels = [t('Weak'), t('Strong')];   // ✅ the scanner finds these
+const LABELS = ['Weak', 'Strong']; t(LABELS[i]);   // ❌ invisible to the scanner
+```
+
+`ChangePassword.tsx` and `Notifications.tsx` were changed to follow this
+rule. Text that comes from the database (transaction details, remarks,
+notification subjects) is translated the same way Blade does it, with
+`__()` / `t(value)`. It only translates if an admin adds that exact text to
+the language file.
+
+### Step 15: Verification for Phase 2
+
+1. `npm run build` (strict TypeScript) passes. Each page is its own small
+   file of 2–7 kB.
+2. **PHP:** the **real controller methods** were run against a throwaway
+   SQLite database with sample users, transactions, notifications and bank
+   history. Confirmed:
+   - Only the logged-in user's transactions are returned; another user's row
+     is excluded.
+   - The `trx_type=+` filter works, and the page links keep `?trx_type=%2B`.
+   - Amounts are formatted as `₦1,200.50`.
+   - Notification HTML is stripped; the unread flag is correct on the page,
+     and everything is marked read in the database afterwards.
+   - The 2FA secret is only present while 2FA is disabled.
+   - Profile and bank history map correctly.
+3. **Browser (headless Chromium, real build): 30/30 checks passed**, across:
+   - Transactions: rows, credit/debit styling, amounts and fees, the
+     pagination click making an XHR request (no full reload) and updating
+     the URL, filter query, empty state.
+   - Notifications: unread dot, admin badge and sender.
+   - Two-factor:
+     - QR code and key.
+     - The copy button over both HTTP (fallback) and HTTPS (Clipboard API).
+     - The enable POST with key, code and CSRF header; the toast; the
+       switch to the "disable" view.
+     - The disable POST.
+   - Profile:
+     - Fields pre-filled.
+     - Initials avatar, and the photo preview.
+     - The multipart POST carries every field plus the file.
+     - Inline validation error, with the typed value kept.
+4. The Change Password pilot tests still pass (14/14).
+5. **Still to do on staging with the real MySQL database:** open each page,
+   submit each form once, upload a profile photo, enable and disable 2FA with
+   a real authenticator app.
+
+### Rollback (any Phase 2 page)
+
+In the controller method, replace the `return Inertia::render(...)` with the
+`Template::...` view named in the comment just above it. The old Blade files
+have not been deleted.
+
+### Remaining in Phase 2
+
+Deposit history, withdraw history, PV/BV logs, referrals (`myRef`), and the
+`*1` duplicate routes (`transactions1`, `profile_setting1`,
+`twofactor1`/`show2faForm1`, `password1`). The duplicates need a decision:
+keep and migrate them, or redirect them to the main pages.
 
 ---
 

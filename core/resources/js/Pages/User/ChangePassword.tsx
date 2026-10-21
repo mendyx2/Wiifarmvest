@@ -10,7 +10,6 @@ type Props = PageProps<{
 }>;
 
 const STRENGTH_COLORS = ['#DC2626', '#F59E0B', '#3B82F6', '#16A34A'];
-const STRENGTH_LABELS = ['Weak', 'Fair', 'Good', 'Strong'];
 
 /** Purely visual; the server applies the real password rules. */
 function passwordScore(value: string): number {
@@ -22,15 +21,16 @@ function passwordScore(value: string): number {
     return score;
 }
 
-const TIPS = [
-    { icon: 'la-ruler', title: 'Go long', text: 'Use at least 8–12 characters — length matters more than complexity.' },
-    { icon: 'la-font', title: 'Mix it up', text: 'Combine upper and lower case letters, numbers, and a symbol.' },
-    { icon: 'la-recycle', title: 'Never reuse', text: "Don't reuse a password from another site or an old account password." },
-    { icon: 'la-user-secret', title: 'Avoid the obvious', text: 'Skip names, birthdays, or anything easily guessed from your profile.' },
-];
-
 export default function ChangePassword({ securePassword, submitUrl }: Props) {
     const t = useTrans();
+    // Written as literal t('...') calls so the admin "fetch keywords" scan finds them.
+    const strengthLabels = [t('Weak'), t('Fair'), t('Good'), t('Strong')];
+    const tips = [
+        { icon: 'la-ruler', title: t('Go long'), text: t('Use at least 8–12 characters — length matters more than complexity.') },
+        { icon: 'la-font', title: t('Mix it up'), text: t('Combine upper and lower case letters, numbers, and a symbol.') },
+        { icon: 'la-recycle', title: t('Never reuse'), text: t("Don't reuse a password from another site or an old account password.") },
+        { icon: 'la-user-secret', title: t('Avoid the obvious'), text: t('Skip names, birthdays, or anything easily guessed from your profile.') },
+    ];
     const form = useForm({
         current_password: '',
         password: '',
@@ -109,7 +109,7 @@ export default function ChangePassword({ securePassword, submitUrl }: Props) {
                                 <p className="sl-pwd-meter-label mb-3">
                                     {form.data.password === ''
                                         ? t('Start typing a new password')
-                                        : t(STRENGTH_LABELS[Math.max(score - 1, 0)])}
+                                        : strengthLabels[Math.max(score - 1, 0)]}
                                 </p>
 
                                 {securePassword && form.data.password !== '' && (
@@ -154,14 +154,14 @@ export default function ChangePassword({ securePassword, submitUrl }: Props) {
                             <i className="las la-lightbulb me-1" /> {t('Password Security Tips')}
                         </div>
                         <div className="sl-card-body">
-                            {TIPS.map((tip) => (
+                            {tips.map((tip) => (
                                 <div className="sl-tip-item" key={tip.title}>
                                     <div className="sl-tip-icon">
                                         <i className={`las ${tip.icon}`} />
                                     </div>
                                     <div>
-                                        <p className="fw-600 mb-0" style={{ fontSize: '.86rem' }}>{t(tip.title)}</p>
-                                        <small className="text-muted">{t(tip.text)}</small>
+                                        <p className="fw-600 mb-0" style={{ fontSize: '.86rem' }}>{tip.title}</p>
+                                        <small className="text-muted">{tip.text}</small>
                                     </div>
                                 </div>
                             ))}

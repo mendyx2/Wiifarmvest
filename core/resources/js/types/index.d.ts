@@ -19,6 +19,25 @@ export interface SharedProps {
     [key: string]: unknown;
 }
 
+/** One link in Laravel's paginator output (`$paginator->toArray()['links']`). */
+export interface PaginationLink {
+    url: string | null;
+    label: string;
+    active: boolean;
+}
+
+/** A Laravel LengthAwarePaginator as Inertia sends it to the browser. */
+export interface Paginated<T> {
+    data: T[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+    links: PaginationLink[];
+}
+
 /** Page props = the page's own props + the shared props. */
 export type PageProps<T extends Record<string, unknown> = Record<string, unknown>> = T & SharedProps;
 

@@ -19,7 +19,36 @@ class ProfileController extends Controller
         $bankHistories = BankDetailHistory::where('user_id', $user->id)
             ->latest()
             ->get();
-        return view('Template::user.profile_setting', compact('pageTitle', 'user', 'bankHistories'));
+
+        // Migrated to React + Inertia (resources/js/Pages/User/ProfileSetting.tsx).
+        // Legacy view: Template::user.profile_setting
+        return Inertia::render('User/ProfileSetting', [
+            'profile' => [
+                'firstname' => (string) $user->firstname,
+                'lastname'  => (string) $user->lastname,
+                'username'  => $user->username,
+                'fullname'  => $user->fullname,
+                'email'     => $user->email,
+                'mobile'    => (string) $user->mobile,
+                'bname'     => (string) $user->bname,
+                'aname'     => (string) $user->aname,
+                'ano'       => (string) $user->ano,
+                'address'   => (string) $user->address,
+                'state'     => (string) $user->state,
+                'city'      => (string) $user->city,
+                'zip'       => (string) $user->zip,
+                'country'   => (string) $user->country_name,
+                'image'     => $user->image ? getImage(getFilePath('userProfile') . '/' . $user->image, null, true) : null,
+            ],
+            'bankHistories' => $bankHistories->map(fn ($history) => [
+                'id'    => $history->id,
+                'bname' => $history->bname,
+                'aname' => $history->aname,
+                'ano'   => $history->ano,
+                'date'  => $history->created_at->format('d M Y, h:i A'),
+            ]),
+            'submitUrl' => route('user.profile.setting'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function profile1()
