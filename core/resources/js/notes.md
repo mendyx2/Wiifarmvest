@@ -77,7 +77,7 @@ gets replaced, one page at a time.
 | **1. Pilot page** | Change Password (`/user/change-password`) | ✅ Done |
 | **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | ✅ Done: 8 pages (Steps 9–22); BV log skipped because its page is broken (Step 18) |
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
-| **4. Other user flows** | Investments/projects, shop/cart/orders, stockist area, KYC (can reuse `DynamicForm`), support tickets, genealogy and binary trees | Next |
+| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects · 4c network trees · 4d shop/cart/orders · 4e stockist area | 🟡 In progress: 4a done (Steps 32–37) |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
@@ -990,6 +990,156 @@ As before: restore the `return view(...)` named in the comment above each
 `Inertia::render`.
 
 For `depositInsert`, restore `return to_route('user.deposit.confirm');`.
+
+---
+
+## Part 3d: Phase 4 change log (other user flows)
+
+Phase 4 covers about 50 pages, so it is done in five batches, each tested and
+committed on its own:
+
+| Batch | Pages |
+|---|---|
+| 4a | KYC form, KYC status, guarantor requests; support ticket list, new ticket, ticket view |
+| 4b | Investments and projects |
+| 4c | Network trees |
+| 4d | Shop, cart and orders |
+| 4e | Stockist area |
+
+### Step 32: Shared pieces for 4a
+
+- `Components/ConfirmDialog.tsx`. The React `<x-confirmation-modal>` ("Are
+  you sure?"), with the same markup, built on `Modal`.
+- `Components/AttachmentPicker.tsx`. Up to 5 ticket attachments, each
+  removable, with the same limits text. `chosenFiles()` leaves empty pickers
+  out of the upload.
+- `Components/Lightbox.tsx`. A full-screen image viewer for KYC documents
+  (click outside, × or Escape closes it).
+- `lib/initials.ts`. "Ada Obi" → "AO", used by the avatars.
+
+### Step 33: KYC form (`/user/kyc-form`)
+
+**New:** `Pages/User/KycForm.tsx`
+
+- Rejection notice.
+- The admin's KYC form, rendered with **`DynamicForm` from Phase 3**.
+- NIN, the ID card type pills, and the ID image upload with drag-and-drop
+  and a preview.
+- Guarantor search:
+  - It uses the same JSON endpoint (`user.kyc.user.search`), the same 280 ms
+    debounce, and the server's rate limit.
+  - It is a `combobox`, and results can be chosen with the keyboard.
+  - Results are escaped. The old version built them with string HTML, and the
+    initials were not escaped.
+- **UX fix:** the status of the request already sent ("Guarantor Declined",
+  "Awaiting Response") now shows under the pre-selected guarantor. **Blade
+  hid it as soon as the page loaded, so users never saw that their guarantor
+  had declined.**
+
+**Changed:** `UserController@kycForm` sends:
+
+- the fields and the user's NIN and card type
+- whether an ID image is on file
+- the nominated guarantor (name and username only) and the request status
+- the URLs
+
+**Small hardening:** `kycSubmit` now trims and upper-cases the NIN **before**
+checking that it is unique, the same way it is saved. Before, ` taken123 `
+passed the check on a case-sensitive column and was then saved as a duplicate
+`TAKEN123`. The rest of `kycSubmit` is unchanged.
+
+### Step 34: KYC status (`/user/kyc-data`)
+
+**New:** `Pages/User/KycInfo.tsx`
+
+- Hero for each state (verified, pending, rejected, not submitted), plus the
+  rejection reason.
+- Submitted details.
+- File and ID-card thumbnails, which open in the lightbox, with download
+  links (the same encrypted attachment URLs).
+- Guarantor status.
+- "Resubmit" button, except while pending or verified.
+
+**Changed:** `UserController@kycData`. The state and the rows are now worked
+out in the controller (they were a `@php` block in the view).
+
+### Step 35: Guarantor requests (`/user/guarantor-requests`)
+
+**New:** `Pages/User/GuarantorRequests.tsx`. Cards with Accept / Decline.
+Both buttons are disabled while a request is being sent.
+
+**Changed:** `UserController@guarantorRequests` sends only the requester's
+name and username, never their KYC details. Accept and decline are
+**unchanged**; they still only work on pending requests addressed to you.
+
+### Step 36: Support tickets (`/ticket`, `/ticket/new`, `/ticket/view/{n}`)
+
+**New:**
+
+- `Pages/User/Tickets.tsx`: the list, with status and priority badges.
+- `Pages/User/TicketCreate.tsx`: subject, priority, message and
+  attachments.
+- `Pages/User/TicketView.tsx`:
+  - The conversation. Staff replies are highlighted, and line breaks are
+    kept but shown as text.
+  - Attachment links.
+  - The reply form.
+  - The "Close ticket" button, behind a confirmation.
+
+**Changed:** `app/Http/Controllers/TicketController.php`
+
+- It overrides only the three page methods.
+- The `SupportTicketManager` trait is **not changed**. The admin panel uses
+  it too and keeps its Blade pages.
+- Opening, replying, closing and downloading still go through the trait.
+
+**Stricter ticket access:** the trait also let any logged-in user open a
+"guest" ticket (`user_id = 0`) if they knew its 6-digit number. The React
+page shows **only your own tickets**.
+
+### Step 37: Verification for 4a
+
+1. `npm run build` passes.
+2. **The real controllers were run** against a throwaway database (uploads
+   went to a scratch folder):
+
+   | Case | Result |
+   |---|---|
+   | KYC with nothing filled in | 5 field errors |
+   | NIN already used by someone else (also tried as ` taken123 `) / yourself as guarantor / wrong card type / `.exe` as the ID image | rejected, KYC status unchanged |
+   | Valid KYC | status pending, NIN saved upper-case, image saved, old rejection cleared, the guarantor request moved to the new guarantor |
+   | KYC form or submit while pending | redirected with "under review" |
+   | Accept **someone else's** guarantor request | 404 |
+   | Change your answer after accepting | 404 |
+   | Guarantor page props | no email, phone or KYC data |
+   | Open / reply / close **someone else's** ticket | 404 / 404 / 403 |
+   | New ticket: missing fields / `.exe` attachment | rejected |
+   | New ticket with 2 attachments; reply; close own ticket | all work |
+
+3. **Browser: 33/33 checks**, fed the real controller output:
+   - **KYC form:**
+     - Guarantor pre-selected, with the "declined" status visible.
+     - Search is debounced and shows "No users found" when empty.
+     - An XSS name in the results is shown as text.
+     - Clicking outside closes the result list.
+     - Card type pills and the upload preview.
+     - The multipart POST carries all fields, and the NIN error appears.
+   - **KYC status:** the pending state, the lightbox opening and closing with
+     Escape.
+   - **Guarantor requests:** Accept sends the POST.
+   - **Tickets:**
+     - Attachments are limited to 5, and only chosen files are uploaded.
+     - A staff message containing `<script>` is shown as text.
+     - Line breaks are kept.
+     - Closing asks first: "No" sends nothing, "Yes" closes.
+4. All earlier suites still pass: **152 browser checks, 0 failures.** The
+   keyword scanner finds **380** React strings.
+
+**To test on staging:**
+
+- Submit KYC with a real ID photo, then approve and reject it in admin.
+- Nominate a guarantor and accept it from that user's account.
+- Open a ticket with an attachment, reply to it from admin, then close it.
 
 ---
 

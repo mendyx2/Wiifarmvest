@@ -36,6 +36,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use App\Support\FormPresenter;
 use App\Support\PaymentPresenter;
 use App\Models\GatewayCurrency;
 use App\Models\NotificationLog;
@@ -407,7 +408,26 @@ class UserController extends Controller
         $pageTitle        = 'KYC Verification';
         $form             = Form::where('act', 'kyc')->first();
         $guarantorRequest = GuarantorRequest::where('user_id', $user->id)->with('guarantor')->latest()->first();
-        return view('Template::user.kyc.form', compact('pageTitle', 'form', 'user', 'guarantorRequest'));
+        $guarantor        = $guarantorRequest?->guarantor;
+
+        // Migrated to React + Inertia (resources/js/Pages/User/KycForm.tsx).
+        // Legacy view: Template::user.kyc.form
+        return Inertia::render('User/KycForm', [
+            'rejectionReason' => $user->kyc_rejection_reason,
+            'fields'          => FormPresenter::fields($form?->id),
+            'nin'             => (string) $user->nin,
+            'idCardType'      => (string) $user->id_card_type,
+            'hasIdCard'       => (bool) $user->id_card_image,
+            // The guarantor already nominated (pre-selected, as in the Blade view).
+            'guarantor' => $guarantor ? [
+                'id'       => $guarantor->id,
+                'name'     => trim($guarantor->firstname . ' ' . $guarantor->lastname),
+                'username' => $guarantor->username,
+            ] : null,
+            'guarantorStatus' => $guarantorRequest?->status,
+            'submitUrl'       => route('user.kyc.submit'),
+            'searchUrl'       => route('user.kyc.user.search'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function kycData()
@@ -415,7 +435,50 @@ class UserController extends Controller
         $user             = auth()->user();
         $pageTitle        = 'KYC Status';
         $guarantorRequest = GuarantorRequest::where('user_id', $user->id)->with('guarantor')->latest()->first();
-        return view('Template::user.kyc.info', compact('pageTitle', 'user', 'guarantorRequest'));
+
+        $state = match (true) {
+            $user->kv == Status::KYC_VERIFIED => 'verified',
+            $user->kv == Status::KYC_PENDING  => 'pending',
+            (bool) $user->kyc_rejection_reason => 'rejected',
+            default                            => 'empty',
+        };
+        $attachment = function (string $path) {
+            $hash = encrypt($path);
+            return [
+                'view'     => route('user.view.attachment', $hash),
+                'download' => route('user.download.attachment', $hash),
+                'isImage'  => in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif', 'webp']),
+            ];
+        };
+        $kycRows = [];
+        foreach ($user->kyc_data ?? [] as $val) {
+            if (!$val->value) continue;
+            $kycRows[] = [
+                'label' => __($val->name),
+                'value' => $val->type == 'file' ? null : ($val->type == 'checkbox' ? implode(', ', (array) $val->value) : __($val->value)),
+                'file'  => $val->type == 'file' ? $attachment(getFilePath('verify') . '/' . $val->value) : null,
+            ];
+        }
+        $guarantor = $guarantorRequest?->guarantor;
+
+        // Migrated to React + Inertia (resources/js/Pages/User/KycInfo.tsx).
+        // Legacy view: Template::user.kyc.info
+        return Inertia::render('User/KycInfo', [
+            'state'           => $state,
+            'rejectionReason' => $user->kyc_rejection_reason,
+            'submitted'       => $user->kyc_data || $user->nin || $user->kv != Status::KYC_UNVERIFIED,
+            'kycRows'         => $kycRows,
+            'nin'             => $user->nin,
+            'idCardType'      => $user->id_card_type,
+            'idCard'          => $user->id_card_image ? $attachment(getFilePath('verify') . '/id_cards/' . $user->id_card_image) : null,
+            'guarantor' => $guarantor ? [
+                'name'        => trim($guarantor->firstname . ' ' . $guarantor->lastname),
+                'username'    => $guarantor->username,
+                'status'      => $guarantorRequest->status,
+                'respondedAt' => $guarantorRequest->responded_at?->format('d M Y, g:i A'),
+            ] : null,
+            'formUrl' => route('user.kyc.form'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function kycSubmit(Request $request)
@@ -438,6 +501,12 @@ class UserController extends Controller
         $formProcessor = new FormProcessor();
 
         $validationRule = $formProcessor->valueValidation($formData);
+
+        // Check the NIN in the same form it is saved in (trimmed, upper case), so
+        // the unique rule below also holds on a case-sensitive database column.
+        if (is_string($request->nin)) {
+            $request->merge(['nin' => strtoupper(trim($request->nin))]);
+        }
 
         // V3: NIN must be unique across all users (ignore own record) — prevents
         // two accounts claiming the same national identity number.
@@ -520,7 +589,23 @@ class UserController extends Controller
                         ->with('user')
                         ->latest()
                         ->paginate(getPaginate());
-        return view('Template::user.kyc.guarantor_requests', compact('pageTitle', 'incoming'));
+
+        // Migrated to React + Inertia (resources/js/Pages/User/GuarantorRequests.tsx).
+        // Legacy view: Template::user.kyc.guarantor_requests
+        return Inertia::render('User/GuarantorRequests', [
+            // Only the requester's name and username: never their KYC details.
+            'requests' => $incoming->through(fn ($req) => [
+                'id'           => $req->id,
+                'name'         => $req->user ? trim($req->user->firstname . ' ' . $req->user->lastname) : 'Unknown User',
+                'username'     => $req->user?->username,
+                'status'       => $req->status,
+                'requested'    => $req->created_at->diffForHumans(),
+                'responded'    => $req->responded_at?->diffForHumans(),
+                'respondedAt'  => $req->responded_at?->format('d M Y, g:i A'),
+                'acceptUrl'    => route('user.guarantor.accept', $req->id),
+                'declineUrl'   => route('user.guarantor.decline', $req->id),
+            ]),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function guarantorAccept($id)
