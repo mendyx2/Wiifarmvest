@@ -174,7 +174,7 @@
                         <div class="empty-state">
                             <i class="fas fa-inbox"></i>
                             <p class="empty-state-text">You don't have any investments yet.</p>
-                            <a href="{{ route('user.plan.index') }}" class="btn btn-primary-gradient">
+                            <a href="{{ route('user.investment.portfolio') }}" class="btn btn-primary-gradient">
                                 <i class="fas fa-plus me-2"></i>Start Investing
                             </a>
                         </div>

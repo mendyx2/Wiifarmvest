@@ -137,6 +137,12 @@
                                     </a>
                                 </li>
                                 <li>
+                                    <a href="{{ route('user.binary.summery') }}" class="bank-nav-link {{ menuActive('user.binary.summery') }}">
+                                        <span class="bank-nav-icon"><i class="las la-balance-scale"></i></span>
+                                        <span>Binary Summary</span>
+                                    </a>
+                                </li>
+                                <li>
                                     <a href="{{ route('user.pv.log') }}" class="bank-nav-link {{ menuActive('user.pv.log') }}">
                                         <span class="bank-nav-icon"><i class="las la-list-alt"></i></span>
                                         <span>PV Log</span>

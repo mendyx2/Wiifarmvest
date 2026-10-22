@@ -27,8 +27,6 @@ use App\Models\MatrixStage;
 use App\Models\Stockist_store;
 use App\Models\UserStageProgress;
 use App\Services\MatrixPlacementService;
-use App\Services\WalletService;
-use App\Exceptions\InsufficientBalanceException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use App\Lib\GoogleAuthenticator;
@@ -1056,88 +1054,6 @@ class UserController extends Controller
 
         $notify[] = ['success', 'Order Request successfully'];
             return back()->withNotify($notify);
-    }
-
-    /**
-     * Buy a product from the Money Box balance.
-     *
-     * The product row is locked so two buyers can't both take the last units,
-     * and the debit goes through WalletService so a parallel withdrawal or
-     * purchase can't spend the same balance. Stock, money, ledger and order
-     * all commit together or not at all.
-     */
-    public function purchase(Request $request)
-    {
-        $request->validate([
-            'quantity'   => 'required|integer|gt:0',
-            'product_id' => 'required|integer|gt:0'
-        ]);
-
-        $user = auth()->user();
-
-        try {
-            $result = DB::transaction(function () use ($request, $user) {
-                $product = Product::hasCategory()->active()->lockForUpdate()->find($request->product_id);
-
-                if (!$product) {
-                    return 'Product not found';
-                }
-
-                if ($request->quantity > $product->quantity) {
-                    return 'Requested quantity is not available in stock';
-                }
-
-                $totalPrice = $product->price * $request->quantity;
-
-                if ($totalPrice <= 0) {
-                    return 'This product is not available for purchase';
-                }
-
-                $transaction = app(WalletService::class)->debit(
-                    $user,
-                    (float) $totalPrice,
-                    'product_purchase',
-                    $product->name . ' item purchase',
-                );
-
-                $product->quantity -= $request->quantity;
-                $product->save();
-
-                $order              = new Order();
-                $order->user_id     = $user->id;
-                $order->product_id  = $product->id;
-                $order->quantity    = $request->quantity;
-                $order->price       = $product->price;
-                $order->total_price = $totalPrice;
-                $order->trx         = $transaction->trx;
-                $order->status      = 0;
-                $order->order_code  = getTrx(10);
-                $order->save();
-
-                return compact('product', 'transaction', 'totalPrice');
-            });
-        } catch (InsufficientBalanceException) {
-            $notify[] = ['error', 'Balance is not sufficient'];
-            return back()->withNotify($notify);
-        }
-
-        if (is_string($result)) {
-            $notify[] = ['error', $result];
-            return back()->withNotify($notify);
-        }
-
-        ['product' => $product, 'transaction' => $transaction, 'totalPrice' => $totalPrice] = $result;
-
-        notify($user, 'ORDER_PLACED', [
-            'product_name' => $product->name,
-            'quantity'     => $request->quantity,
-            'price'        => showAmount($product->price, currencyFormat: false),
-            'total_price'  => showAmount($totalPrice, currencyFormat: false),
-            'trx'          => $transaction->trx,
-        ]);
-
-        $notify[] = ['success', 'Order placed successfully'];
-        return back()->withNotify($notify);
     }
 
     public function indexTransfer()

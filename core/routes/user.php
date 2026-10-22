@@ -110,7 +110,6 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::get('orders1', fn () => to_route('user.orders.index'))->name('orders1'); // removed duplicate page
                 
                 //purchase
-                Route::post('purchase', 'purchase')->name('purchase');
                 Route::post('purchaseDone', 'purchaseDone')->name('purchaseDone');
 
                  // Legacy restock request to the company: Mega stockists only
@@ -329,7 +328,8 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             });
 
             Route::controller('PlanController')->prefix('plan')->name('plan.')->group(function () {
-             Route::get('/', 'planIndex')->name('index');
+                // planIndex never existed; the old plan page was the same thing as the portfolio (Buy Shares, subscriptions, receipts).
+                Route::get('/', fn () => to_route('user.investment.portfolio'))->name('index'); // removed duplicate page
                // Route::get('/investment', 'planIndex1')->name('investment');
                // Route::get('/reservation', 'reservation')->name('reservation');
                 //Route::post('/', 'planStore')->name('purchase');

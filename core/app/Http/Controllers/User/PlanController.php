@@ -813,22 +813,60 @@ class PlanController extends Controller
 
     }
 
-    public function binaryList(Request $request)
+    /**
+     * Binary summary: the member's two legs on the stage-1 tree (where PV
+     * is credited). Replaces the route that pointed to a missing method.
+     */
+    public function binarySummery()
     {
-        $pageTitle = 'Binary List';
+        $pageTitle = 'Binary Summary';
         $user      = auth()->user();
+        $matrix    = Matrix::where('stage_id', 1)->where('user_id', $user->id)->first();
+        $downline  = $this->stageOneDownline($user->id);
 
-        // One-query adjacency map from Matrix (stage 1): user_id -> {left, right}
+        $legs = [];
+        foreach (['left' => 'Left', 'right' => 'Right'] as $field => $label) {
+            $inLeg  = array_filter($downline, fn ($member) => $member['leg'] === $label);
+            $direct = $matrix && (int) $matrix->{$field} > 0 ? User::find((int) $matrix->{$field}) : null;
+
+            $legs[$field] = [
+                'label'      => $label,
+                'members'    => count($inLeg),
+                'deepest'    => $inLeg ? max(array_column($inLeg, 'level')) : 0,
+                'direct'     => $direct?->username,
+                'pairingPv'  => showAmount($matrix?->{'pv_' . $field . '_pairing'} ?? 0, currencyFormat: false),
+                'rankingPv'  => showAmount($matrix?->{'pv_' . $field} ?? 0, currencyFormat: false),
+                'emptySlot'  => $matrix && !$direct
+                    ? route('user.distributor.index', ['parent' => $user->username, 'position' => $field])
+                    : null,
+            ];
+        }
+
+        return Inertia::render('User/BinarySummary', [
+            'inTree'        => (bool) $matrix,
+            'legs'          => $legs,
+            'totalMembers'  => count($downline),
+            'binaryListUrl' => route('user.binary.list'),
+            'treeUrl'       => route('user.my.tree'),
+        ])->withViewData(compact('pageTitle'));
+    }
+
+    /**
+     * Every member under $userId on the stage-1 tree, as
+     * user_id => ['level' => n, 'leg' => 'Left'|'Right'].
+     * One query for the whole tree, then a breadth-first walk.
+     */
+    private function stageOneDownline(int $userId): array
+    {
         $allMatrices = Matrix::where('stage_id', 1)
             ->select('user_id', 'left', 'right')
             ->get()
             ->keyBy('user_id');
 
-        // BFS via Matrix left/right fields — track level and leg
         $downlineMap = [];
         $queue       = new \SplQueue();
-        $queue->enqueue(['id' => $user->id, 'level' => 0, 'leg' => null]);
-        $visited = [$user->id => true];
+        $queue->enqueue(['id' => $userId, 'level' => 0, 'leg' => null]);
+        $visited = [$userId => true];
 
         while (!$queue->isEmpty()) {
             $node   = $queue->dequeue();
@@ -847,6 +885,16 @@ class PlanController extends Controller
                 $queue->enqueue(['id' => $cid, 'level' => $node['level'] + 1, 'leg' => $leg]);
             }
         }
+
+        return $downlineMap;
+    }
+
+    public function binaryList(Request $request)
+    {
+        $pageTitle = 'Binary List';
+        $user      = auth()->user();
+
+        $downlineMap = $this->stageOneDownline($user->id);
 
         // Username search — must be a downline member
         $searchUsername = trim((string) $request->input('username', ''));

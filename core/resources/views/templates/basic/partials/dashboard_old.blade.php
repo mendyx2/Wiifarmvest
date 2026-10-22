@@ -20,7 +20,7 @@
                             <a class="{{menuActive('user.home')}}" href="{{route('user.home')}}">@lang('Dasboard')</a>
                         </li>
                         <li>
-                            <a class="{{menuActive('user.plan.index')}}" href="{{route('user.plan.index')}}"> @lang('Plan') </a>
+                            <a class="{{menuActive('user.investment.portfolio')}}" href="{{route('user.investment.portfolio')}}"> @lang('Plan') </a>
                         </li>
                          <li>
                             <a class="{{menuActive('user.bv.log')}}" href="{{ route('user.bv.log') }}">@lang('BV Log') </a>

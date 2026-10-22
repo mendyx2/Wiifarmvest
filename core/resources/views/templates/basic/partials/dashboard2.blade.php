@@ -56,7 +56,7 @@
                     </ul>
                     <ul class="user-dashboard-tab">
                         <li> 
-                           <a class="{{menuActive('user.plan.index')}}" href="{{route('user.plan.index')}}">
+                           <a class="{{menuActive('user.investment.portfolio')}}" href="{{route('user.investment.portfolio')}}">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 212.1 209.7" style="enable-background:new 0 0 212.1 209.7" xml:space="preserve"><style>.st6{fill:#000}.st11{fill:none;stroke:#000;stroke-width:6.8376}</style><g id="Layer_4"><path class="st6" d="M39.9 209.7v-23.4H2.4v23.4"/><path style="fill:#000" d="M96.2 209.7v-51.6H58.7v51.6"/><path class="st6" d="M152.4 209.7V30.4h-37.5v179.3"/><path style="fill:#000" d="M208.7 209.7V78.4h-37.5v131.3"/><path class="st11" d="m2.4 172.2 56.3-56.3 18.7 18.8L208.7 3.4"/><path class="st11" d="M208.7 40.9V3.4h-37.5"/></g></svg> &nbsp;
                                        
                                 @lang('Project Board') </a>
@@ -100,7 +100,7 @@
                                     <li> 
                                         
 
-                                        <a class="{{menuActive('user.plan.index')}}" href="{{route('user.plan.index')}}">
+                                        <a class="{{menuActive('user.investment.portfolio')}}" href="{{route('user.investment.portfolio')}}">
 
                                        
                                          @lang('Farm Projects') </a>

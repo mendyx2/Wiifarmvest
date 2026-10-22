@@ -1302,7 +1302,7 @@ tier, unknown project. VISA stays untouched in every case.
 
 | Page | Status |
 |---|---|
-| `/user/plan` (`user.plan.index`) | **Already broken**: the route points to `PlanController@planIndex`, which does not exist. The menu does not link to it; the old portfolio button and the land page did. `plan.blade.php` also uses the missing route `user.plan.reserve`. |
+| `/user/plan` (`user.plan.index`) | ✅ **Fixed in Step 60** (now redirects to the portfolio). Was: the route pointed to `PlanController@planIndex`, which does not exist. The menu does not link to it; the old portfolio button and the land page did. `plan.blade.php` also uses the missing route `user.plan.reserve`. |
 | `/user/shares` (`user.shares`) | Not linked anywhere; buying works through the portfolio pop-up. Its purchase bug is fixed (Step 38). **Decision for you:** remove it as a duplicate of the Buy Shares pop-up, or keep it. |
 | `reservation` | Its route is commented out, so it cannot be reached. |
 
@@ -1719,6 +1719,144 @@ Because the server always sends fresh props, the old
 **Noticed for 4e (not changed yet):** `StockistController` line ~980 sets
 an order's status to the text `'redeemed'`, but everywhere else the status
 is a number (1 = redeemed). It will be fixed with the stockist pages.
+
+
+### Step 59: "Buy directly from the Money Box" removed
+
+`POST /user/purchase` (`UserController::purchase`) let a member buy a
+product with their **Money Box** balance. Checking it against how the shop
+works now:
+
+| | Cart checkout (Step 55) | Money Box direct buy |
+|---|---|---|
+| Wallet | Re-purchase wallet (the cart page says "Products are purchased using your Re-purchase wallet only") | Money Box |
+| Price | the price for your state | the product's base price, **ignoring state prices** |
+| Invoice code to collect the goods at a stockist | yes | **no**: the order has no invoice, so it can never be redeemed |
+| Used by a page | yes | **no**: its only button was commented out |
+
+So it was not needed, and it would have taken money for goods the member
+could not collect. **Removed:** the route and the method (and the two
+imports only it used). The `ORDER_PLACED` email template stays, because
+`StockistController` still sends it.
+
+### Step 60: `/user/plan` fixed (it was a duplicate)
+
+The route pointed to `PlanController@planIndex`. That method **never
+existed**: it is not in the git history either. The views it would have
+shown (`plan.blade.php`, `plan_new1.blade.php`, `investment.blade.php`)
+had four tabs:
+
+| Old tab | Where it lives now |
+|---|---|
+| Current offering / Subscription (buy units) | **Buy Shares** pop-up on the investment portfolio |
+| My subscriptions (+ PDF receipt + certificate) | Portfolio list → investment details, which has both PDF buttons |
+| Documents | two "Download" buttons that did nothing |
+
+The subscribe form also posted to `user.plan.reserve`, a route that is
+commented out. So the page was a broken copy of the portfolio. Following
+the duplicate rule:
+
+- `/user/plan` now **redirects to `/user/investment/portfolio`**. The
+  route name stays, so old links keep working.
+- Links to it (land page, home-page plan section, old menus) now point
+  straight at the portfolio.
+- The 3 views were deleted.
+
+### Step 61: `/user/binary-summery` rebuilt as a React page
+
+The route pointed to `PlanController@binarySummery`, which never existed
+either. The left-over Blade view showed six numbers from the
+`user_extras` table: paid/free members and BV per leg. **Those numbers are
+from the script's old binary plan and are no longer kept up to date:**
+
+- the "paid" counts are never updated (`updatePaidCount()` is never
+  called);
+- BV is only added by the admin supply screen.
+
+Showing them would mislead members. The page now shows the numbers this
+site really uses, from the **stage-1 tree**, where PV is credited
+(`upLinePvOnUpgrade()`):
+
+| Per leg | Source |
+|---|---|
+| Members in the leg, deepest level | the same breadth-first walk the Binary List uses |
+| Direct member under you | `matrices.left` / `matrices.right` |
+| Pairing PV | `pv_left_pairing` / `pv_right_pairing`: waiting to be matched for the matching bonus |
+| Ranking PV | `pv_left` / `pv_right`: everything the leg has earned |
+| Empty first position | "Register into this slot" link to the distributor form |
+
+**Files:**
+
+- `Pages/User/BinarySummary.tsx` + `BinarySummary.css`, scoped under
+  `.page-binary-summary`. It reuses the Binary List's hero and empty-state
+  styles from `main.css`.
+- `PlanController::binarySummery()`.
+- `binaryList()` and the summary now share one private method,
+  `stageOneDownline()`, instead of two copies of the tree walk.
+- The URL keeps its old spelling (`summery`), so existing links work. The
+  page title says "Summary".
+- New sidebar entry "Binary Summary" under Binary List.
+- The old `binarySummery.blade.php` was deleted.
+
+### Step 62: The dead links from Step 45, one by one
+
+The route-name scan now finds **56** references to names that do not exist
+(was 60; the 4 in the deleted plan views are gone). They fall into three
+groups.
+
+**A. Lines that really run, and what each should point to:**
+
+| Where | Missing name | When it runs, and what happens | Should point to |
+|---|---|---|---|
+| `LoginController:146` | `user.land` | A member whose `section` is 2 logs in → **error page right after login**. Nothing sets `section = 2` any more (registration and Add Distributor set 1), so this only hits old accounts. | `user.home`: treat them like everyone else (the "land" page has no route and its view is not used). |
+| `LeadershipBonusService:324` | `user.leadership` | Building the "you qualified for the Leadership bonus" notice. The error is caught and logged, so **that notice is silently never sent**. | There is no member leadership page. Best fit today: `user.pv.log` (leadership is earned from leg PV). Or build a small "Leadership" page later and link that. |
+| `Admin/AdminUserController:234,247` (also 185 in an unrouted `update1`) | `admin.users.index` | An admin tries to delete or deactivate **their own** admin account → error page instead of "You cannot…". | `admin.admins.index`: the Admin Users list this same controller uses elsewhere. |
+| `StockistController:189` | `stockist.dashboard` | Right after a stockist profile is created. The profile **is saved**, but the member sees an error page. | `user.stockist.dashboard` (the stockist routes sit in the `user.` group). Fix in 4e. |
+| `StockistController:692` | `stockist.setup` | Opening redemption history without a stockist profile. | `user.stockist.setup`. Fix in 4e. |
+| `StockistMiddleware:15` | `login` | A logged-out visitor on a stockist URL. Rare: the outer `auth` middleware usually catches them first. | `user.login`. Fix in 4e. |
+
+**B. Lines in code nothing can reach** (no route or view uses them, so the
+link never runs). The fix is to **delete the dead code**, not to repoint it:
+
+| File | Missing name(s) | Why it is dead |
+|---|---|---|
+| `User/LoanController`, `User/SavingsController` | `user.loans.index`, `user.savings.index` | No member routes. Loans and savings exist only in the admin panel. |
+| `User/TransferController` | `user.transfer.index` | Old bonus transfer; replaced by `BonusTransferController` (live). |
+| `Gateway/Paystack/ProcessController_new.php` | `user.land` | A backup copy; the routes use `ProcessController`. |
+| `User/TestController:170` | `dashboard` | In `test1()`, which has no route. |
+| `partials/dashboard1`, `partials/dashboard_new` | `user.savings.index`, `user.loans.index`, `user.welcome`, `user.land`, `user.orders` | Old menus; the layout uses `partials/dashboard`. |
+| `user/land.blade.php`, `user/welcome.blade.php` | `user.deposit.index1`, `user.land` | No controller renders them. |
+| `user/auth/signup.blade.php` | `user.register2` | Registration uses another view; `register2` is commented out. |
+| `user/bonus/transfer.blade.php` | `user.bonus.purchase-status` | The live page is `user/bonus_transfer.blade.php`. |
+| `blog.blade.php`, `blog_details.blade.php`, `sections/blog.blade.php` | `blog.details` | The public site (home, blog, pages) is switched off: `SiteController` sends every visitor to the login page. |
+| `components/email/button.blade.php` | `order.tracking` | Not a real component: a pasted example whose "usage" line is inside the component itself. |
+| `admin/frontend/section.blade.php:358` | `admin.frontend.import` | Inside `@if (!empty($templates))`, and `$templates` is never passed, so the block never shows. Delete the block. |
+
+**C. The rest (about 30):** inside `_old` files and `dashboard2.blade.php`,
+which are not used. They go away when those files are deleted.
+
+**Also found, worth fixing:** `/user/test` (`TestController@anotherTest`) is
+a **developer test route that any logged-in member can open**. It runs the
+matrix reconnection code for whoever visits, and crashes for members without
+an active matrix. It should be removed.
+
+**Not changed yet:** groups A (non-stockist), B and C and `/user/test` wait
+for your go-ahead. The stockist lines will be fixed in 4e.
+
+### Step 63: Verification for Steps 59–61
+
+- **Server:**
+  - `GET /user/plan` → 302 to the portfolio.
+  - `POST /user/purchase` no longer exists.
+  - Binary summary on the test network (7 → bola, chi; bola → dan): left 2
+    members, deepest 2, PV 80/300; right 1, deepest 1, PV 40/120; total 3.
+    These match the Binary List.
+  - A member with no downline sees "Register into this slot" links; one
+    with no tree position sees the empty state.
+- **Browser: 7/7 new checks** (numbers, direct members, link to the Binary
+  List without a reload, empty state, legs side by side on desktop and
+  stacked at 375px with no sideways scroll).
+- **All suites: 260 browser checks, 0 failures.** `route:cache` works.
 
 ---
 

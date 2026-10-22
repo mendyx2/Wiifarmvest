@@ -144,7 +144,7 @@
             Let's Grow Food</h1>
         <p class="lead" style="color: black;">Africa’s agricultural revolution won’t be actualized by discussion panels or promises, only by execution. Wiifarm Cooperative Society is building the structures to transform land, create jobs, and feed our future..</p>
         <div class="d-grid gap-2 d-md-flex justify-content-md-start">
-          <a type="button" href="{{route('user.plan.index')}}" class="btn  btn-sm btn-outline-success btn-lg px-4 me-md-2">Farm project</a>
+          <a type="button" href="{{route('user.investment.portfolio')}}" class="btn  btn-sm btn-outline-success btn-lg px-4 me-md-2">Farm project</a>
           
         </div>
       </div>
