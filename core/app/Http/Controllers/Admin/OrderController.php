@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Constants\Status;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 
 class OrderController extends Controller
@@ -29,26 +30,35 @@ class OrderController extends Controller
             'status' => 'required|in:1,2',
         ]);
 
-        $order = Order::where('status', Status::ORDER_PENDING)
-            ->with(['items.product', 'user'])
-            ->findOrFail($id);
+        $result = DB::transaction(function () use ($request, $id) {
+            // Locked so two clicks can't both refund the same order.
+            $order = Order::where('status', Status::ORDER_PENDING)
+                ->with(['items.product', 'user', 'invoice.redemptions'])
+                ->lockForUpdate()
+                ->findOrFail($id);
 
-        $user        = $order->user;
-        $totalAmount = $order->total_amount;
-        $itemCount   = $order->items->count();
+            $user = $order->user;
+            // Cart orders keep their total on the invoice; orders.total_amount
+            // stays empty for them, so the old code refunded ₦0.
+            $totalAmount = (float) ($order->invoice?->total_amount ?? $order->total_amount);
+            $itemCount   = $order->items->count();
 
-        if ($request->status == Status::ORDER_SHIPPED) {
-            $order->status = Status::ORDER_SHIPPED;
+            if ($request->status == Status::ORDER_SHIPPED) {
+                $order->status = Status::ORDER_SHIPPED;
+                $order->save();
 
-            notify($user, 'ORDER_SHIPPED', [
-                'invoice_code' => $order->invoice_code,
-                'item_count'   => $itemCount,
-                'total_price'  => showAmount($totalAmount, currencyFormat: false),
-                'trx'          => $order->trx,
-            ]);
-        } else {
-            $order->status          = Status::ORDER_CANCELED;
-            $user->product_wallet  += $totalAmount;
+                return ['ORDER_SHIPPED', $order, $user, $itemCount, $totalAmount];
+            }
+
+            // Goods already handed over by a stockist can't be refunded.
+            if ($order->invoice && $order->invoice->redemptions->isNotEmpty()) {
+                return 'This order has already been (partly) collected from a stockist and cannot be cancelled.';
+            }
+
+            $order->status = Status::ORDER_CANCELED;
+            $order->save();
+
+            $user->product_wallet += $totalAmount;
             $user->save();
 
             $transaction               = new Transaction();
@@ -62,19 +72,24 @@ class OrderController extends Controller
             $transaction->trx          = $order->trx;
             $transaction->save();
 
-            foreach ($order->items as $item) {
-                $item->product->increment('quantity', $item->quantity);
-            }
+            // No stock is put back: checkout never takes company stock (stock
+            // leaves a stockist's store only when the invoice is redeemed).
 
-            notify($user, 'ORDER_CANCELED', [
-                'invoice_code' => $order->invoice_code,
-                'item_count'   => $itemCount,
-                'total_price'  => showAmount($totalAmount, currencyFormat: false),
-                'trx'          => $order->trx,
-            ]);
+            return ['ORDER_CANCELED', $order, $user, $itemCount, $totalAmount];
+        });
+
+        if (is_string($result)) {
+            $notify[] = ['error', $result];
+            return back()->withNotify($notify);
         }
 
-        $order->save();
+        [$template, $order, $user, $itemCount, $totalAmount] = $result;
+        notify($user, $template, [
+            'invoice_code' => $order->invoice_code,
+            'item_count'   => $itemCount,
+            'total_price'  => showAmount($totalAmount, currencyFormat: false),
+            'trx'          => $order->trx,
+        ]);
 
         $notify[] = ['success', 'Order status updated successfully'];
         return back()->withNotify($notify);
