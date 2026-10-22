@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use App\Support\FormPresenter;
 use App\Support\PaymentPresenter;
+use App\Support\ShopPresenter;
 use App\Models\GatewayCurrency;
 use App\Models\NotificationLog;
 use App\Models\GuarantorRequest;
@@ -120,100 +121,77 @@ class UserController extends Controller
         if ($categoryId) {
             $products = $products->where('category_id', $categoryId);
         }
-        $products    = $products->active()->with('category')->hasCategory()
+        $products   = $products->active()->with('category')->hasCategory()
             ->withMin('statePrices as state_price_min', 'price')
             ->withMax('statePrices as state_price_max', 'price')
             ->paginate(getPaginate(16));
-        $categories  = Category::active()->hasActiveProduct()->get()->take(5);
-        $sections    = Page::where('tempname', activeTemplate())->where('slug', 'products')->first();
-        $seoContents = @$sections->seo_content;
-        $seoImage    = @$seoContents->image ? getImage(getFilePath('seo') . '/' . @$seoContents->image, getFileSize('seo')) : null;
+        $categories = Category::active()->hasActiveProduct()->get()->take(5);
 
-        return view('Template::products', compact('pageTitle', 'products', 'categories', 'categoryId', 'sections', 'seoContents', 'seoImage'));
-    }
-
-    public function products1($categoryId = null)
-    {
-        $pageTitle = "Products";
-        $products  = Product::query();
-        if ($categoryId) {
-            $products = $products->where('category_id', $categoryId);
-        }
-        $products    = $products->active()->with('category')->hasCategory()
-            ->withMin('statePrices as state_price_min', 'price')
-            ->withMax('statePrices as state_price_max', 'price')
-            ->paginate(getPaginate(16));
-        $categories  = Category::active()->hasActiveProduct()->get()->take(5);
-        $sections    = Page::where('tempname', activeTemplate())->where('slug', 'products')->first();
-        $seoContents = @$sections->seo_content;
-        $seoImage    = @$seoContents->image ? getImage(getFilePath('seo') . '/' . @$seoContents->image, getFileSize('seo')) : null;
-
-        return view('Template::products1', compact('pageTitle', 'products', 'categories', 'categoryId', 'sections', 'seoContents', 'seoImage'));
+        return Inertia::render('User/Shop/Products', [
+            'products'   => $products->through(fn ($product) => ShopPresenter::card($product)),
+            'categories' => $categories->map(fn ($category) => [
+                'id'   => $category->id,
+                'name' => __($category->name),
+                'url'  => route('user.products', $category->id),
+            ])->values(),
+            'categoryId' => $categoryId ? (int) $categoryId : null,
+            'allUrl'     => route('user.products'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function productDetails($id)
     {
         $pageTitle = "Product Details";
-        $product   = Product::active()->hasCategory()->findOrFail($id);
-         $product_state_prices = ProductStatePrice::where('product_id', $id)->get();
-         $product_state_prices = $product_state_prices->unique('state_id');
-       
+        $product   = Product::active()->hasCategory()->with(['category', 'images'])->findOrFail($id);
+        // One price per state; the page switches between them without asking the server.
+        $statePrices = ProductStatePrice::where('product_id', $id)->with('state')->get()->unique('state_id')->values();
 
-        //dd($product_state_prices);
-
-        $relates   = Product::active()->hasCategory()->where('category_id', $product->category_id)->where('id', '!=', $product->id)
+        $relates = Product::active()->hasCategory()->where('category_id', $product->category_id)->where('id', '!=', $product->id)
             ->withMin('statePrices as state_price_min', 'price')
             ->withMax('statePrices as state_price_max', 'price')
             ->latest()->limit(10)->get();
 
-        $seoContents['social_title']       = $product->meta_title;
-        $seoContents['keywords']           = $product->meta_keyword;
-        $seoContents['description']        = strLimit(strip_tags($product->meta_description), 150);
-        $seoContents['social_description'] = strLimit(strip_tags($product->meta_description), 150);
-        $seoContents['image_size']         = getFileSize('products');
-        $seoImage                          = getImage(getFilePath('products') . '/' . @$product->thumbnail, getFileSize('products'));
-        return view('Template::product_detail', compact('pageTitle', 'product', 'relates', 'seoContents', 'seoImage', 'product_state_prices'));
+        $prices = $statePrices->pluck('price')->map(fn ($p) => (float) $p);
+        $url    = url()->current();
+
+        return Inertia::render('User/Shop/ProductDetail', [
+            'product' => [
+                'id'          => $product->id,
+                'name'        => __($product->name),
+                'sku'         => $product->sku,
+                'category'    => $product->category ? __($product->category->name) : null,
+                'categoryUrl' => route('user.products', $product->category_id),
+                'inStock'     => $product->quantity > 0,
+                'images'      => collect([$product->thumbnail])
+                    ->merge($product->images?->pluck('name') ?? [])
+                    ->map(fn ($file) => ShopPresenter::image($file))->values(),
+                'keywords'       => array_values(array_filter((array) $product->meta_keyword)),
+                'specifications' => collect((array) $product->specifications)
+                    ->map(fn ($spec) => ['name' => (string) @$spec['name'], 'value' => (string) @$spec['value']])->values(),
+                // Written by the admin in a rich-text editor: cleaned before it is shown.
+                'description' => FormPresenter::safeHtml($product->description),
+                // Until a state is chosen: the range across states.
+                'priceRange' => ShopPresenter::price($prices->min() ?? $product->price, $prices->max()),
+            ],
+            'states' => $statePrices->map(fn ($record) => [
+                'id'    => $record->id,
+                'name'  => (string) @$record->state->name,
+                'price' => ShopPresenter::price($record->price),
+            ]),
+            'relates' => $relates->map(fn ($related) => ShopPresenter::card($related)),
+            'share'   => [
+                'facebook' => 'https://www.facebook.com/sharer/sharer.php?u=' . urlencode($url),
+                'twitter'  => 'https://x.com/intent/tweet?text=' . urlencode(__($product->name)) . '&url=' . urlencode($url),
+                'linkedin' => 'https://www.linkedin.com/shareArticle?mini=true&url=' . urlencode($url) . '&title=' . urlencode(__($product->name))
+                    . '&summary=' . urlencode(strLimit(strip_tags((string) $product->meta_description), 100)),
+            ],
+            'cartCount'   => auth()->user()->cart->items()->count(),
+            'addToCartUrl' => route('user.cart.add', $product->id),
+            'cartUrl'     => route('user.cart.index'),
+            'shapeImage'  => asset(activeTemplate(true) . 'images/shape/blob1.png'),
+        ])->withViewData(compact('pageTitle'));
     }
 
-    public function searchState(Request $request){ 
-        $request->validate([
-            'product_state_id' => 'required|integer|exists:product_state_prices,id'
-        ]);
-        //'state_id' => 'required|string|exists:states,invoice_code'
-        $product_state  = ProductStatePrice::find($request->product_state_id);
-       
-        return response()->json([
-            'success' => true,
-            'price' => showAmount($product_state->price),
-            // Same markup as the page (amount + currency code), so the price keeps its currency
-            'price_html' => \Illuminate\Support\Facades\Blade::render('<x-product.price :amount="$amount" />', ['amount' => (float) $product_state->price]),
-            'product_state_id' => $product_state->id
-        ]);
-    }
-    
-    public function productDetails1($id)
-    {
-        $pageTitle = "Product Details";
-        $product   = Product::active()->hasCategory()->findOrFail($id);
-        
-        
-
-        $relates   = Product::active()->hasCategory()->where('category_id', $product->category_id)->where('id', '!=', $product->id)
-            ->withMin('statePrices as state_price_min', 'price')
-            ->withMax('statePrices as state_price_max', 'price')
-            ->latest()->limit(10)->get();
-
-        $seoContents['social_title']       = $product->meta_title;
-        $seoContents['keywords']           = $product->meta_keyword;
-        $seoContents['description']        = strLimit(strip_tags($product->meta_description), 150);
-        $seoContents['social_description'] = strLimit(strip_tags($product->meta_description), 150);
-        $seoContents['image_size']         = getFileSize('products');
-        $seoImage                          = getImage(getFilePath('products') . '/' . @$product->thumbnail, getFileSize('products'));
-        return view('Template::product_detail1', compact('pageTitle', 'product', 'relates', 'seoContents', 'seoImage'));
-    }
-
-
-    
     public function depositHistory(Request $request)
     {
         $pageTitle = 'Deposit History';
@@ -1162,11 +1140,6 @@ class UserController extends Controller
         return back()->withNotify($notify);
     }
 
-    public function purchase1(Request $request)
-    {
-        return $this->purchase($request);
-    }
-
     public function indexTransfer()
     {
         $pageTitle = 'Balance Transfer';
@@ -1185,27 +1158,12 @@ class UserController extends Controller
 
     
 
-    public function orders()
-    {
-        $pageTitle = 'Orders';
-        $orders    = Order::where('user_id', auth()->user()->id)->with('product')->orderBy('id', 'desc')->paginate(getPaginate());
-        return view('Template::user.orders', compact('pageTitle', 'orders'));
-    }
-
     public function salesStockistOrders()
     {
         $pageTitle = 'Sales History';
         $orders    = Order::where('stockist_user_id', auth()->user()->id)->with('product')->orderBy('id', 'desc')->paginate(getPaginate());
         return view('Template::user.sales_orders', compact('pageTitle', 'orders'));
     }
-
-    public function orders1()
-    {
-        $pageTitle = 'Orders';
-        $orders    = Order::where('user_id', auth()->user()->id)->with('product')->orderBy('id', 'desc')->paginate(getPaginate());
-        return view('Template::user.orders1', compact('pageTitle', 'orders'));
-    }
-
 
     public function sorders()
     {

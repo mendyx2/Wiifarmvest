@@ -77,7 +77,7 @@ gets replaced, one page at a time.
 | **1. Pilot page** | Change Password (`/user/change-password`) | ✅ Done |
 | **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | ✅ Done: 8 pages (Steps 9–22); BV log skipped because its page is broken (Step 18) |
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
-| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects · 4c network trees · 4d shop/cart/orders · 4e stockist area | 🟡 In progress: 4a, 4b and 4c done (Steps 32–52) |
+| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects · 4c network trees · 4d shop/cart/orders · 4e stockist area | 🟡 In progress: 4a–4d done (Steps 32–58) |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
@@ -1500,6 +1500,225 @@ It now shows stage 1.
 | 4c network trees | ✅ |
 | 4d shop, cart and orders | next |
 | 4e stockist area | after 4d |
+
+### Step 53: Two money bugs in the cart and checkout (own commit, first)
+
+Found while mapping the shop, and fixed **before** touching the pages, so
+the fix can be reviewed on its own.
+
+1. **Anyone could change or empty anyone's cart.** The cart routes take a
+   cart-item id from the URL (`PUT /user/cart/update/201`,
+   `DELETE /user/cart/remove/201`) and the controller never checked whose
+   cart that item was in. `CartController::authorizeItem()` now answers
+   **404** unless the item is in the signed-in member's cart.
+2. **A double click on "Pay Now" could charge twice for one cart.** The
+   checkout read the cart *before* locking the user row. The second request
+   waited for the lock, then paid again with the cart it had already read,
+   although the first request had emptied it. The cart is now read and
+   locked **inside** the transaction, after the user lock, and the total is
+   recomputed there.
+
+Also:
+
+- "Add to cart" now refuses inactive products, and a state price that
+  belongs to a different product.
+- Errors are written to the log (`report($e)`) instead of showing the
+  exception text to the member.
+
+**Checked:** on the test data, user 7 got a 404 for user 20's cart item.
+Two pays in a row gave **one order and one ₦9,000 deduction**
+(₦30,000 → ₦21,000).
+
+### Step 54: Duplicate shop pages removed
+
+Same rule as before: **the duplicate goes, its old URL redirects to the
+page that stays.**
+
+| Old URL | Now goes to |
+|---|---|
+| `/products`, `/products/{cat}` (SiteController) | `/user/products`, `/user/products/{cat}` |
+| `/product/{id}/{slug}` (SiteController) | `/user/product/{id}/{slug}` |
+| `/products1…`, `/product1…` (both controllers) | the same two pages |
+| `/user/orders1` | `/user/orders` |
+| `/user/pp/products` (ProductController) | `/user/products` |
+
+The two product pages in `SiteController` and `UserController` were
+copies of each other. `SiteController` was also behind `auth`, so it was
+never really a public page. The sidebar, dashboard and home-page product
+section now link straight to `user.products` / `user.product.details`;
+the redirects are only there for old bookmarks.
+
+**Removed:**
+
+- `ProductController` (a third product list, with its own search, never
+  linked from any menu).
+- `UserController::products1 / productDetails1 / orders1 / purchase1`, and
+  the unrouted `UserController::orders`.
+- **9 Blade views:**
+  - `products1`, `product_detail1`
+  - `user/orders1`, `user/orders/checkout1`
+  - `user/cart/index1`, `user/cart/index2`
+  - `user/products/index`, `user/products/products_grid`
+- **POST routes** that nothing uses any more: `purchase1`,
+  `pp/products/search`, `pp/products/{p}/price/{s}`, `products/search`.
+  The last one was the state-price lookup; Step 55 explains why it is no
+  longer needed.
+
+**Kept:**
+
+- `user/orders.blade.php`: `StockistController` still uses it (4e).
+- `POST /user/purchase` (direct buy from the Money Box). It is a carefully
+  written endpoint, but no page calls it any more: its only button was
+  commented out in the old product page. **Decide later whether to delete
+  it.**
+
+### Step 55: The six shop pages in React
+
+| Page | URL | React file |
+|---|---|---|
+| Products | `/user/products/{cat?}` | `Pages/User/Shop/Products.tsx` |
+| Product detail | `/user/product/{id}/{slug}` | `Pages/User/Shop/ProductDetail.tsx` |
+| Cart | `/user/cart` | `Pages/User/Shop/Cart.tsx` |
+| Checkout | `/user/checkout` | `Pages/User/Shop/Checkout.tsx` |
+| My orders | `/user/orders` | `Pages/User/Shop/Orders.tsx` |
+| Order details | `/user/orders/{id}` | `Pages/User/Shop/OrderShow.tsx` |
+
+**Shared pieces (`Components/Shop/`):**
+
+- `ProductPrice`: the React twin of `<x-product.price>`. It shows "₦4,000 NGN"
+  or "₦4,000–₦4,200 NGN".
+- `Sku`: the twin of `<x-product.sku>`.
+- `ProductCard`: one product tile, used on the list and for related products.
+- `CopyNotice`: the "code copied" dialog.
+- `types.ts`.
+
+**On the server:** `App\Support\ShopPresenter` formats prices, exactly like
+the Blade component (currency from General Settings, ".00" dropped on whole
+amounts). It also builds product tiles and works out an order's status.
+
+**How the JSON endpoints became Inertia requests (new idea).** The old
+pages used jQuery `$.ajax` and got JSON back (`{success:false,
+message:…}`). Now the browser sends a normal Inertia request and the
+server answers like a form post:
+
+| Action | Server answers | React does |
+|---|---|---|
+| Add to cart, success | `back()` | `onSuccess` → "Product added" dialog and updates the cart badge |
+| Add to cart, refused (wrong state, product not available) | `back()->withErrors(['cart' => '…'])` | `onError` → the warning dialog with that text |
+| Change quantity / remove | `back()` (+ a toast on remove) | the page reloads its props: totals are always the server's |
+| Pay | redirect to the new order + success toast, or back + error toast | — |
+
+Because the server always sends fresh props, the old
+`location.reload()` after every change is gone.
+
+**Smaller changes on each page:**
+
+- **Product detail:**
+  - All state prices come with the page, so choosing a state switches the
+    price **instantly, with no server call**.
+  - The owl-carousel became a main photo with thumbnails; clicking the photo
+    opens it full screen.
+  - The admin-written description goes through HTMLPurifier first. The old
+    page printed it raw.
+  - Choosing **no state** now says "Please select your state first." Before,
+    it failed silently.
+  - The broken Instagram "share" link was dropped (Instagram has no share
+    URL).
+- **Product header badge:** the cart count lives in the Blade header,
+  outside React, so the page updates `#cart-count` itself after adding.
+- **Cart:**
+  - Quantity is capped at 1–99 on both sides.
+  - Typed quantities are sent when you leave the box or press Enter, not on
+    every keystroke.
+  - Removing uses the React `ConfirmDialog` instead of the browser's
+    `confirm()`.
+- **Checkout:** the button is disabled and the "Processing Payment" dialog is
+  shown while the request runs. Together with the server lock from Step 53,
+  one click gives one order.
+- **My orders:**
+  - Status, sort and search are now **done by the server** and kept in the
+    URL (`?status=pending&sort=oldest&search=INV`). The old page only
+    filtered and sorted the 10 orders on screen.
+  - The search waits until you stop typing.
+  - The counters (total/pending/redeemed/cancelled) now count **all** your
+    orders, not only the current page.
+
+### Step 56: Wrong data the old order pages showed
+
+1. **Order status words.** What the code really stores:
+   - 0 = pending
+   - 1 = redeemed (set by the stockist at redemption)
+   - 2 = cancelled (set by the admin)
+
+   The old pages used different numbers:
+   - The list called **3** "Cancelled", so cancelled orders were counted
+     nowhere.
+   - The detail page called **1** "Paid", so redeemed orders showed as
+     "Paid".
+
+   `ShopPresenter::orderStatus()` is now the one place that decides, and
+   both pages use it. An order whose invoice has a redemption date counts as
+   redeemed too.
+2. **Total ₦0 on the order page.** Cart orders keep their total on the
+   invoice; `orders.total_amount` stays empty. The "Total" row read the
+   empty column. It now uses the invoice total, the same number shown under
+   "Subtotal".
+3. **Made-up time in the timeline.** "Payment Confirmed" was shown as
+   *order time + 5 minutes*. Wallet payment happens in the same request as
+   the order, so it now shows the real (same) time.
+4. **The cart total could disagree with its lines.** The cart and checkout
+   pages showed the stored `carts.total_amount`. They now add up the lines
+   they show, with the same sum as `Cart::updateTotal()`. Payment always
+   recomputed it, so nobody was charged a wrong amount.
+
+### Step 57: Verification for 4d
+
+- **The real controllers were run on test data:**
+  - 3 products, 2 states, 1 hidden product.
+  - Two members with carts.
+  - Older orders: one redeemed, one cancelled, one pending, plus another
+    member's order.
+
+  | Case | Result |
+  |---|---|
+  | Product list | hidden product not listed; price range + "depends on your state" only where state prices differ; category filter |
+  | Product detail | 2 photos; `<script>` removed from the description; specs and tags; related products; unknown/hidden product → 404 |
+  | Add to cart | no state → "Please select your state first."; Abuja price in a Lagos cart → "single state"; another product's state price → "not available"; hidden product → "not available"; valid → added |
+  | Quantity / remove | 3 and 0 (rejected); another member's item → 404; remove → toast |
+  | Checkout | short wallet → disabled + shortfall; pay → redirect to the new order; second pay → "Your cart is empty", wallet charged once (30,000 → 12,000) |
+  | Empty cart at checkout | sent back to the cart |
+  | My orders | counts 4/2/1/1; each filter, both sorts and search return the right orders; a bad `?status=` falls back to "all"; the other member's order is never listed |
+  | Order details | your order shown; the other member's order → 403 |
+
+- **Old URLs:** all 9 redirects checked. `purchase1` and
+  `pp/products/search` no longer exist. `route:cache` still works. The
+  route-name scan still shows the same 60 old broken names, and no new ones.
+- **Browser: 46/46 checks** on the real build. They cover:
+  - the price range and instant state price
+  - the add-to-cart request body and the cart badge update
+  - the server-refusal dialog
+  - + / typed quantity capped at 99 / confirm-then-delete
+  - the processing dialog and **one POST on a double click**
+  - copy codes
+  - status filter in the URL
+  - search sent once after typing stops
+  - **no sideways scroll at 375px** on all six pages
+- **All suites: 253 browser checks, 0 failures.** The keyword scanner finds
+  710 React strings.
+
+### Step 58: Phase 4 status
+
+| Batch | Status |
+|---|---|
+| 4a KYC and tickets | ✅ |
+| 4b investments, awards, ACB, projects | ✅ |
+| 4c network trees | ✅ |
+| 4d shop, cart and orders | ✅ |
+| 4e stockist area | next |
+
+**Noticed for 4e (not changed yet):** `StockistController` line ~980 sets
+an order's status to the text `'redeemed'`, but everywhere else the status
+is a number (1 = redeemed). It will be fixed with the stockist pages.
 
 ---
 

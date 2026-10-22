@@ -130,7 +130,7 @@
                                     @else
                                     {{menuActive('product*')}}
                                     @endif
-                                    " href="{{ route('products') }}">@lang('Product')</a>
+                                    " href="{{ route('user.products') }}">@lang('Product')</a>
                                 </li>
                                 
                                 <li>

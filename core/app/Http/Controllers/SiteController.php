@@ -5,9 +5,6 @@ namespace App\Http\Controllers;
 use Carbon\Carbon;
 use App\Models\Page;
 use App\Models\User;
-use App\Models\Product;
-use App\Models\ProductStatePrice;
-use App\Models\Category;
 use App\Models\Frontend; 
 use App\Models\Language;
 use App\Constants\Status;
@@ -238,82 +235,6 @@ class SiteController extends Controller
         }
         $maintenance = Frontend::where('data_keys', 'maintenance.data')->first();
         return view('Template::maintenance', compact('pageTitle', 'maintenance'));
-    }
-
-    public function products($categoryId = null)
-    {
-        $pageTitle = "Products";
-        $products  = Product::query();
-        if ($categoryId) {
-            $products = $products->where('category_id', $categoryId);
-        }
-        $products    = $products->active()->with('category')->hasCategory()
-            ->withMin('statePrices as state_price_min', 'price')
-            ->withMax('statePrices as state_price_max', 'price')
-            ->paginate(getPaginate(16));
-        $categories  = Category::active()->hasActiveProduct()->get()->take(5);
-        $sections    = Page::where('tempname', activeTemplate())->where('slug', 'products')->first();
-        $seoContents = @$sections->seo_content;
-        $seoImage    = @$seoContents->image ? getImage(getFilePath('seo') . '/' . @$seoContents->image, getFileSize('seo')) : null;
-
-        return view('Template::products', compact('pageTitle', 'products', 'categories', 'categoryId', 'sections', 'seoContents', 'seoImage'));
-    }
-
-    public function products1($categoryId = null)
-    {
-        $pageTitle = "Products";
-        $products  = Product::query();
-        if ($categoryId) {
-            $products = $products->where('category_id', $categoryId);
-        }
-        $products    = $products->active()->with('category')->hasCategory()
-            ->withMin('statePrices as state_price_min', 'price')
-            ->withMax('statePrices as state_price_max', 'price')
-            ->paginate(getPaginate(16));
-        $categories  = Category::active()->hasActiveProduct()->get()->take(5);
-        $sections    = Page::where('tempname', activeTemplate())->where('slug', 'products')->first();
-        $seoContents = @$sections->seo_content;
-        $seoImage    = @$seoContents->image ? getImage(getFilePath('seo') . '/' . @$seoContents->image, getFileSize('seo')) : null;
-
-        return view('Template::products1', compact('pageTitle', 'products', 'categories', 'categoryId', 'sections', 'seoContents', 'seoImage'));
-    }
-
-    public function productDetails($id)
-    {
-        $pageTitle = "Product Details";
-        $product   = Product::active()->hasCategory()->findOrFail($id);
-        $relates   = Product::active()->hasCategory()->where('category_id', $product->category_id)->where('id', '!=', $product->id)
-            ->withMin('statePrices as state_price_min', 'price')
-            ->withMax('statePrices as state_price_max', 'price')
-            ->latest()->limit(10)->get();
-
-        $seoContents['social_title']       = $product->meta_title;
-        $seoContents['keywords']           = $product->meta_keyword;
-        $seoContents['description']        = strLimit(strip_tags($product->meta_description), 150);
-        $seoContents['social_description'] = strLimit(strip_tags($product->meta_description), 150);
-        $seoContents['image_size']         = getFileSize('products');
-        $seoImage                          = getImage(getFilePath('products') . '/' . @$product->thumbnail, getFileSize('products'));
-        // The detail view prices by state; without these it fails for a logged-in member
-        $product_state_prices = ProductStatePrice::where('product_id', $id)->with('state')->get()->unique('state_id');
-        return view('Template::product_detail', compact('pageTitle', 'product', 'relates', 'seoContents', 'seoImage', 'product_state_prices'));
-    }
-
-    public function productDetails1($id)
-    {
-        $pageTitle = "Product Details";
-        $product   = Product::active()->hasCategory()->findOrFail($id);
-        $relates   = Product::active()->hasCategory()->where('category_id', $product->category_id)->where('id', '!=', $product->id)
-            ->withMin('statePrices as state_price_min', 'price')
-            ->withMax('statePrices as state_price_max', 'price')
-            ->latest()->limit(10)->get();
-
-        $seoContents['social_title']       = $product->meta_title;
-        $seoContents['keywords']           = $product->meta_keyword;
-        $seoContents['description']        = strLimit(strip_tags($product->meta_description), 150);
-        $seoContents['social_description'] = strLimit(strip_tags($product->meta_description), 150);
-        $seoContents['image_size']         = getFileSize('products');
-        $seoImage                          = getImage(getFilePath('products') . '/' . @$product->thumbnail, getFileSize('products'));
-        return view('Template::product_detail1', compact('pageTitle', 'product', 'relates', 'seoContents', 'seoImage'));
     }
 
     public function checkParent(Request $request)

@@ -304,7 +304,7 @@
                         </button>
                         <ul class="bk-nav-group-body">
                             <li>
-                                <a href="{{ route('products') }}" class="bank-nav-link {{ menuActive('product*') }}">
+                                <a href="{{ route('user.products') }}" class="bank-nav-link {{ menuActive('product*') }}">
                                     <span class="bank-nav-icon"><i class="las la-store"></i></span>
                                     <span>Browse Shop</span>
                                 </a>

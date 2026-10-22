@@ -23,7 +23,7 @@
                                 <td>{{ $loop->iteration }}</td>
                                 <td>
                                     @if (@$sorder->product)
-                                        <a href="{{ route('product.details', ['id' => @$sorder->product->id, 'slug' => slug($sorder->product->name)]) }}">
+                                        <a href="{{ route('user.product.details', ['id' => @$sorder->product->id, 'slug' => slug($sorder->product->name)]) }}">
                                             {{ __(strLimit($sorder->product->name, '30')) }}</a>
                                         <x-product.sku :value="$sorder->product?->sku" class="ms-1" />
                                     @endif

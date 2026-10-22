@@ -80,10 +80,11 @@ Route::controller('SiteController')->group( function () {
     Route::get('/cookie/accept', 'cookieAccept')->name('cookie.accept');
  
     Route::middleware(['auth', 'XssSanitizer'])->group(function () {
-        Route::get('/products/{catId?}', 'products')->name('products');
-        Route::get('/product/{id}/{slug}', 'productDetails')->name('product.details');
-        Route::get('/products1/{catId?}', 'products1')->name('products1');
-        Route::get('/product1/{id}/{slug}', 'productDetails1')->name('product.details1');
+        // The member shop lives at user.products; these old public URLs forward there (removed duplicate pages)
+        Route::get('/products/{catId?}', fn ($catId = null) => to_route('user.products', $catId))->name('products');
+        Route::get('/product/{id}/{slug}', fn ($id, $slug) => to_route('user.product.details', [$id, $slug]))->name('product.details');
+        Route::get('/products1/{catId?}', fn ($catId = null) => to_route('user.products', $catId))->name('products1');
+        Route::get('/product1/{id}/{slug}', fn ($id, $slug) => to_route('user.product.details', [$id, $slug]))->name('product.details1');
     });
 
     Route::post('/check/referral', 'checkUsername')->name('check.referral');

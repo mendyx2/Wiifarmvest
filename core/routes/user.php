@@ -105,16 +105,12 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::post('search-user', 'searchUser')->name('search.user');
                 Route::post('add-device-token', 'addDeviceToken')->name('add.device.token');
                 
-                //Orders
-                //Route::get('orders', 'orders')->name('orders');
                 Route::post('check-code', 'checkCode')->name('checkCode');
 
-                 //Orders food production
-                Route::get('orders1', 'orders1')->name('orders1');
+                Route::get('orders1', fn () => to_route('user.orders.index'))->name('orders1'); // removed duplicate page
                 
                 //purchase
                 Route::post('purchase', 'purchase')->name('purchase');
-                Route::post('purchase1', 'purchase1')->name('purchase1');
                 Route::post('purchaseDone', 'purchaseDone')->name('purchaseDone');
 
                  // Legacy restock request to the company: Mega stockists only
@@ -122,9 +118,8 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                   //product
                 Route::get('/products/{catId?}', 'products')->name('products');
                 Route::get('/product/{id}/{slug}', 'productDetails')->name('product.details');
-                Route::get('/products1/{catId?}', 'products1')->name('products1');
-                Route::get('/product1/{id}/{slug}', 'productDetails1')->name('product.details1');
-                Route::post('products/search', 'searchState')->name('product.search');   
+                Route::get('/products1/{catId?}', fn ($catId = null) => to_route('user.products', $catId))->name('products1'); // removed duplicate page
+                Route::get('/product1/{id}/{slug}', fn ($id, $slug) => to_route('user.product.details', [$id, $slug]))->name('product.details1'); // removed duplicate page
             });
             
             
@@ -138,14 +133,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
             }); 
 
-            // Order routes
-            Route::controller('ProductController')->group(function () {
-                
-                Route::get('/pp/products','index')->name('products.index');
-                Route::post('/pp/products/search', 'search')->name('products.search');
-                Route::get('/pp/products/{product}/price/{state}', 'getProductPrice')->name('products.price');
-
-            });
+            Route::get('/pp/products', fn () => to_route('user.products'))->name('products.index'); // removed duplicate page
 
           
 

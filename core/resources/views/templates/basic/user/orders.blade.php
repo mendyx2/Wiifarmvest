@@ -21,7 +21,7 @@
                             <tr>
                                 <td>
                                     @if (@$order->product)
-                                        <a href="{{ route('product.details', ['id' => @$order->product->id, 'slug' => slug($order->product->name)]) }}">
+                                        <a href="{{ route('user.product.details', ['id' => @$order->product->id, 'slug' => slug($order->product->name)]) }}">
                                             {{ __(strLimit($order->product->name, '30')) }}</a>
                                         <x-product.sku :value="$order->product?->sku" class="ms-1" />
                                     @endif

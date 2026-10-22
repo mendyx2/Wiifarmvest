@@ -127,7 +127,7 @@
                 <i class="bk-qa-icon las la-chart-line"></i>
                 <span>Invest</span>
             </a>
-            <a href="{{ route('products') }}" class="bk-qa bk-qa-amber">
+            <a href="{{ route('user.products') }}" class="bk-qa bk-qa-amber">
                 <i class="bk-qa-icon las la-store"></i>
                 <span>Shop</span>
             </a>
@@ -559,7 +559,7 @@
                 <a href="{{ route('user.my.tree') }}"        class="bk-grid-link bk-gl-teal"><i class="las la-sitemap"></i><span>Genealogy</span></a>
                 <a href="{{ route('user.my.stages') }}"      class="bk-grid-link bk-gl-amber"><i class="las la-medal"></i><span>Stages</span></a>
                 <a href="{{ route('user.epin.recharge') }}"  class="bk-grid-link bk-gl-pink"><i class="las la-qrcode"></i><span>E-Pin</span></a>
-                <a href="{{ route('products') }}"            class="bk-grid-link bk-gl-green"><i class="las la-shopping-bag"></i><span>Shop</span></a>
+                <a href="{{ route('user.products') }}"            class="bk-grid-link bk-gl-green"><i class="las la-shopping-bag"></i><span>Shop</span></a>
                 <a href="{{ route('user.profile.setting') }}" class="bk-grid-link bk-gl-violet"><i class="las la-user-edit"></i><span>Profile</span></a>
             </div>
         </div>
