@@ -62,12 +62,6 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::get('downline', fn () => to_route('user.my.tree'))->name('downline');
                
                 
-                //stockist
-               
-                Route::get('sales', 'salesStockistOrders')->name('stock.sales');
-                //Stockist Orders
-
-                Route::get('sorders', 'sorders')->name('sorders');
 
                 Route::get('download-attachments/{file_hash}', 'downloadAttachment')->name('download.attachment');
                 Route::get('view-attachment/{file_hash}', 'viewAttachment')->name('view.attachment');
@@ -105,15 +99,10 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::post('search-user', 'searchUser')->name('search.user');
                 Route::post('add-device-token', 'addDeviceToken')->name('add.device.token');
                 
-                Route::post('check-code', 'checkCode')->name('checkCode');
 
                 Route::get('orders1', fn () => to_route('user.orders.index'))->name('orders1'); // removed duplicate page
                 
-                //purchase
-                Route::post('purchaseDone', 'purchaseDone')->name('purchaseDone');
 
-                 // Legacy restock request to the company: Mega stockists only
-                 Route::post('restock', 'restockGoods')->name('restock')->middleware('stockist.mega');
                   //product
                 Route::get('/products/{catId?}', 'products')->name('products');
                 Route::get('/product/{id}/{slug}', 'productDetails')->name('product.details');
@@ -158,14 +147,13 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
           
             // Stockist routes
             Route::controller('StockistController')->group(function (){
-                Route::get('/redeem', 'redeemForm')->name('redeem.form');
-                Route::post('/redeem', 'redeemProduct')->name('redeem.product');
               
                 
-                Route::get('/find-stockist', 'findStockist')->name('stockist.find');
-                Route::post('/search-stockists',  'searchStockists')->name('stockist.search');
+                // Invoice redemption is done on the stockist dashboard (the old /redeem page had no view).
+                Route::get('/redeem', fn () => to_route('user.stockist.dashboard'))->name('redeem.form');
 
-                Route::get('/redeem', 'redeemForm')->name('stockist.redeem.form');
+                Route::get('/find-stockist', 'findStockist')->name('stockist.find');
+
 
                 
 
@@ -181,18 +169,16 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::post('/profile/location', 'updateLocation')->name('profile.location');
                 Route::post('/profile/opening-hours', 'updateOpeningHours')->name('profile.opening-hours');
                 Route::post('/profile/services', 'updateServices')->name('profile.services');
-                Route::get('/profile/data', 'getProfileData')->name('profile.data');
 
                    
-                Route::get('/setup', 'setup')->name('setup');
-                Route::post('/setup', 'storeSetup')->name('setup.store');
+                // Stockists are created by the admin; the old self-setup page could not be reached.
+                Route::get('/setup', fn () => to_route('user.stockist.dashboard'))->name('setup');
                 
                
                 
                 
                 Route::get('/dashboard', 'dashboard')->name('dashboard');
 
-                Route::post('/verify-invoice', 'verifyInvoice')->name('verify.invoice');
                 
                 Route::post('/process-redemption', 'processRedemption')->name('process.redemption');
                 Route::get('/history', 'redemptionHistory')->name('history');

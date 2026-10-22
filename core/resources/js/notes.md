@@ -1902,6 +1902,175 @@ left are all `'ipn.' . $alias` in the payment gateways, which the scanner
 cannot resolve. They are fine. `route:cache` works, and all suites pass
 (260 browser checks).
 
+
+### Step 65: Phase 4e plan, and dead stockist code removed
+
+The stockist area is large, so 4e is done in four parts, each committed on
+its own:
+
+| Part | Pages |
+|---|---|
+| 4e-1 | Map the area, remove dead code, fix bugs (this step and the next) |
+| 4e-2 | Stockist dashboard (redeem an invoice), history, redemption report, stockist profile, Find Stockist (member page) |
+| 4e-3 | Inventory: dashboard, catalog + cart, checkout, orders, order details |
+| 4e-4 | POS, stock transfers, welcome-pack redemption, affiliate pickup |
+
+**Removed: unreachable or broken.** Nothing in the site linked to any of
+these:
+
+| What | Why it was dead |
+|---|---|
+| `GET /user/redeem` (registered **twice**) | its view `user.stockist.redeem` does not exist (error page). Now redirects to the stockist dashboard, where redemption really happens. |
+| `POST /user/redeem` (`redeemProduct`) | compared the numeric order status with the text `'paid'`, so it always refused. It also rendered a missing `redeem-success` view and would have stored the text `'redeemed'` as a status (the bug noted in Step 58). |
+| `/user/stockist/setup` (`setup`, `storeSetup`) | behind the "stockists only" middleware, so non-stockists could never open it, and stockists were sent to the dashboard. It also wrote columns the `stockists` table does not have. The admin creates stockists. The URL now redirects to the dashboard. |
+| `POST /user/check-code`, `POST /user/purchaseDone`, `POST /user/restock`, `GET /user/sales`, `GET /user/sorders` | the old "order code" flow built on the Money Box direct buy removed in Step 59; replaced by invoice redemption and the inventory catalog. `purchaseDone` paid commissions and was reachable by POST from any stockist account. |
+| `StockistController`: `verifyInvoice1`, `calculateRemainingItems`, `processPurchaseCommision`, `transactions`, `downloadAttachment`, `purchase`, `orders` | no route pointed to them (same names are routed to `UserController`). |
+| Views | `user/orders`, `sales_orders`, `sorders`, `stockist/setup`, `stockist/find1` (an older copy of Find Stockist) |
+
+Unused imports in both controllers were removed too.
+
+### Step 66: Money bugs fixed in redemption and order cancelling
+
+**Stockist redemption (`processRedemption`):**
+
+1. **Every refusal became an error page.** After the `catch`, the code ran
+   `throw $e;` before its `return`. "You don't have this product in your
+   store" or "quantity too high" therefore showed a server error instead of
+   the message. Refusals are now `DomainException`s that come back as a
+   toast; unexpected errors are logged and show a generic message.
+2. **No lock on the invoice.** Two stockists (or a double click) could both
+   hand over the same remaining items and both be paid. The invoice row and
+   the stockist's store row are now locked inside the transaction.
+3. **Cancelled orders could still be collected.** An admin cancel refunds the
+   member, but the invoice stayed redeemable, so the member could get the
+   money **and** the goods. Cancelled orders are now refused, both when
+   verifying and when processing.
+4. The stockist wallet is credited with an atomic SQL increment
+   (`addToWallet`) instead of read-add-save.
+5. A fully collected order is marked with the new constant
+   `Status::ORDER_COLLECTED` (= 1, the value it always stored), instead of a
+   bare `1`.
+
+**Admin order cancel (`Admin\OrderController::status`):**
+
+1. **It refunded ₦0.** It refunded `orders.total_amount`, which is empty for
+   cart orders (Step 56). It now refunds the invoice total.
+2. **It refused nothing.** An order that had already been (partly) collected
+   from a stockist can no longer be cancelled.
+3. **It invented stock.** It added the items back to product stock, but
+   checkout never takes stock out. That line is gone.
+4. **Two clicks could refund twice.** The order row is now locked, and only a
+   pending order can change.
+
+**Checked on test data:**
+
+- Over-quantity, no-stock, other-state, cancelled and all-zero redemptions
+  are all refused, and stock, wallet and ledger stay unchanged.
+- 2 of 3 then 1 of 1: stock 10 → 8 → 7, wallet +₦8,000 then +₦4,000, order
+  marked collected, invoice fully redeemed, 2 history rows, 2 stockist
+  transactions.
+- Admin cancel:
+  - a partly collected order is refused;
+  - a pending ₦10,000 order refunds ₦10,000, with no stock change;
+  - a second click finds nothing to cancel.
+
+### Step 67: Stockist pages in React (4e-2)
+
+| Page | URL | React file |
+|---|---|---|
+| Stockist dashboard | `/user/stockist/dashboard` | `Pages/User/Stockist/Dashboard.tsx` |
+| Redemption history | `/user/stockist/history` | `Pages/User/Stockist/History.tsx` |
+| Redemption report | `/user/stockist/redemptions` | `Pages/User/Stockist/Redemptions.tsx` |
+| Stockist profile | `/user/stockist/profile` | `Pages/User/Stockist/Profile.tsx` |
+| Find Stockist (members) | `/user/find-stockist` | `Pages/User/Stockist/Find.tsx` (+ `Find.css`, scoped) |
+
+New shared component: `Components/Stockist/SlField.tsx`. It is a labelled
+input or textarea in the stockist "sl-" style, with its validation error.
+The `sl-*` styles already live in the global layout, so no CSS moved.
+
+**Dashboard: redeeming an invoice without JSON.** Before, "Verify" posted
+to a JSON endpoint that returned the whole invoice, order and redemption
+records to the browser. Now:
+
+1. **Verify** loads `?invoice=CODE`. The server checks the invoice (exists,
+   not cancelled, not fully redeemed, your state) and sends only what the
+   table needs (product, ordered / redeemed / remaining), or the reason it
+   was refused, which the page shows in a dialog.
+2. **Process** posts the quantities. The server sends you back to the same
+   `?invoice=` with a toast, so the table shows the new remaining amounts.
+3. The quantity boxes start at "everything remaining". A box cannot go above
+   what is left: the browser refuses it, and the server caps it too.
+
+`POST /stockist/verify-invoice` is gone.
+
+**History:**
+
+- Date range, custom dates, sort and search now run on the server, and the
+  four counters cover **all** redemptions. The old page filtered and counted
+  only the 10 on screen.
+- **Export** downloads a CSV of the whole filtered list from the server. The
+  old export only covered the visible cards, and its "Redemption ID" column
+  was always empty.
+
+**Profile:**
+
+- One page with five tabs, each form saved through Inertia.
+- **Closed days can now be saved.** Before, every day needed both times, and
+  the times of a "closed" day were still sent.
+- Saving opening hours **before a location exists** used to say "updated
+  successfully" and save nothing. It now says to save the location first.
+- The preview used to build HTML from the stockist's own text. It is now
+  plain text.
+- `GET /stockist/profile/data` is gone; the data comes with the page.
+
+**Find Stockist (members):**
+
+1. **Stored XSS fixed.** The results and the pop-up were built as HTML
+   strings from stockist-written text (business name, services, address).
+   A stockist could run script in every member's browser. React shows that
+   text as text.
+2. The search is `GET ?city=&state=`, so a search can be bookmarked or shared.
+3. Inactive stockists are no longer listed.
+4. **The "Map View" is gone.** It placed markers at made-up positions, not
+   at the stockists' real locations. Each stockist now has a real
+   **Get Directions** link to Google Maps.
+
+`POST /search-stockists` is gone.
+
+### Step 68: Verification for 4e-1 and 4e-2
+
+- **Server:** the redemption and cancel cases in Step 66, plus:
+  - the stockist middleware lets a stockist in and sends a member to the
+    dashboard;
+  - history filters, sort, search, custom range and the CSV;
+  - report totals per channel (cash, invoice, welcome pack, affiliate);
+  - profile validation (bad email, open day without a time, empty service
+    name);
+  - Find Stockist: active only, no wallet data in the page;
+  - every removed URL is redirected or gone.
+- **Browser: 38/38 checks:**
+  - verify is sent as a GET, and process posts the right quantities and
+    notes;
+  - quantities over what remains are refused;
+  - the refusal dialog;
+  - history filters and the export link;
+  - report tabs;
+  - profile tabs, saving, field errors, the closed-day switch, adding and
+    removing services, and the text-only preview;
+  - Find Stockist: injected HTML shown as text, the directions link, quick
+    locations;
+  - no sideways scroll at 375px on all 7 views.
+- **All suites: 298 browser checks, 0 failures.** `route:cache` works.
+
+### Step 69: Phase 4e status
+
+| Part | Status |
+|---|---|
+| 4e-1 map, dead code, money bugs | ✅ |
+| 4e-2 dashboard, history, report, profile, Find Stockist | ✅ |
+| 4e-3 inventory | next |
+| 4e-4 POS, transfers, welcome pack, affiliate pickup | after 4e-3 |
+
 ## Part 4: Working on the front end
 
 ### Run locally

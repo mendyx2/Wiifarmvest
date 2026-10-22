@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Models\BvLog;
 use App\Models\Page;
 use App\Models\Order;
-use App\Models\Sorder;
 use App\Models\Matrix;
 use App\Models\Deposit;
 use App\Models\Product;
@@ -16,14 +15,12 @@ use App\Models\Category;
 use App\Models\Stockist;
 use App\Constants\Status;
 use App\Lib\FormProcessor;
-use App\Models\Useridcard;
 use App\Models\Withdrawal;
 use App\Models\DeviceToken;
 use App\Models\Transaction;
 use App\Models\ProductStatePrice;
 use App\Models\Project;
 use App\Models\Rinvestment;
-use App\Models\MatrixStage;
 use App\Models\Stockist_store;
 use App\Models\UserStageProgress;
 use App\Services\MatrixPlacementService;
@@ -813,249 +810,9 @@ class UserController extends Controller
     }
 
 
-    public function checkCode(Request $request)
-    {   
-        $request->validate([
-            'code'   => 'required|string|min:7'
-            
-        ]);
-
-        $data = [];
-        $dat= Order::where('order_code', $request->code)->where('status', 0)->first();
-
-        if($dat){
-            $product = Product::hasCategory()->active()->find($dat->product_id);
-            $data['productId'] = $product->id;
-            $data['price'] = showAmount($product->price);
-            $data['name'] = $product->name;
-            $data['description'] = $product->description;
-            $data['qty'] = $dat->quantity;
-            $data['userId'] = $dat->user_id;
-            $data['status'] = $dat->status;
-            $data['total'] = showAmount($product->price * $dat->quantity);
-            $data['order_code'] = $dat->order_code;
-        }
-
-        return response()->json(['data' => $data]);
-    } 
-
-    /**
-     * A stockist hands a paid order to the buyer: the stockist wallet is
-     * credited, their store stock drops and the upline commissions are paid.
-     *
-     * All of that must happen once per order. The stockist and store rows are
-     * locked and checked first (no writes yet, so an early return is safe),
-     * then the order is claimed with a conditional UPDATE — pending →
-     * delivered — and only the request that wins the claim goes on to pay.
-     */
-    public function purchaseDone(Request $request)
-    {
-        $request->validate([
-            'userId'     => 'required|integer',
-            'order_code' => 'required|string',
-            'productId'  => 'required|integer',
-        ]);
-
-        $userId = auth()->id();
-
-        $order            = Order::where('order_code', $request->order_code)->where('product_id', $request->productId)->where('user_id', $request->userId)->where('status', Status::ORDER_PENDING)->first();
-        $product          = Product::hasCategory()->active()->find($request->productId);
-        $user_distributor = User::find($request->userId);
-
-        if (!$order || !$product || !$user_distributor) {
-            $notify[] = ['error', 'Order not found or already delivered'];
-            return back()->withNotify($notify);
-        }
-
-        $error = DB::transaction(function () use ($order, $product, $user_distributor, $userId) {
-            $stockist = Stockist::where('user_id', $userId)->where('status', 1)->lockForUpdate()->first();
-            if (!$stockist) {
-                return 'Only an active stockist can deliver orders';
-            }
-
-            $stockist_store = Stockist_store::where('product_id', $product->id)->where('user_id', $userId)->lockForUpdate()->first();
-            if (!$stockist_store || $stockist_store->quantity < $order->quantity) {
-                return 'Store Quantity is not enough to process this transaction';
-            }
-
-            $claimed = Order::whereKey($order->id)
-                ->where('status', Status::ORDER_PENDING)
-                ->update(['status' => Status::ORDER_DELIVERED, 'stockist_user_id' => $userId]);
-
-            if (!$claimed) {
-                return 'This order has already been delivered';
-            }
-
-            $order->status           = Status::ORDER_DELIVERED;
-            $order->stockist_user_id = $userId;
-            $order->syncOriginal();
-
-            $total = $order->price * $order->quantity;
-
-            $stockist->wallet += $total;
-            $stockist->save();
-
-            stockistPurchase($userId, $total, $stockist->wallet, 'Credit on stockist wallet', 'stockist_sales', $order->trx);
-
-            // reduce stockist store quantity on this particular product
-            $stockist_store->quantity -= $order->quantity;
-            $stockist_store->save();
-
-            // Process the commission for the distributor upliner
-            $this->processPurchaseCommision($product, $user_distributor, $order);
-
-            return null;
-        });
-
-        if ($error) {
-            $notify[] = ['error', $error];
-            return back()->withNotify($notify);
-        }
-
-        $notify[] = ['success', 'Transaction successfully'];
-        return back()->withNotify($notify);
-    }
-    // Process the purchase commission
-    protected function processPurchaseCommision(Product $product, User $user_distributor, Order $order){
-        // first we allocate the 40 of the interest dirstribute to the stockist.
-
-        // Amount to distributor 
-        $amount = $product->distributor_purchase * $order->quantity;
-
-        $trx = $order->trx;
-        $product_name = $product->name;
-
-
-        //Credit the stockist user
-
-        $stockist_user= User::find(auth()->id());
-
-        if($stockist_user){
-            
-            $details1 = 'Stockist Product purchase commission recieved from product ( '.$product_name.' ) purchase by '.$user_distributor->username;
-
-            purchaseCommision_distributor_stockist($stockist_user, $details1, 
-                $amount, $trx, 40);
-        }
-
-
-        $user_1st_id = $user_distributor->ref_by;
-        if($user_1st_id){
-            $user= User::find($user_1st_id);
-            $details1 = 'Product purchase commission (1st Gen ) recieved from product ( '.$product_name.' ) purchase by '.$user_distributor->username;
-
-            purchaseCommision_distributor($user, $details1, 
-                $amount, $trx, 24);
-           
-        
-
-        // Second Generation/ parent referral
-        $user_2nd = returnReferrerUser($user_1st_id);
-        if($user_2nd){
-
-          
-            $details2 = 'Product purchase commission (2nd Gen ) recieved from product('.$product_name.') purchase by '.$user_distributor->username;
-            purchaseCommision_distributor($user_2nd, $details2, 
-                $amount, $trx, 20);
-        // Third Generation/ parent referral
-        $user_3rd = returnReferrerUser($user_2nd->id);
-        if($user_3rd){
-            $details3 = 'Product purchase commission (3rd Gen ) recieved from product('.$product_name.') purchase by '.$user_distributor->username;
-            purchaseCommision_distributor($user_3rd, $details3, 
-                $amount, $trx, 12);
-       
-
-        // Fourth Generation/ parent referral
-        $user_4th = returnReferrerUser($user_3rd->id);
-        if($user_4th){
-            $details4 = 'Product purchase commission (4th Gen ) recieved from product('.$product_name.') purchase by '.$user_distributor->username;
-            purchaseCommision_distributor($user_4th, $details4, 
-                $amount, $trx, 4);
-
-        } // Fourth Generation ends here
-
-        }// Third Generation ends here
-
-        }// Second Generation ends here
-
-        }// first generation ends here
-
-      
-    }
-    
-    public function restockGoods(Request $request)
-    {
-        
-        $request->validate([
-            'prod_id'   => 'required|integer',
-            'qty'   => 'required|string',
-            'stock_id'   => 'required|string',
-            
-        ]);
-
-        $product = Product::where('status', 1)->find($request->prod_id);
-        
-
-        if(!$product){
-            $notify[] = ['error', 'Invalid request, Product not available'];
-                return back()->withNotify($notify);
-        }
-
-        $stockist_store = Stockist_store::where('user_id', auth()->id())->where('product_id', $product->id)->first();
-        if ($stockist_store) {
-           if($stockist_store->quantity > 100){
-                $notify[] = ['error', 'Order Decline. Your Store Quantity is still above 50 bags'];
-                return back()->withNotify($notify);
-            }
-
-        }
-
-        
-        //Ensure no previous order exist.
-        $s_order = Sorder::where('product_id', $product->id)->where('user_id', auth()->id())->where('status', 0)->first();
-
-        if($s_order){
-            $notify[] = ['error', 'You have an existing order'];
-            return back()->withNotify($notify);
-        }
-
-        if ($stockist_store ) {
-            DB::transaction(function () use ($stockist_store, $product, $request) {
-
-                $sorder                     = new Sorder();
-                $sorder->user_id            = auth()->id();
-                $sorder->quantity           = $request->qty;
-                $sorder->product_id         = $product->id;
-                $sorder->stockist_store_id  = $stockist_store->id;
-                $sorder->save();
  
-            });
-        }else{
-            //create Stockist_store firstbefore making the order
-            DB::transaction(function () use ($stockist_store, $product, $request) {
-                $user_id = auth()->id();
-                //$stockist= Stockist::where('user_id', $user_id)->where('status', 1)->first();
-                
-                $stockist_store  = new Stockist_store();
-                $stockist_store->user_id    = $user_id;
-                $stockist_store->product_id = $product->id;
-                $stockist_store->status     = 1;
-                $stockist_store->save();
 
-                $sorder                     = new Sorder();
-                $sorder->user_id            = $user_id;
-                $sorder->quantity           = $request->qty;
-                $sorder->product_id         = $product->id;
-                $sorder->stockist_store_id  = $stockist_store->id;
-                $sorder->save();
-
-            }); 
-        }
-
-        $notify[] = ['success', 'Order Request successfully'];
-            return back()->withNotify($notify);
-    }
-
+    
     public function indexTransfer()
     {
         $pageTitle = 'Balance Transfer';
@@ -1073,21 +830,6 @@ class UserController extends Controller
     }
 
     
-
-    public function salesStockistOrders()
-    {
-        $pageTitle = 'Sales History';
-        $orders    = Order::where('stockist_user_id', auth()->user()->id)->with('product')->orderBy('id', 'desc')->paginate(getPaginate());
-        return view('Template::user.sales_orders', compact('pageTitle', 'orders'));
-    }
-
-    public function sorders()
-    {
-        $pageTitle = 'Stock Orders';
-        $sorders    = Sorder::where('user_id', auth()->user()->id)->with('product')->orderBy('id', 'desc')->paginate(getPaginate());
-
-        return view('Template::user.sorders', compact('pageTitle', 'sorders'));
-    }
 
     public function notifications()
     {
