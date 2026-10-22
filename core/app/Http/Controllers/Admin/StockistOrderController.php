@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
  
 use App\Http\Controllers\Controller;
 use App\Models\StockistOrder;
+use App\Models\Product;
 use App\Models\Stockist;
 use App\Models\User;
 use App\Models\StockistOrderItem;
@@ -197,31 +198,29 @@ class StockistOrderController extends Controller
     }
     public function cancelOrder(Request $request, StockistOrder $order)
     {
-        if (!$order->canBeCancelled()) {
-            $notify[] = ['error', 'Order cannot be cancelled in its current status.'];
-             return back()->withNotify($notify);
-        }
+        $result = DB::transaction(function () use ($order) {
+            // Locked and re-checked, so two clicks can't refund twice.
+            $locked = StockistOrder::with(['items', 'stockist'])->lockForUpdate()->find($order->id);
+            if (!$locked || !$locked->canBeCancelled()) {
+                return false;
+            }
 
-        DB::beginTransaction();
-        try {
-            // Refund stockist's wallet
-            $order->stockist->addToWallet($order->grand_total);
+            $locked->stockist->addToWallet($locked->grand_total);
 
-            //add stockist transaction here..
+            // Placing the order took this stock from the company; it has not
+            // reached the stockist yet (that happens on delivery), so give it back.
+            foreach ($locked->items as $item) {
+                Product::whereKey($item->product_id)->increment('quantity', $item->quantity);
+            }
 
-            // Update order status
-            $order->update(['status' => 'cancelled']);
+            $locked->update(['status' => 'cancelled']);
 
-            DB::commit();
-            $notify[] = ['success','Order cancelled and amount refunded!'];
-            
+            return true;
+        });
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            $notify[] = ['error', 'Failed to cancel order: '];
-            $notify[] = ['error', $e->getMessage()];
-            
-        }
+        $notify[] = $result
+            ? ['success', 'Order cancelled, amount refunded and stock returned.']
+            : ['error', 'Order cannot be cancelled in its current status.'];
         return back()->withNotify($notify);
     }
 
