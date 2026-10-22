@@ -2068,8 +2068,88 @@ records to the browser. Now:
 |---|---|
 | 4e-1 map, dead code, money bugs | ✅ |
 | 4e-2 dashboard, history, report, profile, Find Stockist | ✅ |
-| 4e-3 inventory | next |
-| 4e-4 POS, transfers, welcome pack, affiliate pickup | after 4e-3 |
+| 4e-3 inventory | ✅ (Steps 70–71) |
+| 4e-4 POS, transfers, welcome pack, affiliate pickup | next |
+
+
+### Step 70: Inventory pages in React (4e-3)
+
+| Page | URL | React file |
+|---|---|---|
+| Inventory | `/user/stockist/inventory` | `Pages/User/Stockist/Inventory/Dashboard.tsx` |
+| Company catalog (Mega only) | `/user/stockist/inventory/catalog` | `…/Inventory/Catalog.tsx` |
+| Cart + checkout (Mega only) | `/user/stockist/inventory/checkout` | `…/Inventory/Checkout.tsx` |
+| Company orders | `/user/stockist/inventory/orders` | `…/Inventory/Orders.tsx` |
+| Order details | `/user/stockist/inventory/orders/{id}` | `…/Inventory/OrderDetails.tsx` |
+
+New shared component: `Components/Stockist/OrderStatus.tsx`, the status
+badge for company orders. `StockistInventoryController` was rewritten. The
+session cart now holds only `product_id => quantity`; older sessions that
+stored whole rows still work.
+
+**Bugs fixed:**
+
+| Was | Now |
+|---|---|
+| Every item showed **"In Stock", even at 0**, and the "Min / Max" column was blank. The view read fields the store rows don't have. | Status comes from the quantity: 0 = out, under 20 = low (the threshold `Stockist::low_stock_items` already used). The empty column is gone. |
+| The catalog loaded 12 products and then hid inactive or sold-out ones, so pages could be short or empty. | Only orderable products are loaded, one row per product even if the admin entered a state's price twice. |
+| A product's maximum and the stock were checked per click, so adding the same product twice could pass both. | The quantity **already in the cart + the new one** is checked. The page shows "N in cart" and stops the + button there. |
+| A price missing for your state crashed "add to cart". | "This product is not available for ordering." |
+| **The order charged the price saved when the item was added.** Add when cheap, pay that price later. | Prices are read fresh on the checkout page and when placing the order. |
+| No row locks: two stockists could both take the last units. | Product rows are locked while the order is placed. |
+| **Double-clicking "Place Order" placed the same cart twice** (the button never disabled). | The button disables, a progress dialog shows, and the server holds a per-stockist lock: a second request at the same moment is refused, and a later one finds the cart empty. |
+| "Top Up Wallet" linked to `#`; "View Reports" did nothing. | The shortfall message explains the wallet is credited by redeeming invoices; "View Reports" opens the Redemption Report. |
+| The order counters counted only the current page. | They count all orders. |
+| The inventory-levels editor (min/max) posted to a validation rule naming a table that doesn't exist (`stockist_inventory`), so it always failed. Its button was already hidden. | Removed (route and method), as was the unused `GET inventory/cart` JSON. |
+
+The old order page showed a "Tax (5%)" row that was always ₦0 (tax is
+switched off in the code). It is not shown any more.
+
+**Admin side, `Admin\StockistOrderController::cancelOrder`:**
+
+- Cancelling a company order refunded the wallet but **never returned the
+  stock** that placing the order took from the company. It does now.
+- The order row is locked, so a second click cannot refund twice.
+
+Stock only reaches the stockist on delivery, and only pending or approved
+orders can be cancelled, so returning it to the company is right.
+
+### Step 71: Verification for 4e-3
+
+- **Server, on test data.** A Mega stockist with 10 rice, 1 oil and 0 beans.
+  Rice: min 2, max 10. Oil: no product maximum, so stock caps it.
+  - **Inventory:** 3 products, 2 low, 1 out.
+  - **Add to cart:**
+    - under the minimum → refused;
+    - 6 + 6 rice (over the max of 10) → refused;
+    - oil 30 with no product max → accepted;
+    - hidden product → refused.
+  - **Update:** 11 → refused; 4 → accepted; removing beans works.
+  - **Fresh price:** the rice price rose to ₦4,500 after it was added, and
+    checkout shows and charges the new price.
+  - **Placing the order:**
+    - short wallet → refused, cart kept;
+    - oil stock fell to 20 → refused;
+    - lock held by another request → refused;
+    - success → order ₦93,000, wallet 100,000 → 7,000, rice 100 → 96,
+      oil 50 → 20, cart emptied;
+    - a second click → "Your cart is empty".
+  - **Order list:** counters over all orders; another stockist's order is
+    never shown and gives 403.
+  - **Admin cancel:** refund +₦93,000 and stock back to 100 / 50; a second
+    cancel and a delivered order are both refused.
+  - **A Mini stockist** gets "Buy from Mega" links and is kept out of the
+    company catalog.
+- **Browser: 28/28 checks:**
+  - computed statuses and the low / out alerts;
+  - the Mega vs Mini buttons;
+  - the catalog's "room left" limit;
+  - add, and the refusal dialog;
+  - checkout + / remove-with-confirm;
+  - **one POST on a double click**;
+  - the short-wallet and empty states;
+  - order counters and badges, and the 4-step timeline;
+  - no sideways scroll at 375px on all 8 views.
 
 ## Part 4: Working on the front end
 

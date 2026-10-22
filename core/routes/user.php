@@ -199,7 +199,6 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                     Route::get('/inventory/catalog',  'productsCatalog')->name('inventory.catalog');
                     Route::post('/inventory/cart/add', 'addToCart')->name('inventory.cart.add');
                     Route::post('/inventory/cart/update', 'updateCart')->name('inventory.cart.update');
-                    Route::get('/inventory/cart', 'getCart')->name('inventory.cart.get');
                     Route::get('/inventory/checkout', 'checkout')->name('inventory.checkout');
                     Route::post('/inventory/order/place', 'placeOrder')->name('inventory.order.place');
                 });
@@ -207,9 +206,6 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 // Order history stays open to every stockist (a Mini's earlier company orders)
                 Route::get('/inventory/orders', 'orderHistory')->name('inventory.orders');
                 Route::get('/inventory/orders/{order}', 'orderDetails')->name('inventory.order.details');
-                
-                // Inventory Management
-                Route::post('/inventory/levels/update', 'updateInventoryLevels')->name('inventory.levels.update');
             });
 
             // Point of Sale
