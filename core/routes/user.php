@@ -227,8 +227,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
             // Welcome Back Package redemption
             Route::controller('StockistWelcomePackageController')->middleware(['stockist'])->prefix('stockist/welcome-pack')->name('stockist.welcome-pack.')->group(function () {
-                Route::get('/', 'index')->name('index');
-                Route::post('/verify', 'verify')->name('verify');
+                Route::get('/', 'index')->name('index'); // ?code= verifies a code
                 Route::post('/redeem', 'redeem')->name('redeem');
             });
 
@@ -243,8 +242,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             // Redeem Affiliate Products — separate from the internal repurchase
             // redemption flow above (no unilevel/PV logic; single-shot pickup)
             Route::controller('StockistAffiliateRedemptionController')->middleware(['stockist'])->prefix('stockist/affiliate')->name('stockist.affiliate.')->group(function () { 
-                Route::get('/', 'redeemForm')->name('redeem');
-                Route::post('/verify', 'verify')->name('verify');
+                Route::get('/', 'redeemForm')->name('redeem'); // ?code= verifies an order
                 Route::post('/confirm', 'confirm')->name('confirm');
             });
 

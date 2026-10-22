@@ -77,7 +77,7 @@ gets replaced, one page at a time.
 | **1. Pilot page** | Change Password (`/user/change-password`) | ✅ Done |
 | **2. Simple user pages** | Profile settings, two-factor, notifications, transactions, deposit/withdraw history, PV/BV logs, referrals (tables, filters, pagination) | ✅ Done: 8 pages (Steps 9–22); BV log skipped because its page is broken (Step 18) |
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
-| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects · 4c network trees · 4d shop/cart/orders · 4e stockist area | 🟡 In progress: 4a–4d done (Steps 32–58) |
+| **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects ✅ · 4c network trees ✅ · 4d shop/cart/orders ✅ · 4e stockist area ✅ | ✅ Done (Steps 32–74); a few member pages remain, see Step 74 |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
@@ -2069,7 +2069,7 @@ records to the browser. Now:
 | 4e-1 map, dead code, money bugs | ✅ |
 | 4e-2 dashboard, history, report, profile, Find Stockist | ✅ |
 | 4e-3 inventory | ✅ (Steps 70–71) |
-| 4e-4 POS, transfers, welcome pack, affiliate pickup | next |
+| 4e-4 POS, transfers, welcome pack, affiliate pickup | ✅ (Steps 72–74) |
 
 
 ### Step 70: Inventory pages in React (4e-3)
@@ -2150,6 +2150,138 @@ orders can be cancelled, so returning it to the company is right.
   - the short-wallet and empty states;
   - order counters and badges, and the 4-step timeline;
   - no sideways scroll at 375px on all 8 views.
+
+
+### Step 72: POS, welcome packs, affiliate pickup and stock transfers in React (4e-4)
+
+| Page | URL | React file |
+|---|---|---|
+| Point of sale | `/user/stockist/pos` | `Pages/User/Stockist/Pos.tsx` |
+| Welcome-pack redemption | `/user/stockist/welcome-pack` | `Pages/User/Stockist/WelcomePack.tsx` |
+| Affiliate (/shop) pickup | `/user/stockist/affiliate` | `Pages/User/Stockist/AffiliateRedeem.tsx` |
+| Stock requests / my orders | `/user/stockist/transfers` | `Pages/User/Stockist/Transfers/Index.tsx` |
+| Buy from a Mega | `/user/stockist/transfers/new` | `…/Transfers/Create.tsx` |
+| One request | `/user/stockist/transfers/{id}` | `…/Transfers/Show.tsx` |
+
+**The same "verify with ?code=" pattern on every page.** The POS, the
+welcome-pack page and the affiliate page each had a JSON "verify" endpoint.
+Each page now reloads itself with `?code=…` (an Inertia partial reload).
+The server checks the code and sends either the details or the reason it
+was refused.
+
+- On the POS, `preserveState` keeps the order being built in the browser.
+- The actions (sell, redeem, confirm pickup) post normally. On success the
+  server redirects back; on failure it returns errors that the page shows.
+- **The POS receipt** is flashed in the session (`pos_receipt`) and shown
+  once after the redirect.
+
+`POST stockist/welcome-pack/verify` and `POST stockist/affiliate/verify`
+are gone.
+
+**Bugs fixed:**
+
+| Was | Now |
+|---|---|
+| POS: an unexpected error ran `throw $e;` before its return, so the member saw an error page. (Same bug as Step 66.) | Logged, plus a clear message. |
+| POS: a product with no state price showed the base price, then the sale was refused. | "No price for your state", and the + button is disabled. |
+| POS: a welcome code typed or pasted with a dash (`WPPOS-00001`) was cut to 10 characters **before** the dash was removed, so verify always failed. | Letters and digits are kept first, then cut to 10. The welcome-pack page's phone input had the same problem and is fixed too. |
+| POS: nothing told you why "Charge Package" stayed disabled. | It says how much to add or remove: the package must match the order exactly. The server rule is unchanged. |
+| Welcome-pack page: the "redemption ledger" row was written **outside** the package redemption's transaction. | Both commit together. |
+| Affiliate pickup: the stockist's stock rows were checked and then reduced without a lock, so a POS sale at the same moment could push stock below zero. | Rows are locked in `AffiliateOrderService::confirmPickup`. |
+| Transfers: confirm and cancel used the browser's `confirm()`. | The site's `ConfirmDialog`. A decline needs a reason, and field errors show under it. |
+
+The stock-transfer controller and service were already well built (locks,
+held payments, refunds). Only their pages moved.
+
+**Two things for you to decide:**
+
+1. **There are two ways to redeem a welcome pack.**
+   - The **POS** hands over goods worth exactly the package, **takes the
+     stock**, and pays the stockist the package value (plus rebate).
+   - The **welcome-pack page** pays the stockist the package value
+     **without any stock movement** ("handed over in person").
+
+   If the gift should always be goods, the welcome-pack page should be
+   removed or turned into a link to the POS. I have not changed this: it is
+   a business decision.
+2. **`ext-bcmath` is not declared in `composer.json`,** but the transfer
+   service uses `bcadd` / `bcmul` / `bcsub` / `bccomp`. A server without that
+   PHP extension would fail only when a stockist sends or confirms a
+   transfer. Ask the host to confirm it is installed, and add
+   `"ext-bcmath": "*"` to `composer.json` so a missing extension is caught at
+   install time. This test container lacks it, so the test harness defines
+   simple stand-ins for those four functions.
+
+### Step 73: Verification for 4e-4
+
+- **Server, on test data.** Ada is a Mega stockist and Chi a Mini, both in
+  Lagos.
+  - **POS:**
+    - cash sale over stock → refused;
+    - a ₦4,000 order on an ₦8,000 package → refused;
+    - cash sale of 3 → stock 10 → 7, with the receipt;
+    - welcome sale of exactly ₦8,000 → package redeemed, wallet +₦8,000;
+    - same code again → refused, nothing changes;
+    - a used, unknown or lower-case code is handled.
+  - **Welcome-pack page:** verify shows the package; redeem → +₦5,000 and a
+    ledger row; a second redeem is refused.
+  - **Affiliate pickup:**
+    - the right order is shown;
+    - another state, an already-collected order and an unknown code are
+      refused;
+    - over-stock is refused with the order left unchanged;
+    - confirm → fulfilled, stock −2;
+    - a second confirm is refused.
+  - **Transfers:**
+    - asking for 11 when the Mega has 10 → refused;
+    - request 2 → ₦8,000 held from the Mini;
+    - the Mega sees "you have 10";
+    - confirm → stock 10 → 8 and 1 → 3, Mega wallet +₦8,000;
+    - a second confirm is refused;
+    - request + cancel refunds the Mini;
+    - a member who is not part of the transfer gets "not found".
+- **Browser: 42/42 checks.**
+  - **POS:**
+    - search, the stock count going down;
+    - the cash sale body and the receipt;
+    - a refusal keeps the cart;
+    - code cleaning and verify by partial reload with the cart kept;
+    - the package-vs-order message and the welcome sale body.
+  - **Welcome-pack page:** pasting into the 10 boxes, backspace, verify,
+    redeem, and the refusal dialog.
+  - **Affiliate page:** verify, confirm, and a refusal.
+  - **Transfers:**
+    - quantities capped by stock, the request body;
+    - the Mega's confirm through the dialog, then the completed view;
+    - decline with a reason;
+    - the Mini's cancel button.
+  - No sideways scroll at 375px on all 11 views.
+- **All suites: 368 browser checks, 0 failures.** `route:cache` works. The
+  route-name scan finds nothing real (only the 21 `ipn.` false positives).
+  The keyword scanner finds 1,116 React strings.
+
+### Step 74: Phase 4 done, and what is still Blade
+
+Every stockist page is now React: **19 pages** across Steps 65–73. The
+`user/stockist` view folder is gone.
+
+**Member pages still on Blade:**
+
+| Page | Controller |
+|---|---|
+| Dashboard | `UserController@home` |
+| Bonus Transfer | `BonusTransferController` |
+| Balance transfer | `UserController@indexTransfer` |
+| E-pin recharge + log | `EpinController` |
+| Add Distributor | `DistributorController` |
+| Affiliate dashboard / orders / ads | `AffiliateController` |
+| Stock page | `UserController` (`user.stock`) |
+| Login, register, password reset, email/SMS authorization, "complete your profile" | `Auth/*`, `AuthorizationController`, `UserController@userData` |
+
+**Suggested next step:** move these with the layout itself (Phase 5,
+sidebar + header in React). The dashboard and the auth pages are the
+natural place to do that, and that is when navigation becomes fully
+single-page.
 
 ## Part 4: Working on the front end
 

@@ -8,7 +8,9 @@ use App\Models\StockTransfer;
 use App\Models\Stockist;
 use App\Models\Stockist_store;
 use App\Services\StockTransferService;
+use App\Support\ShopPresenter;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 /**
  * Stock transfers from the stockists' side. Mini stockists request stock and
@@ -45,7 +47,49 @@ class StockTransferController extends Controller
         // A Mini's orders from the company before Minis moved to buying from a Mega
         $companyOrders = $isMega ? 0 : $stockist->orders()->count();
 
-        return view('Template::user.stockist.transfers.index', compact('pageTitle', 'stockist', 'isMega', 'transfers', 'counts', 'status', 'companyOrders'));
+        $stat = fn ($s) => ['count' => (int) ($counts->get($s)->n ?? 0), 'total' => showAmount($counts->get($s)->total ?? 0)];
+
+        return Inertia::render('User/Stockist/Transfers/Index', [
+            'isMega' => $isMega,
+            'stats'  => [
+                'pending'   => $stat(StockTransfer::STATUS_PENDING),
+                'completed' => $stat(StockTransfer::STATUS_COMPLETED),
+                'closed'    => (int) ($counts->get(StockTransfer::STATUS_DECLINED)->n ?? 0) + (int) ($counts->get(StockTransfer::STATUS_CANCELLED)->n ?? 0),
+                'wallet'    => showAmount($stockist->wallet),
+                'storeType' => (string) $stockist->store_type_name,
+            ],
+            'tabs' => collect(StockTransfer::STATUSES)->map(fn ($label, $key) => [
+                'key'   => $key,
+                'label' => $key === StockTransfer::STATUS_PENDING ? 'Pending' : $label,
+                'count' => (int) ($counts->get($key)->n ?? 0),
+                'url'   => route('user.stockist.transfers.index', ['status' => $key]),
+            ])->values(),
+            'status'    => $status,
+            'transfers' => $transfers->through(function ($transfer) use ($isMega) {
+                $other = $isMega ? $transfer->buyer : $transfer->seller;
+
+                return [
+                    'id'          => $transfer->id,
+                    'code'        => $transfer->code,
+                    'date'        => showDateTime($transfer->created_at, 'd M Y, h:i A'),
+                    'other'       => $other?->business_name ?? '—',
+                    'otherName'   => (string) $other?->user?->fullname,
+                    'products'    => $transfer->items->count(),
+                    'units'       => (int) $transfer->total_quantity,
+                    'amount'      => showAmount($transfer->total_amount),
+                    'pending'     => $transfer->isPending(),
+                    'statusLabel' => $transfer->statusLabel(),
+                    'statusClass' => $transfer->statusClass(),
+                    'url'         => route('user.stockist.transfers.show', $transfer->id),
+                ];
+            }),
+            'companyOrders' => $companyOrders,
+            'urls' => [
+                'index'         => route('user.stockist.transfers.index'),
+                'create'        => route('user.stockist.transfers.create'),
+                'companyOrders' => route('user.stockist.inventory.orders'),
+            ],
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function create(Request $request)
@@ -60,7 +104,33 @@ class StockTransferController extends Controller
         $seller    = $sellers->firstWhere('id', (int) $request->seller) ?? ($sellers->count() === 1 ? $sellers->first() : null);
         $catalogue = $seller ? $this->transfers->catalogue($seller) : collect();
 
-        return view('Template::user.stockist.transfers.create', compact('pageTitle', 'stockist', 'sellers', 'seller', 'catalogue'));
+        return Inertia::render('User/Stockist/Transfers/Create', [
+            'state'   => (string) $stockist->state_name,
+            'wallet'  => (float) $stockist->wallet,
+            'walletText' => showAmount($stockist->wallet),
+            'sellers' => $sellers->map(fn ($option) => [
+                'id'       => $option->id,
+                'name'     => $option->business_name ?: 'Mega stockist #' . $option->id,
+                'contact'  => trim((string) $option->user?->fullname),
+                'phone'    => $option->business_phone ?: $option->user?->mobile,
+                'products' => (int) $option->products_in_stock,
+                'url'      => route('user.stockist.transfers.create', ['seller' => $option->id]),
+            ])->values(),
+            'seller'    => $seller ? ['id' => $seller->id, 'name' => (string) $seller->business_name] : null,
+            'catalogue' => $catalogue->map(fn ($row) => [
+                'productId' => $row->product->id,
+                'name'      => (string) $row->product->name,
+                'sku'       => $row->product->sku,
+                'image'     => ShopPresenter::image($row->product->thumbnail),
+                'available' => (int) $row->available,
+                'price'     => (float) $row->unit_price,
+                'priceText' => showAmount($row->unit_price),
+            ])->values(),
+            'urls' => [
+                'index' => route('user.stockist.transfers.index'),
+                'store' => route('user.stockist.transfers.store'),
+            ],
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function store(Request $request)
@@ -77,14 +147,14 @@ class StockTransferController extends Controller
 
         if (!$seller) {
             $notify[] = ['error', 'That Mega stockist was not found.'];
-            return back()->withNotify($notify)->withInput();
+            return back()->withNotify($notify);
         }
 
         try {
             $transfer = $this->transfers->request($buyer, $seller, $request->quantities, $request->note);
         } catch (StockTransferException $e) {
             $notify[] = ['error', $e->getMessage()];
-            return back()->withNotify($notify)->withInput();
+            return back()->withNotify($notify);
         }
 
         $notify[] = ['success', "Request {$transfer->code} sent. " . showAmount($transfer->total_amount) . ' is held until ' . $seller->business_name . ' confirms.'];
@@ -111,7 +181,59 @@ class StockTransferController extends Controller
             $rebate = $this->transfers->rebatePreview($transfer);
         }
 
-        return view('Template::user.stockist.transfers.show', compact('pageTitle', 'stockist', 'transfer', 'isSeller', 'onHand', 'rebate'));
+        $pending   = $transfer->isPending();
+        $completed = $transfer->status === StockTransfer::STATUS_COMPLETED;
+        $party     = fn ($s) => [
+            'name'    => (string) $s->business_name,
+            'contact' => trim((string) $s->user?->fullname),
+            'phone'   => $s->business_phone ?: $s->user?->mobile,
+        ];
+
+        return Inertia::render('User/Stockist/Transfers/Show', [
+            'isSeller' => $isSeller,
+            'transfer' => [
+                'id'          => $transfer->id,
+                'code'        => $transfer->code,
+                'date'        => showDateTime($transfer->created_at, 'd M Y, h:i A'),
+                'pending'     => $pending,
+                'completed'   => $completed,
+                'statusLabel' => $transfer->statusLabel(),
+                'statusClass' => $transfer->statusClass(),
+                'units'       => (int) $transfer->total_quantity,
+                'total'       => showAmount($transfer->total_amount),
+                'rebateEarned'=> showAmount($transfer->rebate_amount),
+                'sellerAfter' => showAmount($transfer->seller_balance_after),
+                'buyerAfter'  => showAmount($transfer->buyer_balance_after),
+                'trx'         => (string) $transfer->trx,
+                'buyerNote'   => $transfer->buyer_note,
+                'decisionNote'=> $transfer->decision_note,
+                'closedBy'    => $transfer->closed_by,
+                'closedAt'    => $transfer->closedAt() ? showDateTime($transfer->closedAt(), 'd M Y, h:i A') : null,
+                'buyer'       => $party($transfer->buyer),
+                'seller'      => $party($transfer->seller),
+                'items'       => $transfer->items->map(fn ($item) => [
+                    'id'        => $item->id,
+                    'name'      => (string) $item->product_name,
+                    'sku'       => $item->product?->sku,
+                    'image'     => $item->product ? ShopPresenter::image($item->product->thumbnail) : null,
+                    'quantity'  => (int) $item->quantity,
+                    'price'     => showAmount($item->unit_price),
+                    'total'     => showAmount($item->line_total),
+                    // What the Mega holds now (pending request, seller view only)
+                    'onHand'    => $isSeller && $pending ? (int) ($onHand[$item->product_id] ?? 0) : null,
+                    // Stock before → after (completed transfer), from this stockist's side
+                    'stockBefore' => $completed ? (int) ($isSeller ? $item->seller_stock_before : $item->buyer_stock_before) : null,
+                    'stockAfter'  => $completed ? (int) ($isSeller ? $item->seller_stock_after : $item->buyer_stock_after) : null,
+                ])->values(),
+            ],
+            'rebate' => $rebate !== null ? showAmount($rebate) : null,
+            'urls'   => [
+                'index'   => route('user.stockist.transfers.index'),
+                'confirm' => route('user.stockist.transfers.confirm', $transfer->id),
+                'decline' => route('user.stockist.transfers.decline', $transfer->id),
+                'cancel'  => route('user.stockist.transfers.cancel', $transfer->id),
+            ],
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function confirm(int $id)
