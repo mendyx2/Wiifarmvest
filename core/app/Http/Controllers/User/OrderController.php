@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\User;
 
+use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Invoice;
@@ -44,20 +45,24 @@ class OrderController extends Controller
     public function processPayment(Request $request)
     {
         $authId = auth()->id();
-        $cart   = auth()->user()->cart;
-
-        if (!$cart || $cart->items->isEmpty()) {
-            return response()->json(['success' => false, 'message' => 'Cart is empty']);
-        }
-
-        $cartTotal = $cart->total_amount;
-        $trx       = getTrx(10);
+        $trx    = getTrx(10);
 
         DB::beginTransaction();
         try {
             // Lock the user row for the duration of the transaction to prevent
             // concurrent requests from double-spending the same product_wallet balance.
             $user = User::lockForUpdate()->findOrFail($authId);
+
+            // Read the cart only now, under the lock. It used to be read before
+            // the lock, so a double-click's second request waited here and then
+            // paid again for the cart the first request had already emptied.
+            $cart = Cart::where('user_id', $user->id)->lockForUpdate()->first();
+            if (!$cart || $cart->items->isEmpty()) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'message' => 'Cart is empty']);
+            }
+            $cart->updateTotal();
+            $cartTotal = $cart->total_amount;
 
             if ($user->product_wallet < $cartTotal) {
                 DB::rollBack();
@@ -116,7 +121,8 @@ class OrderController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Payment failed: ' . $e->getMessage()]);
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Payment failed. Please try again.']);
         }
     }
 

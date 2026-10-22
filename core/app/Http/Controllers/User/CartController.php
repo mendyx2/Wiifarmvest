@@ -67,8 +67,14 @@ class CartController extends Controller
                 $cart = auth()->user()->cart;
             }
 
-            $product = Product::where('id', $request->productId)->first();
+            $product = Product::active()->where('id', $request->productId)->first();
             $product_state = ProductStatePrice::Where('product_id', $request->productId)->where('id',$request->product_state_id)->first();
+
+            // An inactive product, or a state price that belongs to another product.
+            if (!$product || !$product_state) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'message' => 'This product is not available.', 'cart_count' => $cart->items->count()]);
+            }
             
             $cartItem = $cart->items()->where('product_id', $product->id)->where('product_state_id', $product_state->id)->first();
 
@@ -102,13 +108,16 @@ class CartController extends Controller
       
         } catch (\Exception $e) {
         DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Add to cart failed: ' . $e->getMessage()]);
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Add to cart failed. Please try again.']);
         }
 
     }
 
     public function updateCart(Request $request, CartItem $cartItem)
     {
+        $this->authorizeItem($cartItem);
+
         $request->validate([
             'quantity' => 'required|integer|min:1'
         ]);
@@ -124,7 +133,8 @@ class CartController extends Controller
 
     public function removeFromCart(CartItem $cartItem)
     {
-       
+        $this->authorizeItem($cartItem);
+
         DB::beginTransaction();
         try {
 
@@ -145,9 +155,19 @@ class CartController extends Controller
      
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Add to cart failed: ' . $e->getMessage()]);
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Could not remove the item. Please try again.']);
         }
        
+    }
+
+    /**
+     * Cart items are looked up by id from the URL: only the owner of the cart
+     * may change or remove them (any user could, before).
+     */
+    private function authorizeItem(CartItem $cartItem): void
+    {
+        abort_unless((int) optional($cartItem->cart)->user_id === (int) auth()->id(), 404);
     }
 
     private function createCart()
