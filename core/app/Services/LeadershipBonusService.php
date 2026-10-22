@@ -321,7 +321,7 @@ class LeadershipBonusService
                 'required_pv' => showAmount($leader->required_pv, currencyFormat: false),
                 'percentage'  => rtrim($settings->percentageLabel(), '%'),
                 'levels'      => $settings->levelsLabel(),
-                'link'        => route('user.leadership'),
+                'link'        => route('user.pv.log'), // no member leadership page; leadership is earned from leg PV
             ], createLog: false);
         } catch (\Throwable $e) {
             Log::error("[Leadership] Qualification notice to user #{$user->id} not sent: " . $e->getMessage());

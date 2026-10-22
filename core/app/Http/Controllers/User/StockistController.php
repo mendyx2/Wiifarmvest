@@ -186,7 +186,7 @@ class StockistController extends Controller
 
             DB::commit();
 
-            return redirect()->route('stockist.dashboard')->with('success', 'Stockist profile created successfully!');
+            return redirect()->route('user.stockist.dashboard')->with('success', 'Stockist profile created successfully!');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -689,7 +689,7 @@ class StockistController extends Controller
         $pageTitle        = 'Stockists History Dashboard';
         
         if (!$stockist) {
-            return redirect()->route('stockist.setup')->with('error', 'Please complete your stockist profile first.');
+            return redirect()->route('user.stockist.setup')->with('error', 'Please complete your stockist profile first.');
         }
 
         $redemptions = $stockist->redemptions()

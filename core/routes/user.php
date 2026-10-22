@@ -323,9 +323,6 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             });
            
             
-            Route::controller('TestController')->prefix('test')->name('test.')->group(function () {
-                Route::get('/', 'anotherTest')->name('test');
-            });
 
             Route::controller('PlanController')->prefix('plan')->name('plan.')->group(function () {
                 // planIndex never existed; the old plan page was the same thing as the portfolio (Buy Shares, subscriptions, receipts).

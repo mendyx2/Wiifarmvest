@@ -521,14 +521,6 @@ class PlanController extends Controller
             }
     }
 
-    function reservation()
-    {
-        $pageTitle = "Reserved";
-        $rinvest = Rinvestment::where('user_id', auth()->id())->with('plan')->get();
-        //dd($rinvest);
-        $plans     = Plan::orderBy('price', 'asc')->active()->get();
-        return view('Template::user.reservation', compact('pageTitle', 'plans', 'rinvest'));
-    }
     
     function reserveStore(Request $request)
     {   

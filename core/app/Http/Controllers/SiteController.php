@@ -132,32 +132,6 @@ class SiteController extends Controller
         return back();
     }
 
-    public function blog()
-    {
-        return to_route('user.login');
-
-        /*
-        $pageTitle = 'Blogs';
-        $blogs     = Frontend::where('data_keys', 'blog.element')->latest()->paginate(12);
-        $sections  = Page::where('tempname', activeTemplate())->where('slug', 'blog')->firstOrFail();
-        return view('Template::blog', compact('pageTitle', 'blogs', 'sections'));
-        */
-    }
-
-    public function blogDetails($slug)
-    {
-        return to_route('user.login');
-        /*
-        $pageTitle   = 'Blog Details';
-        $blog        = Frontend::where('slug', $slug)->where('data_keys', 'blog.element')->firstOrFail();
-        $latestBlogs = Frontend::where('id', '!=', $blog->id)->where('data_keys', 'blog.element')->take(5)->get();
-        $seoContents = $blog->seo_content;
-        $seoImage    = @$seoContents->image ? frontendImage('blog', $seoContents->image, getFileSize('seo'), true) : null;
-        return view('Template::blog_details', compact('blog', 'latestBlogs', 'pageTitle', 'seoContents', 'seoImage'));
-
-        */
-    }
-
     public function faq()
     {
         return to_route('user.login');

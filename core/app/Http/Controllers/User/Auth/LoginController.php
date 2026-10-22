@@ -142,12 +142,9 @@ class LoginController extends Controller
 
         $redirection = Intended::getRedirection();
 
-        if ($user->section == 2) {
-            return to_route('user.land');
-             
-        }else{
-             return $redirection ? $redirection : to_route('user.home');
-        }
+        // The old "land" page for section-2 members has no route any more,
+        // so every member goes to the same place after logging in.
+        return $redirection ? $redirection : to_route('user.home');
 
        
     }

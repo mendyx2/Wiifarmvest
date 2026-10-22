@@ -1840,8 +1840,7 @@ a **developer test route that any logged-in member can open**. It runs the
 matrix reconnection code for whoever visits, and crashes for members without
 an active matrix. It should be removed.
 
-**Not changed yet:** groups A (non-stockist), B and C and `/user/test` wait
-for your go-ahead. The stockist lines will be fixed in 4e.
+**Applied in Step 64** (you said yes).
 
 ### Step 63: Verification for Steps 59–61
 
@@ -1859,6 +1858,49 @@ for your go-ahead. The stockist lines will be fixed in 4e.
 - **All suites: 260 browser checks, 0 failures.** `route:cache` works.
 
 ---
+
+
+### Step 64: All dead links fixed, dead code deleted
+
+**A. Repointed (lines that really ran):**
+
+| Where | Was | Now |
+|---|---|---|
+| `LoginController` | `user.land` for `section = 2` members | everyone goes to their intended page or the dashboard |
+| `LeadershipBonusService` | `user.leadership` (notice never sent) | `user.pv.log`, so the "you qualified" notice is sent again |
+| `Admin/AdminUserController` ×3 | `admin.users.index` | `admin.admins.index` |
+| `StockistController` | `stockist.dashboard`, `stockist.setup` | `user.stockist.dashboard`, `user.stockist.setup` |
+| `StockistMiddleware` | `login` | `user.login` |
+
+**B + C. Deleted (nothing could reach them):**
+
+- **Controllers:**
+  - `User/LoanController`, `User/SavingsController`, `User/TransferController`
+  - `User/TestController`, together with the `/user/test` route
+  - `Gateway/Paystack/ProcessController_new` and `_old`
+  - 3 `Admin/*_old` controllers, which also re-declared the live class names
+- **Methods:**
+  - `SiteController::blog()` and `blogDetails()` (no routes; the public site
+    is off)
+  - `PlanController::reservation()` (its route was commented out)
+- **Views:**
+  - every `_old` view
+  - `partials/dashboard1`, `dashboard2`, `dashboard_new`
+  - `layouts/master1`, `master2` (only dead pages used them)
+  - `user/land`, `welcome`, `reservation`, `auth/signup`, `bonus/transfer`
+  - the legacy `investment-portfolio` / `investment-details` views, which
+    React replaced in 4b
+  - `blog`, `blog_details`, `sections/blog`
+  - `components/email/button`
+- **Admin:** the never-shown "Import" block in the frontend section page.
+
+**If the public site is switched back on later:** the blog pages will need
+to be rebuilt, because their views and methods are gone.
+
+**Result:** the route-name scan finds **no real missing names**. The 21
+left are all `'ipn.' . $alias` in the payment gateways, which the scanner
+cannot resolve. They are fine. `route:cache` works, and all suites pass
+(260 browser checks).
 
 ## Part 4: Working on the front end
 

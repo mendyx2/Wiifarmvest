@@ -353,22 +353,6 @@
                 <a href="{{ route('admin.frontend.sections.element', $key) }}" class="btn btn-sm btn-outline--primary"><i class="las la-plus"></i>@lang('Add New')</a>
             @endif
         @endif
-        @if (!empty($templates))
-            <div class="form-inline float-sm-end">
-                <form action="{{ route('admin.frontend.import', $key) }}" method="post">
-                    <div class="input-group">
-                        @csrf
-                        <select name="template_name" class="form-control form-control-sm border--primary h-auto">
-                            <option value="">@lang('Select One')</option>
-                            @foreach ($templates as $template)
-                                <option value="{{ $template['name'] }}">{{ __(keyToTitle($template['name'])) }}</option>
-                            @endforeach
-                        </select>
-                        <button type="submit" class="input-group-text btn btn-sm btn--primary">@lang('Import')</button>
-                    </div>
-                </form>
-            </div>
-        @endif
         @if(!@$section->hide_builder)
         <x-back route="{{ route('admin.frontend.index') }}" />
         @endif
