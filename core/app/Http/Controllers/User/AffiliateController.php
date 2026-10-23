@@ -7,6 +7,7 @@ use App\Models\Ad;
 use App\Models\AdShare;
 use App\Models\AffiliateOrder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class AffiliateController extends Controller
@@ -78,11 +79,8 @@ class AffiliateController extends Controller
     /** Ad Center: ready-made posts, each with this member's own tracked link. */
     public function ads()
     {
-        $pageTitle = 'Ad Center';
-        $user      = auth()->user();
+        $user = auth()->user();
         $user->getOrCreateAffiliateCode();
-
-        $ads = Ad::active()->with('product:id,name')->ordered()->paginate(12);
 
         $visits = $user->affiliateClicks()
             ->whereNotNull('ad_id')
@@ -99,9 +97,41 @@ class AffiliateController extends Controller
             ->groupBy('affiliate_clicks.ad_id')
             ->pluck('total', 'ad_id');
 
-        $shared = $user->adShares()->distinct()->count('ad_id');
+        $mimes = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp',
+                  'mp4' => 'video/mp4', 'webm' => 'video/webm', 'mov' => 'video/quicktime'];
 
-        return view('Template::user.affiliate.ads', compact('pageTitle', 'user', 'ads', 'visits', 'orders', 'shared'));
+        $ads = Ad::active()->with('product:id,name')->ordered()->paginate(12)->through(function (Ad $ad) use ($user, $visits, $orders, $mimes) {
+            $extension = strtolower(pathinfo($ad->media, PATHINFO_EXTENSION));
+
+            return [
+                'id'          => $ad->id,
+                'title'       => $ad->title,
+                'caption'     => $ad->caption ?: $ad->title,
+                'kind'        => $ad->isVideo() ? 'video' : 'image',
+                'link'        => $ad->shareUrlFor($user),
+                'media'       => $ad->mediaUrl(),
+                'mime'        => $mimes[$extension] ?? 'application/octet-stream',
+                'poster'      => $ad->posterUrl(),
+                'thumb'       => $ad->thumbUrl(),
+                'fileName'    => (Str::slug($ad->title) ?: 'ad-' . $ad->id) . '.' . $extension,
+                'destination' => $ad->product ? $ad->product->name : null,
+                'visits'      => (int) ($visits[$ad->id] ?? 0),
+                'orders'      => (int) ($orders[$ad->id] ?? 0),
+                'logUrl'      => route('user.affiliate.ads.share', $ad->id),
+            ];
+        });
+
+        return Inertia::render('User/Affiliate/Ads', [
+            'ads'   => $ads,
+            'stats' => [
+                'ads'    => number_format($ads->total()),
+                'shared' => number_format($user->adShares()->distinct()->count('ad_id')),
+                'visits' => number_format($visits->sum()),
+                'orders' => number_format($orders->sum()),
+            ],
+            'icons' => AdShare::CHANNEL_ICONS,
+            'urls'  => ['dashboard' => route('user.affiliate.dashboard')],
+        ])->withViewData(['pageTitle' => 'Ad Center']);
     }
 
     /**

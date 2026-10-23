@@ -24,18 +24,17 @@ use Illuminate\Support\Str;
  * sent again with every Inertia visit, so the highlight and the badges are
  * always current.
  *
- * The Blade partials still exist for the pages that are not React yet
- * (payment gateway pages). Keep the two menus in step until those go.
+ * partials/dashboard.blade.php (the member menu) still exists for the Blade
+ * pages left (payment gateway pages). Keep the two in step until those go.
  */
 class DashboardLayout
 {
     /**
-     * Menu links whose page is still Blade. Inertia cannot show a Blade page
-     * inside the React layout, so the browser loads these with a full page
-     * load. Remove a name from this list when its page moves to React.
+     * Menu links that must do a full page load. Every menu page is React now
+     * (Phase 5c); Sign Out stays a normal link because it ends the session
+     * and lands on the Blade login page.
      */
     private const BLADE_ROUTES = [
-        'user.affiliate.ads',
         'user.logout',
     ];
 

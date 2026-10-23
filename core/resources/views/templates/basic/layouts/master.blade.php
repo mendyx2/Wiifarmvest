@@ -1,20 +1,11 @@
 @extends($activeTemplate . 'layouts.app')
 
 @section('panel')
-    {{-- Flashcards are included only on the dashboard page --}}
-
-    @if(request()->routeIs('user.affiliate.*'))
-        @include($activeTemplate.'partials.dashboard_affiliate')
-
-    @elseif($inStockistSection = request()->routeIs('user.stockist.*'))
-    
-        @include($activeTemplate.'partials.dashboard_stockist_main')
-    @else
-        @include($activeTemplate.'partials.dashboard')
-
-    @endif
-    
-
+    {{-- Only Blade pages still use this layout (the payment gateway pages, and the
+         old copies of migrated pages kept for rollback). The affiliate and stockist
+         areas are React, so their sidebar partials are gone (notes Step 85). --}}
+    @php $inStockistSection = false; @endphp
+    @include($activeTemplate.'partials.dashboard')
     @include($activeTemplate . 'partials.footer')
 @endsection 
 

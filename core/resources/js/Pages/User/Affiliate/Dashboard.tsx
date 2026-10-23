@@ -26,11 +26,10 @@ export default function AffiliateDashboard({ shopLink, stats, recentOrders, adsC
                     <p className="sl-page-subtitle mb-0">{t('Share your link, earn a bonus on every order.')}</p>
                 </div>
                 <div className="d-flex flex-wrap gap-2">
-                    {/* Ad Center is still a Blade page: a normal link. */}
-                    <a href={urls.ads} className="sl-btn sl-btn-primary">
+                    <Link href={urls.ads} className="sl-btn sl-btn-primary">
                         <i className="las la-bullhorn me-1" /> {t('Ad Center')}
                         {adsCount > 0 && <span className="adc-pill">{adsCount}</span>}
-                    </a>
+                    </Link>
                     <Link href={urls.orders} className="sl-btn sl-btn-outline">
                         <i className="las la-box me-1" /> {t('My Sales')}
                     </Link>

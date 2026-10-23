@@ -79,7 +79,7 @@ gets replaced, one page at a time.
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
 | **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects ✅ · 4c network trees ✅ · 4d shop/cart/orders ✅ · 4e stockist area ✅ | ✅ Done (Steps 32–74); a few member pages remain, see Step 74 |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
-| **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages · 5d auth pages | In progress |
+| **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages | In progress |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
 | **7. Admin panel** | 186 views. Use a separate root view (`inertia.admin`) and `AdminLayout`, applying the same recipe | Last |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
@@ -2995,6 +2995,96 @@ logged-in member spending their own wallet.
     the wizard.
   - **Lookup down:** state and city become text boxes.
   - **Sidebar:** the highlight is correct.
+
+### Step 85: Ad Center in React; every member page is React (5c-4)
+
+**Ad Center (`/user/affiliate/ads`, `Pages/User/Affiliate/Ads.tsx`).**
+
+The controller sends one display-ready row per ad: title, caption, kind,
+the member's tracked link, media / poster / thumbnail URLs, MIME type, a
+download file name, the product it opens, and this member's visits and
+paid orders from it. It also sends the four stats and the channel icons
+from `AdShare::CHANNEL_ICONS`, so the server and the page use one list.
+
+The 300 lines of inline script are now React. The behaviour is the same:
+
+- **Share picture + link** uses the share sheet with the file. Downloaded
+  files are cached, so the second tap shares at once (iPhones refuse a share
+  that starts after a download). Where files can't be shared, the button
+  saves the file and copies the caption instead.
+- **Send the link:**
+  - **WhatsApp** opens `wa.me` with the caption and link.
+  - **Facebook** opens the sharer and copies the caption, because Facebook
+    ignores pre-filled text.
+  - **X** cuts the caption to 230 characters.
+  - **Telegram** opens `t.me/share`.
+- **Upload the picture / video.** Instagram, TikTok and YouTube (YouTube for
+  video only) use the share sheet on phones. On computers they download the
+  file and show a short guide.
+- **Copy link** and **Download** work as before.
+- **Logging:** every action is logged in the background to
+  `POST /ads/{id}/share`, with the CSRF header.
+- **The editable caption** stays per ad.
+- **The full-size viewer** is a native `<dialog>`:
+  - tap to zoom, never smaller than the real size;
+  - drag to pan;
+  - ← / → and the arrows move between ads;
+  - Esc or an outside click closes it;
+  - the page does not scroll behind it.
+
+The `adc-*` CSS was already in `custom.css`.
+
+**Every member page is React now.** `DashboardLayout::BLADE_ROUTES` holds only
+`user.logout`: signing out ends the session and lands on the Blade login
+page. The affiliate dashboard's Ad Center button is a single-page link.
+
+**Removed:**
+
+- **`partials/dashboard_affiliate.blade.php` and
+  `dashboard_stockist_main.blade.php`.** No Blade page under
+  `user.affiliate.*` or `user.stockist.*` is left. `layouts/master.blade.php`
+  now always includes the member sidebar. It is only used by the payment
+  gateway pages and by the old copies of migrated pages kept for rollback.
+- **`user/affiliate/ads.blade.php`.** The `user/affiliate` view folder is now
+  gone.
+
+**Verification:**
+
+- **Server (`p5c_check.php`):**
+  - **Stats:** 2 active ads, 1 ad shared (distinct), 2 visits and 1 paid
+    order from ad links.
+  - **Per-ad rows:** visits/orders are correct, the link carries the
+    member's code, and the file names come from the title.
+  - **Sidebar:** Ad Center is highlighted.
+  - **Share log:** a known channel → 200; an unknown channel → 422; an
+    inactive or missing ad → 404.
+- **Browser (`phase5c4.mjs`, 20 checks):**
+  - **Page:** the highlight, the stats and the per-ad pills; YouTube only
+    on the video.
+  - **Main button:** reads "Save picture" where files can't be shared.
+  - **Sharing:**
+    - Copy link → clipboard, toast, and a logged `copy` with CSRF;
+    - WhatsApp → the edited caption plus link;
+    - Facebook → the sharer, plus the caption copied;
+    - X → cut to 230 characters with "…";
+    - Telegram;
+    - Instagram on a computer → the guide plus "Open Instagram", which
+      closes;
+    - save + copy → a logged `download`.
+  - **Viewer:** "1 / 2"; zoom; next (the video), with the zoom reset; wrap
+    round; Esc unlocks scrolling.
+  - **Links:** the dashboard ⇄ Ad Center links are both Inertia visits.
+
+**Phase 5c is done.** All suites: **506 browser checks, 0 failures**. That is
+429 + 14 (5c-1) + 17 (5c-2) + 26 (5c-3) + 20 (5c-4).
+
+- **`phase5a` changed:** its "full page load" check now uses Sign Out,
+  the only plain menu link left.
+- **Also passing:** `route:cache` and `view:cache` work, and the route-name
+  scan is clean (only the 21 known `ipn.` false positives).
+
+**What is still Blade in the user area:** the automatic payment gateway pages
+(Stripe, Paystack…), on purpose (Phase 3), and the auth pages (5d).
 
 ## Part 4: Working on the front end
 
