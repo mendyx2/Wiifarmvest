@@ -4591,3 +4591,7 @@
 
 /* "Why?" next to an unverified KYC badge on the dashboard: opens the rejection reason. */
 .bk-kyc-reason-btn { background: none; border: 0; padding: 0 6px 0 0; font-size: .72rem; font-weight: 700; color: #DC2626; text-decoration: underline; cursor: pointer; }
+
+/* E-pin page: the charge / balance notes under "Fixed Amount" */
+.epin-charge-note { font-size: .72rem; color: #6B7280; margin: -4px 0 10px; }
+.epin-charge-note--warn { color: #DC2626; font-weight: 600; }

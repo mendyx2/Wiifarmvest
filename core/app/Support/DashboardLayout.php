@@ -35,8 +35,6 @@ class DashboardLayout
      * load. Remove a name from this list when its page moves to React.
      */
     private const BLADE_ROUTES = [
-        'user.affiliate.dashboard',
-        'user.affiliate.orders',
         'user.affiliate.ads',
         'user.distributor.index',
         'user.bonus.transfer.index',

@@ -182,19 +182,6 @@ class UserController extends Controller
         ])->withViewData(['pageTitle' => 'Dashboard']);
     }
 
-    public function stockists()
-    { 
-        $pageTitle        = 'Stockists Dashboard';
-        $wallet     = Stockist::where('user_id', auth()->id())->first()->wallet;
-
-        //$stockist_store = Stockist_store::where('user_id', auth()->id())->with('product')->orderBy('id', 'desc')->get();
-
-        $products    = Product::get();
-  
-        //$orders    = Order::where('user_id', auth()->user()->id)->with('product')->orderBy('id', 'desc')->paginate(getPaginate());
-
-        return view('Template::user.stock', compact('pageTitle', 'wallet', 'products'));
-    }
     public function products($categoryId = null)
     {
         $pageTitle = "Products";
@@ -377,7 +364,7 @@ class UserController extends Controller
         $transactions = Transaction::where('user_id', auth()->id())->searchable(['trx'])->filter(['trx_type', 'remark'])->orderBy('id', 'desc')->paginate(getPaginate())->withQueryString();
 
         // Migrated to React + Inertia (resources/js/Pages/User/Transactions.tsx).
-        // Legacy view: Template::user.transactions (still used by Stockist/Epin logs)
+        // Legacy view: Template::user.transactions
         return Inertia::render('User/Transactions', [
             'transactions' => $transactions->through(fn ($trx) => [
                 'id'          => $trx->id,
@@ -899,24 +886,6 @@ class UserController extends Controller
  
 
     
-    public function indexTransfer()
-    {
-        $pageTitle = 'Balance Transfer';
-        return view('Template::user.balanceTransfer', compact('pageTitle'));
-    }
-
-    public function searchUser(Request $request)
-    {
-        $transUser = User::where('username', $request->username)->orwhere('email', $request->username)->count();
-        if ($transUser == 1) {
-            return response()->json(['success' => true]);
-        } else {
-            return response()->json(['success' => false]);
-        }
-    }
-
-    
-
     public function notifications()
     {
         $user          = auth()->user();

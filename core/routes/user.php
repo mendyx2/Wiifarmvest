@@ -95,8 +95,9 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::get('transactions1', fn () => to_route('user.transactions', request()->query()))->name('transactions1'); // removed duplicate page
 
                 //Balance Transfer
-                Route::get('transfer', 'indexTransfer')->name('balance.transfer');
-                Route::post('search-user', 'searchUser')->name('search.user');
+                // Removed: this "balance transfer" form posted to a GET-only URL and no code ever
+                // moved the money. Bonus Transfer is the transfer page (notes Step 82).
+                Route::get('transfer', fn () => to_route('user.bonus.transfer.index'))->name('balance.transfer');
                 Route::post('add-device-token', 'addDeviceToken')->name('add.device.token');
                 
 

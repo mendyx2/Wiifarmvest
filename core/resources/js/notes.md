@@ -2721,6 +2721,95 @@ same. Visiting it still writes nothing (Step 75).
 **All suites: 429 browser checks, 0 failures** (398 + 31). `route:cache`
 and `view:cache` both work.
 
+### Step 82: E-pin, affiliate dashboard and orders in React; balance transfer removed (5c-1)
+
+**E-pin (`/user/e-pin/recharge`, `Pages/User/Epin.tsx`).** The controller
+sends display-ready props: VISA balance, price, stats, the pins (paginated,
+with the `search` / `status` filters) and the URLs. "Generate New Pin" asks
+for confirmation first and shows the total, then posts.
+
+Fixed:
+
+- **Two quick clicks could spend the same VISA money twice.** The balance
+  check ran on the copy of the user loaded at the start of the request.
+  The user row is now locked (`lockForUpdate`) inside the transaction, and
+  the balance is checked again there.
+- **Pin codes were predictable.** `rand()` is not a secure generator, and a
+  pin is money: anyone holding the code can activate an account with it.
+  Codes now come from `random_int()` and are checked for uniqueness.
+- **The server decides the amount.** It used to take `amount` from a hidden
+  form field, so any amount could be posted. It is now always
+  `EpinController::PIN_AMOUNT` (9,000), the only amount the page ever
+  offered. The admin's e-pin charge is shown on the page.
+- **The stats counted only the current page.** The Unused/Used numbers
+  came from the visible 30 pins; they now count all of the member's pins.
+- **Errors are hidden from the member.** A failure is now logged with
+  `report($e)` and the member sees a generic message. The old code
+  swallowed the error without a trace.
+- **Removed:**
+  - `eRecharge()` had no route (dead code).
+  - The "recharge log" page was a copy of Transactions. Its URL now
+    redirects to `/user/transactions?remark=epin`.
+
+**Affiliate dashboard and My Sales (`Pages/User/Affiliate/{Dashboard,Orders}.tsx`).**
+
+- The order status is sent as a label plus a badge class, the same
+  colours as `AffiliateOrder::status_badge` but without HTML in the props.
+- The item count comes from `withSum`, with no more items loaded per row.
+- Copying the link uses the shared `useCopy` (it falls back to `execCommand`
+  on plain HTTP).
+- Ad Center and Bonus Transfer are still Blade pages, so they are plain
+  links.
+
+**Balance transfer (`/user/transfer`) removed.** The form posted to a URL that
+only accepts GET (so every submit failed), and no code anywhere moved the
+money. Bonus Transfer is the real transfer page, so `/user/transfer` now
+redirects there. Also deleted:
+
+- `UserController::indexTransfer()`;
+- `searchUser()` and its `POST /user/search-user` route. It told anyone
+  logged in whether a username or email exists, and only this page used
+  it;
+- the view.
+
+The admin's "balance transfer charge" settings are now unused. They are
+left in General Settings, untouched.
+
+**Stock page removed.** `UserController::stockists()` rendered `user.stock`,
+a view that does not exist, and no route pointed at it. It is deleted.
+
+**Menu.** `user.affiliate.dashboard` and `user.affiliate.orders` left
+`DashboardLayout::BLADE_ROUTES`. The dashboard's E-Pin quick link is a
+single-page link now.
+
+**Deleted views:** `balanceTransfer`, `epin_recharge`, `affiliate/dashboard`,
+`affiliate/orders`.
+
+**Verification:**
+
+- **Server (`p5c_check.php`):**
+  - **Fixed price:** the e-pin price is 9,000 NGN plus a 2% charge
+    (₦180.00, ₦9,180.00 in total).
+  - **Stats and filter:** the stats count all pins, and the `status=0`
+    filter leaves them unchanged.
+  - **Tampered amount:** a POST with `amount=1` still makes a 9,000 pin
+    (`dddddddd-dddddddd-dddddddd-dddddddd`). VISA goes 30,000 → 20,820, and
+    the ledger shows `-9000`, charge 180.
+  - **Insufficient balance:** three pins later, with ₦2,460 left, the next
+    one is refused and VISA is unchanged. The page then shows `enough=false`.
+  - **Redirects:** the log URL goes to Transactions `?remark=epin`;
+    `/user/transfer` goes to Bonus Transfer; `POST /user/search-user` is gone.
+  - **Affiliate pages:** the dashboard shows 3 clicks, 4 orders, 2
+    fulfilled and ₦1,250.00 bonus. Badges and item counts are correct, and
+    the affiliate code does not change between visits.
+- **Browser (`phase5c1.mjs`, 14 checks):**
+  - **E-pin:** the stats and the price/charge note; who used a pin; copy
+    only on unused pins; confirm → POST with no amount; the filter as an
+    Inertia GET; copy plus toast.
+  - **Affiliate:** the sidebar variant and highlight; stats; badges; Ad
+    Center as a plain link; copy link; My Sales as an Inertia visit with
+    item counts, and the highlight moves.
+
 ## Part 4: Working on the front end
 
 ### Run locally

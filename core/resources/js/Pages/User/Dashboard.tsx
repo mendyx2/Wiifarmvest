@@ -385,11 +385,10 @@ export default function Dashboard(props: Props) {
                                 <i className="las la-medal" />
                                 <span>{t('Stages')}</span>
                             </Link>
-                            {/* E-pin is still a Blade page: a normal link. */}
-                            <a href={urls.epin} className="bk-grid-link bk-gl-pink">
+                            <Link href={urls.epin} className="bk-grid-link bk-gl-pink">
                                 <i className="las la-qrcode" />
                                 <span>{t('E-Pin')}</span>
-                            </a>
+                            </Link>
                             <Link href={urls.products} className="bk-grid-link bk-gl-green">
                                 <i className="las la-shopping-bag" />
                                 <span>{t('Shop')}</span>

@@ -7,37 +7,72 @@ use App\Models\Ad;
 use App\Models\AdShare;
 use App\Models\AffiliateOrder;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class AffiliateController extends Controller
 {
     public function dashboard()
     {
-        $pageTitle = 'Affiliate Dashboard';
-        $user      = auth()->user();
-        $code      = $user->getOrCreateAffiliateCode();
-        $shopLink  = route('shop.index', ['ref' => $code]);
+        $user  = auth()->user();
+        $code  = $user->getOrCreateAffiliateCode();
+        $orders = $user->affiliateOrders();
 
-        $clicksCount = $user->affiliateClicks()->count();
-        $orders      = $user->affiliateOrders();
-        $ordersCount = (clone $orders)->count();
-        $paidCount   = (clone $orders)->whereIn('status', [AffiliateOrder::STATUS_PAID, AffiliateOrder::STATUS_FULFILLED])->count();
-        $fulfilledCount = (clone $orders)->where('status', AffiliateOrder::STATUS_FULFILLED)->count();
-
-        $recentOrders = (clone $orders)->latest()->limit(8)->get();
-        $adsCount     = Ad::active()->count();
-
-        return view('Template::user.affiliate.dashboard', compact(
-            'pageTitle', 'user', 'code', 'shopLink', 'clicksCount',
-            'ordersCount', 'paidCount', 'fulfilledCount', 'recentOrders', 'adsCount'
-        ));
+        return Inertia::render('User/Affiliate/Dashboard', [
+            'shopLink' => route('shop.index', ['ref' => $code]),
+            'stats'    => [
+                'clicks'    => number_format($user->affiliateClicks()->count()),
+                'orders'    => number_format((clone $orders)->count()),
+                'fulfilled' => number_format((clone $orders)->where('status', AffiliateOrder::STATUS_FULFILLED)->count()),
+                'bonus'     => showAmount($user->affiliate_bonus_balance),
+            ],
+            'recentOrders' => (clone $orders)->latest()->limit(8)->get()->map(fn ($order) => $this->presentOrder($order, 'M d, Y'))->values(),
+            'adsCount' => Ad::active()->count(),
+            'urls'     => [
+                'ads'           => route('user.affiliate.ads'),
+                'orders'        => route('user.affiliate.orders'),
+                'bonusTransfer' => route('user.bonus.transfer.index'),
+            ],
+        ])->withViewData(['pageTitle' => 'Affiliate Dashboard']);
     }
 
     public function orders()
     {
-        $pageTitle = 'My Affiliate Orders';
-        $orders    = auth()->user()->affiliateOrders()->with('items')->latest()->paginate(15);
+        $orders = auth()->user()->affiliateOrders()->withSum('items as items_quantity', 'quantity')->latest()->paginate(15)
+            ->through(fn ($order) => $this->presentOrder($order, 'M d, Y g:i A') + [
+                'buyerEmail' => $order->buyer_email,
+                'items'      => (int) $order->items_quantity,
+            ]);
 
-        return view('Template::user.affiliate.orders', compact('pageTitle', 'orders'));
+        return Inertia::render('User/Affiliate/Orders', [
+            'orders' => $orders,
+            'urls'   => ['dashboard' => route('user.affiliate.dashboard')],
+        ])->withViewData(['pageTitle' => 'My Affiliate Orders']);
+    }
+
+    /** One order row, as both affiliate pages show it. */
+    private function presentOrder(AffiliateOrder $order, string $dateFormat): array
+    {
+        return [
+            'id'      => $order->id,
+            'code'    => $order->order_code,
+            'buyer'   => $order->buyer_name,
+            'total'   => showAmount($order->total_amount),
+            'payment' => $order->payment_method === 'paystack' ? 'Online' : 'Cash on Pickup',
+            // Same colours as AffiliateOrder::status_badge, without sending HTML.
+            'status'  => [
+                'label' => ucwords(str_replace('_', ' ', $order->status)),
+                'class' => match ($order->status) {
+                    AffiliateOrder::STATUS_PENDING         => 'badge--warning',
+                    AffiliateOrder::STATUS_PAID            => 'badge--info',
+                    AffiliateOrder::STATUS_AWAITING_PICKUP => 'badge--primary',
+                    AffiliateOrder::STATUS_FULFILLED       => 'badge--success',
+                    AffiliateOrder::STATUS_CANCELLED       => 'badge--danger',
+                    AffiliateOrder::STATUS_EXPIRED         => 'badge--dark',
+                    default                                => 'badge--secondary',
+                },
+            ],
+            'date'    => $order->created_at?->format($dateFormat) ?? '',
+        ];
     }
 
     /** Ad Center: ready-made posts, each with this member's own tracked link. */

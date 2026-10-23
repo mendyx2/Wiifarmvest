@@ -5,199 +5,158 @@ namespace App\Http\Controllers\User;
 use App\Constants\Status;
 use App\Http\Controllers\Controller;
 use App\Models\AdminNotification;
-use App\Models\Deposit;
 use App\Models\Pin;
 use App\Models\Transaction;
-use App\Models\Withdrawal;
+use App\Models\User;
+use DomainException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
+/**
+ * E-pins: a member pays from their VISA wallet for a pin, then gives the pin
+ * to a new member, who activates their account with it
+ * (Gateway\Paystack\ProcessController::pinPayment).
+ */
 class EpinController extends Controller
 {
-    public function epin()
-    { 
-        $general = gs();
-         //dd($general);
-        if(auth()->id() == 2)
-            abort(404);
-        if($general->epin_status != Status::ENABLE){
-           // abort(404);
-        }
-        $pageTitle = "Recharge Your Wallet";
-        $pins = Pin::where('generate_user_id', auth()->id())->orderBy('status')->searchable(['pin'])->filter(['status'])->latest()->paginate(getPaginate(30));
-        $Totalpins = Pin::where('generate_user_id', auth()->id())->count();
-          //dd($Totalpins);
-        return view('Template::user.epin_recharge', compact('pageTitle', 'pins', 'Totalpins'));
-    }
+    /** Every pin is worth this much. The page has only ever offered this one amount. */
+    public const PIN_AMOUNT = 9000;
 
-    
-     public function eRecharge(Request $request)
+    public function epin(Request $request)
     {
-        $general = gs();
-        if($general->epin_status != Status::ENABLE){
+        // Kept from the old controller: this one account may not create pins.
+        if (auth()->id() == 2) {
             abort(404);
         }
-         
-        $request->validate([
-            'pin' => 'required|exists:pins,pin'
-        ]);
-         
+
         $user = auth()->user();
-        $pin = Pin::where('pin', $request->pin)->where('status', Status::NO)->first();
-        if(!$pin)
-        {
-            $notify[] = ['error', 'Already used this pin.'];
-            return back()->withNotify($notify);
-        }
-        $userPin = Pin::where('pin', $request->pin)->where('status', Status::NO)->where('generate_user_id', $user->id)->first();
+        $mine = Pin::where('generate_user_id', $user->id);
 
-        if($userPin)
-        {
-            $notify[] = ['error', 'You can not e-pin recharge to self account.'];
-            return back()->withNotify($notify);
-        }
-        
-        
-        $pin->status = Status::YES;
-        $pin->user_id = $user->id;
-        $pin->save();
-      
-        $user->visa += $pin->amount;
-        $user->save();
+        $pins = (clone $mine)->with('user:id,username')->orderBy('status')->searchable(['pin'])->filter(['status'])->latest()
+            ->paginate(getPaginate(30))->withQueryString()
+            ->through(fn (Pin $pin) => [
+                'id'      => $pin->id,
+                'pin'     => $pin->pin,
+                'amount'  => getAmount($pin->amount) . ' ' . gs('cur_text'),
+                'used'    => (int) $pin->status === Status::YES,
+                'created' => showDateTime($pin->created_at, 'd M Y'),
+                'usedAgo' => (int) $pin->status === Status::YES ? diffForHumans($pin->updated_at) : null,
+                'usedBy'  => $pin->user?->username,
+            ]);
 
-        $transaction = new Transaction();
-        $transaction->user_id = $user->id;
-        $transaction->amount = $pin->amount;
-        $transaction->post_balance = $user->balance;
-        $transaction->trx_type = '+';
-        $transaction->remark = 'epin';
-        $transaction->details = 'E-Pin recharge via ' . $pin->pin;
-        $transaction->trx = getTrx();
-        $transaction->save();
+        $charge = $this->charge(self::PIN_AMOUNT);
 
-        $deposit = new Deposit();
-        $deposit->user_id = $user->id;
-        $deposit->method_code = 0;
-        $deposit->method_currency = $general->cur_text;
-        $deposit->amount = $pin->amount;
-        $deposit->rate = 1;
-        $deposit->final_amount = $pin->amount;
-        $deposit->btc_amount = 0;
-        $deposit->btc_wallet = "";
-        $deposit->trx = $transaction->trx;
-        $deposit->status = Status::PAYMENT_SUCCESS;
-        $deposit->save();
-
-        notify($user, 'PIN_RECHARGE', [
-            'trx' => $transaction->trx,
-            'pin_number' => $pin->pin,
-            'amount' => showAmount($pin->amount,currencyFormat:false),
-            'post_balance' => showAmount($user->balance,currencyFormat:false),
-        ]);
-
-        $adminNotification = new AdminNotification();
-        $adminNotification->user_id = $user->id;
-        $adminNotification->title = 'Deposit successful via e-pin';
-        $adminNotification->click_url = urlPath('admin.deposit.successful');
-        $adminNotification->save();
-
-        $notify[] = ['success', 'Balance has been added to your account'];
-        return back()->withNotify($notify);
+        return Inertia::render('User/Epin', [
+            'visa'    => showAmount($user->visa ?? 0),
+            'price'   => [
+                'amount' => number_format(self::PIN_AMOUNT),
+                'cur'    => gs('cur_text'),
+                // The VISA wallet pays the pin plus the admin's e-pin charge.
+                'charge' => $charge > 0 ? showAmount($charge) : null,
+                'total'  => showAmount(self::PIN_AMOUNT + $charge),
+                'enough' => (float) ($user->visa ?? 0) >= self::PIN_AMOUNT + $charge,
+            ],
+            // Counted over all of the member's pins; the old page counted only the current page.
+            'stats'   => [
+                'total'  => (clone $mine)->count(),
+                'unused' => (clone $mine)->where('status', Status::NO)->count(),
+                'used'   => (clone $mine)->where('status', Status::YES)->count(),
+            ],
+            'pins'    => $pins,
+            'filters' => [
+                'search' => (string) $request->query('search', ''),
+                'status' => (string) $request->query('status', ''),
+            ],
+            'urls'    => [
+                'index'    => route('user.epin.recharge'),
+                'generate' => route('user.pin.generate'),
+            ],
+        ])->withViewData(['pageTitle' => 'Recharge Your Wallet']);
     }
 
+    /** The old e-pin log was a copy of the Transactions page; the Transactions page filters by remark. */
     public function epinRechargeLog()
     {
-        $general = gs();
-        if($general->epin_status != Status::ENABLE){
+        return to_route('user.transactions', ['remark' => 'epin']);
+    }
+
+    public function pinGenerate()
+    {
+        if (auth()->id() == 2) {
             abort(404);
         }
-        $pageTitle = 'Recharge History'; 
-        $transactions = Transaction::where('user_id', auth()->id())->where('remark', 'epin')->orderBy('id', 'desc')->paginate(getPaginate());
-        return view('Template::user.transactions', compact('pageTitle', 'transactions'));
-    }
 
-
-
-
-    public function pinGenerate(Request $request)
-    {
-        $general = gs();
-        if($general->epin_status != Status::ENABLE){
-           // abort(404);
-        }
-
-        $request->validate([
-            'amount' => 'required|numeric|gt:0'
-        ]);
-
-        $general = gs();
-        $charge = 0;
-        if($general->epin_status == 1){
-            $charge = (($request->amount / 100) * $general->epin_charge);
-        }
-        
-        $user = auth()->user();
-        
-        if( ($request->amount + $charge) > $user->visa){
-            $notify[] = ['error', 'You have insufficient money in VISA Wwallet'];
-            return back()->withNotify($notify);
-        }
-
-
-        DB::beginTransaction();
+        $amount = self::PIN_AMOUNT;
+        $charge = $this->charge($amount);
 
         try {
+            DB::transaction(function () use ($amount, $charge) {
+                // Lock the row: two quick clicks used to both pass the balance
+                // check and spend the same VISA money twice.
+                $user = User::lockForUpdate()->findOrFail(auth()->id());
 
-            $user->visa -= ($request->amount + $charge);
-            $user->save();
+                if ($amount + $charge > (float) $user->visa) {
+                    throw new DomainException('You have insufficient money in your VISA wallet.');
+                }
 
-            $pin = new Pin();
+                $user->visa -= $amount + $charge;
+                $user->save();
 
-            $pin->generate_user_id = $user->id;
-            // if this user stats is 1. it should include 1 in the pin->stats so
-            if($user->stats == 1){
-                $pin->stats = 1;
+                $pin                   = new Pin();
+                $pin->generate_user_id = $user->id;
+                if ($user->stats == 1) {
+                    $pin->stats = 1;
+                }
+                $pin->user_id = 0;
+                $pin->status  = Status::NO;
+                $pin->amount  = $amount;
+                $pin->pin     = $this->newPinCode();
+                $pin->details = 'Created via ' . $user->username;
+                $pin->save();
 
-            } 
-            $pin->user_id = 0;
-            $pin->status = 0;
-            $pin->amount = $request->amount;
-            $pin->pin = rand(10000000,99999999).'-'.rand(10000000,99999999).'-'.rand(10000000,99999999).'-'.rand(10000000,99999999);
-            $pin->details = "Created via " .$user->username;
+                $transaction               = new Transaction();
+                $transaction->user_id      = $user->id;
+                $transaction->amount       = $amount;
+                $transaction->post_balance = $user->visa;
+                $transaction->charge       = $charge;
+                $transaction->trx_type     = '-';
+                $transaction->details      = 'Created E-pin';
+                $transaction->remark       = 'epin';
+                $transaction->trx          = getTrx();
+                $transaction->save();
 
-            $pin->save();
-
-            $transaction = new Transaction();
-            $transaction->user_id = $user->id;
-            $transaction->amount = $pin->amount;
-            $transaction->post_balance = $user->visa;
-            $transaction->charge = $charge;
-            $transaction->trx_type = '-';
-            $transaction->details = 'Created E-pin';
-            $transaction->remark = 'epin';
-            $transaction->trx = getTrx();
-            $transaction->save();
-
-            //Notification
-
-            $adminNotification = new AdminNotification();
-            $adminNotification->user_id = $user->id;
-            $adminNotification->title = 'E-pin Generated successful';
-            $adminNotification->click_url = urlPath('admin.withdraw.data.approved');
-            $adminNotification->save();
-
-            $notify[] = ['success', 'The pin has been created'];
-         DB::commit();
-
+                $adminNotification            = new AdminNotification();
+                $adminNotification->user_id   = $user->id;
+                $adminNotification->title     = 'E-pin Generated successful';
+                $adminNotification->click_url = urlPath('admin.withdraw.data.approved');
+                $adminNotification->save();
+            });
+        } catch (DomainException $e) {
+            return back()->withNotify([['error', $e->getMessage()]]);
         } catch (\Throwable $e) {
-
-            DB::rollBack();
-            $notify[] = ['error', 'Error creating pin'];
-            //throw $e;
+            report($e);
+            return back()->withNotify([['error', 'Error creating pin']]);
         }
-        return back()->withNotify($notify);
+
+        return back()->withNotify([['success', 'The pin has been created']]);
     }
-   
 
+    private function charge(float $amount): float
+    {
+        return (int) gs('epin_status') === 1 ? $amount / 100 * (float) gs('epin_charge') : 0.0;
+    }
 
+    /**
+     * A pin is money: anyone holding the code can activate an account with it.
+     * random_int() is unpredictable; the old rand() was not.
+     */
+    private function newPinCode(): string
+    {
+        do {
+            $code = implode('-', array_map(fn () => (string) random_int(10000000, 99999999), range(1, 4)));
+        } while (Pin::where('pin', $code)->exists());
+
+        return $code;
+    }
 }
