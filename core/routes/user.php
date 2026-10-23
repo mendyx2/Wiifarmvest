@@ -299,7 +299,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             Route::controller('DistributorController')->prefix('add-distributor')->name('distributor.')->group(function () {
                 Route::get('/',              'showForm')->name('index');
                 Route::post('/',             'store')->name('store');
-                Route::post('/check-visa',   'checkVisaBalance')->name('check.visa');
+                Route::get('/check',         'check')->name('check'); // live username / parent-slot checks
             });
            
             

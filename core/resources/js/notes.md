@@ -2901,6 +2901,101 @@ which locks the user row) and the per-source history rows.
   - **Unlocked fixture:** autoship has a Transfer button, and the history is
     numbered.
 
+### Step 84: Add Distributor in React (5c-3)
+
+**What changed.** `DistributorController@showForm` renders `User/Distributor`,
+the same four-step wizard (Referral & Project → Credentials → Personal →
+Review), in React. The page CSS (`dist-*`) was already global. Props:
+
+- the sponsor's username and VISA balance;
+- the active projects, each with an `affordable` flag;
+- the country list, Nigeria first, with the visitor's country preselected
+  as before;
+- the `?parent=&position=` prefill from the binary list and binary summary;
+- the URLs.
+
+The links from those two pages and the menu item are single-page links now.
+
+- **Live checks** use one new endpoint, `GET /user/add-distributor/check`.
+  It answers: username taken? email / mobile already used (a warning only,
+  as before)? does the parent exist, and **which of its two slots are
+  free**? The page disables a taken slot. It replaces
+  `POST /check-visa` (the page knows the balance and every project's price)
+  and the shared parent check, which only said "found".
+- **State / city** still come from countriesnow.space in the browser. If
+  that service is down, the two fields become text boxes. The old page was
+  stuck there, because both fields are required.
+- **A server validation error** jumps the wizard to the first step that has
+  an error and shows it under the field. The passwords are cleared after
+  every submit.
+
+**Bugs fixed in `store()`:**
+
+- **Errors were shown to the member, stack trace and all.** The catch
+  block put `'Error: ' . $e` in the toast. Now it calls `report($e)` and
+  shows "Something went wrong. Please try again."
+- **The typed password was saved in the session.** The "tree crossing"
+  refusal used `withInput($request->all())`, which flashed `password` and
+  `password_confirmation`. Inertia keeps the form in the browser, so
+  nothing is flashed now.
+- **The VISA wallet could be spent twice.** The balance check ran before
+  the transaction, on the copy of the user loaded at the start of the
+  request. The paying account is now locked inside the transaction and
+  checked there.
+- **Two registrations could take the same slot.** The parent's matrix row
+  (or the slot found by the automatic search) is now locked and checked
+  again before the new member is placed.
+- **Automatic placement could never run.** `position` was always
+  `required`, so leaving "Specify Placement Position" off always failed
+  validation. It is now required only together with `parent`. Without a
+  parent, the first open slot under the sponsor is used, as the code
+  always intended.
+- **The early `return back()` calls inside `DB::beginTransaction()`** left
+  the transaction open. Refusals now throw a `DomainException` inside
+  `DB::transaction()`, so it always rolls back.
+
+**Unchanged:** the bonuses and their order: VISA debit, direct and indirect
+bonus, PV, cash back, the key-in bonus (2% of PV × ₦600), the global pool
+and the admin notification. The validation rules are also the same,
+except `position`.
+
+**Removed:** the never-checked captcha widget on the review step. `store()`
+never called `verifyCaptcha()`, so it did nothing. It is not needed for a
+logged-in member spending their own wallet.
+
+**Deleted:** `user/distributor.blade.php`.
+
+**Verification:**
+
+- **Server (`p5c3_check.php`):**
+  - **Page props:** the projects carry the right `affordable` flags; 242
+    countries, Nigeria first; the prefill is applied, and a bad
+    `?position=middle` is ignored.
+  - **Live checks:** taken / free username, parent bola (left taken,
+    right free), an unknown parent, a used email.
+  - **Validation:** a parent without a position is refused, and so is an
+    invalid position or a taken username.
+  - **Refusals:** a parent outside the sponsor's tree; VISA ₦100 against a
+    ₦10,000 project (nothing created).
+  - **Registered under bola/right:** a new user, VISA 30,000 → 20,000,
+    key-in bonus 120 (10 PV × 2% × 600), and bola's right slot set. The
+    same slot again is refused.
+  - **Automatic placement** (no parent) registers into chi's left slot,
+    the first open one under the sponsor.
+- **Browser (`phase5c3.mjs`, 26 checks):**
+  - **Step 1:** the prefill and the parent check (taken slot disabled);
+    refusals for no project and for an unaffordable one.
+  - **Step 2:** the live username check; the email warning; password
+    match and the eye button.
+  - **Step 3:** the state → city lookups; digits-only mobile; the required
+    address.
+  - **Review:** the right values; "Edit Credentials" goes back.
+  - **Submit:** posts all the fields; a server error jumps to step 2.
+  - **Placement off:** sends an empty parent/position, and success resets
+    the wizard.
+  - **Lookup down:** state and city become text boxes.
+  - **Sidebar:** the highlight is correct.
+
 ## Part 4: Working on the front end
 
 ### Run locally

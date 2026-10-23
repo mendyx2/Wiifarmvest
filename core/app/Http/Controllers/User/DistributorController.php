@@ -15,57 +15,87 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use App\Services\MatrixPlacementService2;
+use DomainException;
+use Inertia\Inertia;
 
 class DistributorController extends Controller
 {
-
-    public function __construct(MatrixPlacementService2 $matrixService2)
+    public function __construct(private MatrixPlacementService2 $matrixService2)
     {
-        
-        $this->matrixService2 = $matrixService2;
-
     }
 
     public function showForm(Request $request)
     {
-        $pageTitle = 'Add Distributor';
-        $sponsor   = auth()->user();
-        $projects  = Project::active()->get();
+        $sponsor = auth()->user();
+        $visa    = (float) ($sponsor->visa ?? 0);
 
-        $info       = json_decode(json_encode(getIpInfo()), true);
-        $mobileCode = @implode(',', $info['code']);
-        $countries  = json_decode(file_get_contents(resource_path('views/partials/country.json')));
+        $info      = json_decode(json_encode(getIpInfo()), true);
+        $ipCountry = @implode(',', $info['code']) ?: null;
 
-        // Pre-fill support: binary-list passes ?parent=USERNAME&position=left|right
-        // so the sponsor can register directly into a specific open slot.
-        $preParent   = $request->query('parent',   '');
-        $prePosition = in_array($request->query('position'), ['left', 'right'], true)
-                       ? $request->query('position')
-                       : '';
- 
-        return view('Template::user.distributor', compact(
-            'pageTitle', 'sponsor', 'projects', 'mobileCode', 'countries',
-            'preParent', 'prePosition'
-        ));
+        $countries = collect((array) json_decode(file_get_contents(resource_path('views/partials/country.json'))))
+            ->map(fn ($c, $code) => ['code' => (string) $code, 'name' => $c->country, 'dial' => (string) $c->dial_code])
+            // Nigeria first, as on the old page
+            ->sortBy(fn ($c) => $c['name'] === 'Nigeria' ? 0 : 1)
+            ->values();
+
+        $defaultCountry = $countries->firstWhere('code', $ipCountry) ?? $countries->firstWhere('name', 'Nigeria') ?? $countries->first();
+
+        return Inertia::render('User/Distributor', [
+            'sponsorUsername' => $sponsor->username,
+            'visa'            => showAmount($visa),
+            'projects'        => Project::active()->get()->map(fn (Project $p) => [
+                'id'         => $p->id,
+                'title'      => $p->title,
+                'amount'     => showAmount($p->amount),
+                'affordable' => $visa >= (float) $p->amount,
+            ])->values(),
+            'countries'       => $countries,
+            'defaultCountry'  => $defaultCountry['code'] ?? '',
+            // The binary list links here with ?parent=USERNAME&position=left|right for an open slot.
+            'prefill'         => [
+                'parent'   => (string) $request->query('parent', ''),
+                'position' => in_array($request->query('position'), ['left', 'right'], true) ? $request->query('position') : '',
+            ],
+            'urls'            => [
+                'store' => route('user.distributor.store'),
+                'check' => route('user.distributor.check'),
+                // Free country → state → city lookup, called from the browser as before.
+                'geo'   => 'https://countriesnow.space/api/v0.1/countries',
+            ],
+        ])->withViewData(['pageTitle' => 'Add Distributor']);
     }
 
-    public function checkVisaBalance(Request $request)
+    /**
+     * Live checks while the sponsor types: is the username free, does the
+     * parent exist and which of its two slots are open. Replaces the
+     * check-visa call (the page knows the VISA balance) and the shared parent
+     * check, which only said "found", not whether the slot was free.
+     */
+    public function check(Request $request)
     {
-        $request->validate(['project_id' => 'required|integer|exists:projects,id']);
+        $result = [];
 
-        $project = Project::findOrFail($request->project_id);
-        $user    = auth()->user();
-        $balance = (float) ($user->visa ?? 0);
-        $cost    = (float) $project->amount;
+        if (is_string($username = $request->query('username')) && $username !== '') {
+            $result['usernameTaken'] = User::where('username', $username)->exists();
+        }
 
-        return response()->json([
-            'success'    => $balance >= $cost,
-            'balance'    => $balance,
-            'cost'       => $cost,
-            'balance_fmt'=> showAmount($balance),
-            'cost_fmt'   =>  showAmount($cost),
-            'project'    => $project->title,
-        ]);
+        // Warnings only: an email or phone may be shared by several members.
+        if (is_string($email = $request->query('email')) && $email !== '') {
+            $result['emailUsed'] = User::where('email', $email)->exists();
+        }
+        if (is_string($mobile = $request->query('mobile')) && $mobile !== '') {
+            $result['mobileUsed'] = User::where('mobile', $mobile)->where('dial_code', (string) $request->query('dial'))->exists();
+        }
+
+        if (is_string($parent = $request->query('parent')) && $parent !== '') {
+            $parentUser = User::where('username', $parent)->where('status', Status::USER_ACTIVE)->first();
+            $matrix     = $parentUser ? Matrix::where('user_id', $parentUser->id)->where('stage_id', 1)->where('is_active', 1)->first() : null;
+            $result['parent'] = $matrix
+                ? ['found' => true, 'left' => (int) $matrix->left === 0, 'right' => (int) $matrix->right === 0]
+                : ['found' => false, 'left' => false, 'right' => false];
+        }
+
+        return response()->json($result);
     }
 
     public function store(Request $request)
@@ -98,253 +128,175 @@ class DistributorController extends Controller
             
             'parent'      => 'nullable|string|min:3|max:30',
             
-            'position'    => 'required|in:left,right',
+            // Only with a parent: without one, the first open slot under the sponsor is used.
+            'position'    => 'nullable|required_with:parent|in:left,right',
         ], [
             'username.regex'  => 'Username may only contain letters, numbers and underscores.',
             'project_id.required' => 'Please select a project.',
             'referBy.exists' => 'The sponsor username does not exists.',
             
         ]);
-        //'position'    => 'nullable|in:left,right',
-
-        $user = auth()->user();
-
+        $payerId = auth()->id();
         $project = Project::findOrFail($request->project_id);
+        $cost    = (float) $project->amount;
+        $sponsor = User::where('username', $request->referBy)->firstOrFail();
 
-        // Visa balance check
-        $visaBalance = (float) ($user->visa ?? 0);
-        $cost        = (float) $project->amount;
-
-        if ($visaBalance < $cost) {
-            $notify[] = ['error', 'Insufficient VISA wallet balance. You need ' . gs('cur_sym') . showAmount($cost, currencyFormat: false) . ' but have ' . gs('cur_sym') . showAmount($visaBalance, currencyFormat: false) . '.'];
-            return back()->withNotify($notify)->withInput($request->except('password', 'password_confirmation'));
-        }
-
-        
-
-        // Resolve referrer
-        $referrerId = $user->id;
-        if ($request->filled('referBy')) {
-            $refUser = User::where('username', $request->referBy)->first();
-            if (!$refUser) {
-                $notify[] = ['error', 'Referral username not found in the system.'];
-                return back()->withNotify($notify)->withInput($request->except('password', 'password_confirmation'));
-            }
-            $sponsor = $refUser;
-            $referrerId = $refUser->id;
-        }else {
-            $sponsor = auth()->user();
-        }
-
-        // check is the placement username is your downline as Binary matrix does not allow board crossing.
-
-        //checkDownline_new(Matrix $sponsor_matrix, Matrix $user_placement_matrix)
-        if ($request->filled('parent')) {
-            $parent = User::where('username', $request->parent)->first();
-            
-            if ($parent) {
-                
-                if(!checkDownline($sponsor->id,  $parent->id)){
-                    $notify[] = ['error', 'Parent must be under Sponsor tree. No Tree crossing'];
-                    return back()->withNotify($notify)->withInput($request->all());
-                }
-            }
-        }
-
-        //dd(checkDownline($sponsor->id,  $parent->id));
- 
-        DB::beginTransaction();
         try {
-            $parentId = 0;
-            $position = 0;
-
-            // Validate parent placement if provided
-            if ($request->filled('parent')) {
-                $parentUser = User::where('username', $request->parent)->first();
-                if (!$parentUser) {
-                    $notify[] = ['error', 'Parent username not found in the network.'];
-                    return back()->withNotify($notify)->withInput($request->except('password', 'password_confirmation'));
+            $newUser = DB::transaction(function () use ($request, $payerId, $sponsor, $project, $cost) {
+                // Lock the paying account first: two quick submits used to both pass the
+                // VISA check, which ran on the copy loaded at the start of the request.
+                $payer = User::lockForUpdate()->findOrFail($payerId);
+                if ((float) $payer->visa < $cost) {
+                    throw new DomainException('Insufficient VISA wallet balance. You need ' . showAmount($cost) . ' but have ' . showAmount($payer->visa) . '.');
                 }
 
-                $parentMatrix = Matrix::where('user_id', $parentUser->id)
-                    ->where($request->position, 0)
-                    ->where('stage_id', 1)
-                    ->where('is_active', 1)
-                    ->first();
-                // when you go live. remmember to check if the parent has an active matrix and the position is available
-                if (!$parentMatrix) {
-                    $notify[] = ['error', 'Parent\'s ' . $request->position . ' position is already taken.'];
-                    return back()->withNotify($notify)->withInput($request->except('password', 'password_confirmation'));
+                [$parentId, $position] = $this->placement($request, $sponsor);
+
+                $trx = getTrx(20);
+                $newUser = new User();
+                $newUser->username     = $request->username;
+                $newUser->email        = $request->email;
+                $newUser->password     = Hash::make($request->password);
+                $newUser->firstname    = $request->firstname;
+                $newUser->lastname     = $request->lastname;
+                $newUser->country_code = $request->country_code;
+                $newUser->country_name = $request->country;
+                $newUser->dial_code    = $request->mobile_code ?? 234;
+                $newUser->mobile       = $request->mobile;
+                $newUser->address      = $request->address;
+                $newUser->state        = $request->state;
+                $newUser->city         = $request->city;
+                $newUser->ref_by       = $sponsor->id;
+                $newUser->pos_id       = 1;
+                $newUser->trx          = $trx;
+                $newUser->section      = 1;
+                $newUser->project_id   = $project->id;
+                $newUser->kv = Status::NO;
+                $newUser->ev = Status::YES;
+                $newUser->sv = Status::YES;
+                $newUser->ts = Status::DISABLE;
+                $newUser->tv = Status::ENABLE;
+                $newUser->status = Status::USER_ACTIVE;
+                $newUser->profile_complete = Status::YES;
+                $newUser->keyed_in_by = $payer->id;
+                $newUser->save();
+
+                $matrix            = new Matrix();
+                $matrix->user_id   = $newUser->id;
+                $matrix->parent_id = $parentId;
+                $matrix->position  = $position;
+                $matrix->stage_id  = 1;
+                $matrix->save();
+
+                // Link the new user into the parent's slot so the tree is traversable.
+                Matrix::where('user_id', $parentId)->where('stage_id', 1)->update([$position => $newUser->id]);
+
+                // Debit the VISA wallet first: cash back is only allocated after this deduction.
+                $payer->visa -= $cost;
+                $payer->save();
+                newTransaction($payer, 'Registered distributor: ' . $newUser->username . ' on ' . $project->title, 'distributor_registration', $cost, '-', $trx, 1, 0, 'visa');
+
+                directBonus($newUser, 'Direct bonus gotten from username: ' . $newUser->username . 'Subscribing to ' . $project->title, $project->direct_commission, $trx);
+                // The indirect bonus starts from the sponsor's referrer.
+                indirectBonus(User::find($newUser->ref_by), $project->pv, 'Indirect bonus gotten from username: ' . $newUser->username . ' Subscribing to ' . $project->title, $trx);
+                updatePV($newUser, $newUser->username . ' Subscribed to ' . $project->title . ' Project.', $project->pv);
+                processCashBack($newUser, $project, $trx, $project->title . ' subscription cash back to Repurchase wallet');
+
+                // Key-In Bonus: 2% of the registration PV at ₦600/PV, to the member who keyed it in
+                // (e.g. 450 PV Mega = ₦5,400).
+                $keyInBonus = round(((float) $project->pv * 0.02 * 600), 2);
+                if ($keyInBonus > 0) {
+                    $payer->increment('key_in_bonus', $keyInBonus);
+                    $payer->refresh();
+                    balance_TransactionReturn($payer->id, 'Key-in bonus: registered ' . $newUser->username, $keyInBonus, 'key_in_bonus', $trx, $payer->key_in_bonus);
+
+                    // Debit from the isolated Member Compensation Reserve Ledger
+                    try {
+                        app(\App\Services\RevenueAllocationService::class)->disburseCompensation(
+                            $keyInBonus,
+                            $trx,
+                            'Key-in bonus to ' . $payer->username . ' for registering ' . $newUser->username,
+                            'CRP',
+                            'key_in_bonus',
+                            $payer->id
+                        );
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('[RevenueAllocation] Failed to debit key-in bonus: ' . $e->getMessage());
+                    }
                 }
 
-                $parentId = $parentUser->id;
-                $position = $request->position;
-            } else {
-                // No parent specified — BFS through sponsor's downline to find first open slot
-                $sponsorMatrix = Matrix::where('user_id', $sponsor->id)
-                    ->where('stage_id', 1)
-                    ->first();
-                    //->where('is_active', 1) this will be revisited. for now.. let me rest
-
-                if (!$sponsorMatrix) {
-                    $notify[] = ['error', 'Your account is not active. Please contact support. ERROR 205'];
-                    return back()->withNotify($notify)->withInput($request->except('password', 'password_confirmation'));
-                }
-
-                $placement = $this->matrixService2->findDownline_reg($sponsorMatrix, 1);
-
-                if (!$placement) {
-                    $notify[] = ['error', 'No open slot found in your downline. Please specify a parent and position manually.ERROR 206'];
-                    return back()->withNotify($notify)->withInput($request->except('password', 'password_confirmation'));
-                }
-
-                $parentId = $placement->user_id;
-                $position = ((int) $placement->left == 0) ? 'left' : 'right';
-            }
-
-            // Create the new user
-            $trx  = getTrx(20);   
-            $newUser = new User();
-            $newUser->username     = $request->username;
-            $newUser->email        = $request->email;
-            $newUser->password     = Hash::make($request->password);
-            $newUser->firstname    = $request->firstname;
-            $newUser->lastname     = $request->lastname;
-            $newUser->country_code = $request->country_code;
-            $newUser->country_name = $request->country;
-            //$newUser->mobile_code  = $request->mobile_code ?? null;
-            $newUser->dial_code    = $request->mobile_code ?? 234; 
-            $newUser->mobile       = $request->mobile;
-            $newUser->address      = $request->address;
-            $newUser->state        = $request->state;
-            $newUser->city         = $request->city;
-            $newUser->ref_by       = $referrerId;
-            $newUser->pos_id       = 1;
-            $newUser->trx          = $trx;
-            $newUser->section      = $parentId ? 1 : 1;
-            $newUser->project_id   = $project->id;
-            //gs('kv') ? Status::NO : Status::YES;
-            $newUser->kv = Status::NO;
-            $newUser->ev = Status::YES;
-            $newUser->sv = Status::YES;
-            $newUser->ts = Status::DISABLE;
-            $newUser->tv = Status::ENABLE;
-            $newUser->status = Status::USER_ACTIVE;
-            $newUser->profile_complete = Status::YES;
-            $newUser->save();
- 
-            // Place in matrix
-            $matrix            = new Matrix();
-            $matrix->user_id   = $newUser->id;
-            $matrix->parent_id = $parentId;
-            $matrix->position  = $position;
-            $matrix->stage_id  = 1;
-            $matrix->save();
-
-            // Link new user into the parent's left/right slot so the tree is traversable
-            if ($parentId && in_array($position, ['left', 'right'])) {
-                Matrix::where('user_id', $parentId)
-                    ->where('stage_id', 1)
-                    ->update([$position => $newUser->id]);
-            }
-
-            // Debit sponsor's visa wallet FIRST — cash back is only allocated after this deduction
-            $user = auth()->user()->fresh();
-            $user->visa -= $cost;
-            $user->save();
-
-            // Record debit transaction for sponsor's visa wallet
-            $detailsss = 'Registered distributor: ' . $newUser->username . ' on ' . $project->title;
-            $remark = 'distributor_registration';
-            newTransaction($user, $detailsss, $remark, $cost, '-', $trx , 1, 0, 'visa');
-
-            $newUser->keyed_in_by = $user->id;
-            $newUser->save();
-            $details = 'Direct bonus gotten from username: '.$newUser->username. 'Subscribing to '.$project->title;
-
-            //Next is process Direct bonus
-        
-            //dd($project->direct_commission);
-            directBonus($newUser,  $details, $project->direct_commission, $trx);
-            // Indirect bonus is inside the direct bonus
-            // the indirect bonus start from the sponsor referer. 
-
-
-            $user1 = User::find($newUser->ref_by);
-            $inDirect_bonus_details = 'Indirect bonus gotten from username: '.$newUser->username. ' Subscribing to '.$project->title;
-            
-
-            indirectBonus($user1, $project->pv, $inDirect_bonus_details, $trx);
-           
-
-            $detls = $newUser->username . ' Subscribed to ' . $newUser->project->title . ' Project.';
-            $pv = $newUser->project->pv;
-
-            updatePV($newUser, $detls, $pv); 
-
-            // Cash back credited to the new user's product_wallet after visa deduction is settled
-            $detss = $project->title . ' subscription cash back to Repurchase wallet';
-            processCashBack($newUser, $project, $trx, $detss);
-            
-            // Key-In Bonus: 2.00% of registration PV to the operator who keyed in the registration
-            // Proposed Plan: 2.00% (0.02) * PV * ₦600/PV (e.g. 450 PV Mega = ₦5,400)
-            $user_to_Get_keyInBonus = auth()->user();
-            $pv = (float) $project->pv;
-            $keyInBonus = round(($pv * 0.02 * 600), 2);
-
-            if ($keyInBonus > 0) {
-
-                $user_to_Get_keyInBonus->increment('key_in_bonus', $keyInBonus);
-                $user_to_Get_keyInBonus->refresh();
-                balance_TransactionReturn(
-                    $user_to_Get_keyInBonus->id,
-                    'Key-in bonus: registered ' . $newUser->username,
-                    $keyInBonus,
-                    'key_in_bonus',
-                    $trx,
-                    $user_to_Get_keyInBonus->key_in_bonus
-                );
-
-                // Debit from isolated Member Compensation Reserve Ledger
+                // Blueprint: Strategic Reserve — Global Share Pool (1.25%)
                 try {
-                    app(\App\Services\RevenueAllocationService::class)->disburseCompensation(
-                        $keyInBonus,
-                        $trx,
-                        'Key-in bonus to ' . $user_to_Get_keyInBonus->username . ' for registering ' . $newUser->username,
-                        'CRP',
-                        'key_in_bonus',
-                        $user_to_Get_keyInBonus->id
-                    );
+                    \App\Models\GlobalPoolLedger::accrue((float) $project->pv);
                 } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::warning('[RevenueAllocation] Failed to debit key-in bonus: ' . $e->getMessage());
+                    \Illuminate\Support\Facades\Log::warning('[GlobalPool] Failed to accrue on registration: ' . $e->getMessage());
                 }
-            }
 
-            // Blueprint: Strategic Reserve — Global Share Pool (1.25%)
-            try {
-                \App\Models\GlobalPoolLedger::accrue((float) $project->pv);
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('[GlobalPool] Failed to accrue on registration: ' . $e->getMessage());
-            }
+                $adminNotification            = new AdminNotification();
+                $adminNotification->user_id   = $newUser->id;
+                $adminNotification->title     = 'New distributor registered by ' . $payer->username;
+                $adminNotification->click_url = urlPath('admin.users.detail', $newUser->id);
+                $adminNotification->save();
 
-            // Admin notification
-            $adminNotification            = new AdminNotification();
-            $adminNotification->user_id   = $newUser->id;
-            $adminNotification->title     = 'New distributor registered by ' . $user_to_Get_keyInBonus->username;
-            $adminNotification->click_url = urlPath('admin.users.detail', $newUser->id);
-            $adminNotification->save();
-
-            DB::commit();
+                return $newUser;
+            });
+        } catch (DomainException $e) {
+            return back()->withNotify([['error', $e->getMessage()]]);
         } catch (\Throwable $e) {
-            DB::rollBack();
-            $notify[] = ['error', 'Something went wrong. Please try again.'];
-            //throw $e;
-            $notify[] = ['error', 'Error: ' . $e];
-            return back()->withNotify($notify)->withInput($request->except('password', 'password_confirmation'));
-            
+            // Logged for us; the member gets a plain message. This used to put
+            // the whole exception (file paths, SQL) in the toast.
+            report($e);
+            return back()->withNotify([['error', 'Something went wrong. Please try again.']]);
         }
 
-        $notify[] = ['success', 'Distributor ' . $newUser->username . ' registered successfully! ' . gs('cur_sym') . showAmount($cost, currencyFormat: false) . ' debited from your VISA wallet.'];
-        return back()->withNotify($notify);
+        return back()->withNotify([['success', 'Distributor ' . $newUser->username . ' registered successfully! ' . showAmount($cost) . ' debited from your VISA wallet.']]);
+    }
+
+    /**
+     * Where the new member goes in the binary tree: the chosen parent's
+     * left/right slot, or the first open slot under the sponsor. The slot's
+     * matrix row is locked so two registrations cannot take the same slot.
+     *
+     * @return array{0: int, 1: string} [parent user id, 'left'|'right']
+     * @throws DomainException
+     */
+    private function placement(Request $request, User $sponsor): array
+    {
+        if ($request->filled('parent')) {
+            $parentUser = User::where('username', $request->parent)->first();
+            if (!$parentUser) {
+                throw new DomainException('Parent username not found in the network.');
+            }
+            // Binary placement may not cross into another sponsor's tree.
+            if (!checkDownline($sponsor->id, $parentUser->id)) {
+                throw new DomainException('Parent must be under Sponsor tree. No Tree crossing');
+            }
+
+            $slot = Matrix::where('user_id', $parentUser->id)->where('stage_id', 1)->where('is_active', 1)->lockForUpdate()->first();
+            if (!$slot || (int) $slot->{$request->position} !== 0) {
+                throw new DomainException('Parent\'s ' . $request->position . ' position is already taken.');
+            }
+
+            return [$parentUser->id, $request->position];
+        }
+
+        // No parent given: the first open slot under the sponsor.
+        $sponsorMatrix = Matrix::where('user_id', $sponsor->id)->where('stage_id', 1)->first();
+        if (!$sponsorMatrix) {
+            throw new DomainException('Your account is not active. Please contact support. ERROR 205');
+        }
+
+        $placement = $this->matrixService2->findDownline_reg($sponsorMatrix, 1);
+        if (!$placement) {
+            throw new DomainException('No open slot found in your downline. Please specify a parent and position manually.ERROR 206');
+        }
+
+        $slot     = Matrix::lockForUpdate()->find($placement->id);
+        $position = (int) $slot->left === 0 ? 'left' : ((int) $slot->right === 0 ? 'right' : null);
+        if (!$position) {
+            throw new DomainException('That slot was just taken. Please try again.');
+        }
+
+        return [(int) $slot->user_id, $position];
     }
 }

@@ -65,7 +65,7 @@ export default function BinarySummary({ inTree, legs, totalMembers, binaryListUr
                                 <li className="bsm-row"><span>{t('Ranking PV')}</span><strong>{leg.rankingPv}</strong></li>
                             </ul>
                             {leg.emptySlot && (
-                                <a href={leg.emptySlot} className="bsm-slot"><i className="las la-plus" /> {t('Register into this slot')}</a>
+                                <Link href={leg.emptySlot} className="bsm-slot"><i className="las la-plus" /> {t('Register into this slot')}</Link>
                             )}
                         </section>
                     ))}

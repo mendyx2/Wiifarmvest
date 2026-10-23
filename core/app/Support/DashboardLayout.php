@@ -36,7 +36,6 @@ class DashboardLayout
      */
     private const BLADE_ROUTES = [
         'user.affiliate.ads',
-        'user.distributor.index',
         'user.logout',
     ];
 

@@ -37,9 +37,9 @@ export default function BinaryList({ members, total, search, notInTree, distribu
         'username' in s ? (
             <span className={`bx-slot bx-slot--filled bx-slot--${side === 'left' ? 'l' : 'r'}`}><i className="las la-user" />{s.username}</span>
         ) : (
-            <a href={s.url} className="bx-slot bx-slot--empty" title={withTitle ? t("Register into :name's :side slot", { name: owner, side: side === 'left' ? t('left') : t('right') }) : undefined}>
+            <Link href={s.url} className="bx-slot bx-slot--empty" title={withTitle ? t("Register into :name's :side slot", { name: owner, side: side === 'left' ? t('left') : t('right') }) : undefined}>
                 <i className="las la-plus" /> {t('Empty')}
-            </a>
+            </Link>
         );
     const legBadge = (m: Member) => {
         const left = m.leg.toLowerCase() === 'left';
@@ -90,7 +90,7 @@ export default function BinaryList({ members, total, search, notInTree, distribu
                     <div className="bx-state-ico"><i className="las la-sitemap" /></div>
                     <h5 className="bx-state-title">{t('No Members Yet')}</h5>
                     <p className="bx-state-msg">{t('Your binary network is empty. Add your first distributor to start building your tree.')}</p>
-                    <a href={distributorUrl} className="bx-state-cta bx-state-cta--empty"><i className="las la-user-plus" /> {t('Add Distributor')}</a>
+                    <Link href={distributorUrl} className="bx-state-cta bx-state-cta--empty"><i className="las la-user-plus" /> {t('Add Distributor')}</Link>
                 </div>
             ) : (
                 <>
