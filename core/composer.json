@@ -6,6 +6,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "ext-bcmath": "*",
         "authorizenet/authorizenet": "^2.0",
         "barryvdh/laravel-dompdf": "^3.1",
         "btcpayserver/btcpayserver-greenfield-php": "^2.3",

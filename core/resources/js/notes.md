@@ -2193,7 +2193,7 @@ are gone.
 The stock-transfer controller and service were already well built (locks,
 held payments, refunds). Only their pages moved.
 
-**Two things for you to decide:**
+**Two things for you to decide** (both decided in Steps 76–77):
 
 1. **There are two ways to redeem a welcome pack.**
    - The **POS** hands over goods worth exactly the package, **takes the
@@ -2282,6 +2282,130 @@ Every stockist page is now React: **19 pages** across Steps 65–73. The
 sidebar + header in React). The dashboard and the auth pages are the
 natural place to do that, and that is when navigation becomes fully
 single-page.
+
+
+### Step 75: The dashboard wrote a new "announcement" on every visit
+
+**What happened.** `UserController@home` began with
+`$user->flashcardPreferences()->create([... 'Announcement: New Feature' ...])`.
+Every time any member opened the dashboard, one more row was inserted
+into `user_flashcard_preferences`: one row per member per page view, for
+as long as the site has run.
+
+**Why nobody saw it.** The site has two flashcard systems:
+
+| System | Tables | Used? |
+|---|---|---|
+| Admin-created flashcards (the pop-ups members see) | `flashcards` + `flashcard_views` | yes: `partials/flashcards.blade.php` → `User::pendingFlashcards()` |
+| Old per-user "preferences" | `user_flashcard_preferences` | **no**: nothing ever reads it |
+
+The rows were written to a table no page reads, so the only effect was a
+table growing without limit. It also made every dashboard load do a write
+it didn't need.
+
+**Fix:**
+
+1. `home()` is now read-only. Two other queries whose results were never
+   used went too: it loaded the user a second time and looked up the active
+   matrix, then passed neither to the view.
+2. The same pattern elsewhere, removed:
+   - the `first.login` middleware (`CheckFirstLogin`), which wrote a
+     "Welcome to Our Platform!" row into the same dead table once per new
+     session. It wasn't attached to any route, so it was dead code waiting
+     to be switched on.
+   - the `flashcards:create-sample` command, which filled the same table
+     with demo rows.
+   - the `UserFlashcardPreference` model and `User::flashcardPreferences()`
+     / `activeFlashcards()`.
+3. **Clean-up migration**
+   `2026_10_22_000001_remove_duplicate_dashboard_announcements.php`:
+   - deletes only rows with the exact signature the bug wrote (that title,
+     that text, that image path);
+   - works in batches of 5,000 to keep locks short;
+   - is safe to run twice.
+
+   The table itself is kept: deleting rows is reversible in spirit (nothing
+   used them), dropping a table is not. It can be dropped later once you're
+   happy.
+
+**Deploy step:** run `php artisan migrate` once to clear the old rows.
+
+**Checked:**
+
+- `home()` now runs all 15 of its queries with **0 writes**.
+- The migration on a table with 12,003 bug rows plus 2 others removed the
+  12,003 in 0.08 s and left the 2.
+- A second run changes nothing.
+
+### Step 76: Decision: welcome packs are redeemed in the POS only
+
+There were two ways to redeem a welcome package (Step 72):
+
+| Path | Stock | Stockist is paid |
+|---|---|---|
+| POS (Welcome Code tab) | goods worth **exactly** the package are taken from stock | package value + stockist rebate |
+| Welcome-pack page "Confirm & Redeem" | **nothing** | package value |
+
+**Decision: keep only the POS path.** As a rule, money should never move
+without the goods it pays for:
+
+- **Fraud risk.** With the page path, a stockist could enter a member's
+  code and collect the package value without handing anything over. Nothing
+  in the system could show otherwise.
+- **Inventory never reconciled.** Goods given out "in person" never left
+  the stockist's stock, so stock reports overstated what stockists hold.
+- **Reporting.** POS redemptions write the items to the redemption ledger
+  (what was given); the page wrote `items: [], quantity: 0`.
+- **The member is better served.** The POS forces a real hand-over of
+  goods to the value of the gift.
+
+**What changed:**
+
+- `POST /user/stockist/welcome-pack/redeem` and its controller method are
+  removed.
+- The welcome-pack page still verifies a code, shows who it belongs to and
+  its value, and lists the stockist's redemption history (POS redemptions
+  included). Its button is now **"Hand over in POS"**. It opens
+  `/user/stockist/pos?code=…`, where the code is already verified and the
+  Welcome Code tab is open. The stockist adds goods to exactly the package
+  value and charges it.
+- `WelcomePackageService::redeem()` is unchanged (the POS uses it; it
+  locks the package, so a code can only be used once).
+
+### Step 77: Decision: declare `ext-bcmath`
+
+Stock transfers do their money maths with `bcadd`/`bcmul`/`bcsub`/`bccomp`.
+Without the PHP `bcmath` extension, a stockist sending or confirming a
+transfer would hit a server error.
+
+**Finding:** `btcpayserver/btcpayserver-greenfield-php`, already one of the
+site's packages, **also requires `ext-bcmath`**. So any server where
+`composer install` succeeded already has it, and production is fine.
+
+**Change:**
+
+- `"ext-bcmath": "*"` added to `composer.json` → `require`, so the
+  requirement is written down where it is used.
+- `composer.lock` gets the matching `content-hash` and platform entry.
+  This is a 3-line change; package versions are untouched.
+
+On a server without bcmath, `composer install` now stops with "requires PHP
+extension ext-bcmath", instead of the site failing later on the first
+transfer. This test container lacks bcmath, which is why the test harness
+defines simple stand-ins for those four functions.
+
+**Verification for Steps 75–77:**
+
+- The server checks above, plus:
+  - the welcome-pack redeem route is gone;
+  - the page's link opens the POS with the code;
+  - a POS sale that doesn't match the package value is refused, and the
+    package and wallet are unchanged.
+- **Browser:** the welcome-pack page has no cash-redeem button; "Hand over
+  in POS" opens the POS without a full reload, with the code verified and
+  the Welcome tab active; a used code shows "Cannot Redeem".
+- **All suites: 369 browser checks, 0 failures.** `route:cache` works. The
+  route-name scan is clean.
 
 ## Part 4: Working on the front end
 
