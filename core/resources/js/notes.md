@@ -53,11 +53,11 @@ gets replaced, one page at a time.
    views: 191 user/front-end, 186 admin and 63 shared (emails, errors,
    components). We migrate them one page at a time. Blade and React pages
    live side by side, and the site stays deployable after every step.
-2. **React pages render inside the existing dashboard shell.** The Inertia
-   root view (`resources/views/inertia/user.blade.php`) *extends the current
-   Blade layout* (`layouts.master`). The sidebar, header, styles, toasts,
-   Tawk chat and push notifications stay exactly as they are. Users see no
-   visual change while pages move to React underneath.
+2. **React pages look exactly like the Blade ones.** Until Phase 5 the
+   Inertia root view extended the Blade dashboard layout. Since Step 78 the
+   sidebar and header are a React layout with the same HTML and CSS, and
+   the root view is a bare HTML page. Users see no visual change while pages
+   move to React underneath.
 3. **No business logic moves to the front end.** Commissions, ledgers,
    balances and payouts stay in PHP. React only displays data and sends
    forms.
@@ -79,7 +79,7 @@ gets replaced, one page at a time.
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
 | **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects ✅ · 4c network trees ✅ · 4d shop/cart/orders ✅ · 4e stockist area ✅ | ✅ Done (Steps 32–74); a few member pages remain, see Step 74 |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
-| **5. Layout to React** | Port the sidebar/header (`partials/dashboard*.blade.php`) to `Layouts/DashboardLayout.tsx` as a persistent layout; switch the root view to a bare HTML shell. After this, user-area navigation becomes fully SPA. | Once most user pages are in React |
+| **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard · 5c remaining member pages · 5d auth pages | In progress |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
 | **7. Admin panel** | 186 views. Use a separate root view (`inertia.admin`) and `AdminLayout`, applying the same recipe | Last |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
@@ -2407,6 +2407,204 @@ defines simple stand-ins for those four functions.
 - **All suites: 369 browser checks, 0 failures.** `route:cache` works. The
   route-name scan is clean.
 
+## Part 3e: Phase 5 change log (layout to React)
+
+### Step 78: The sidebar and header are React (5a)
+
+**Before:** every React page was drawn *inside* the Blade dashboard. The
+root view `inertia/user.blade.php` extended `layouts.master`, which included
+`partials/dashboard.blade.php` (or the stockist or affiliate copy). Moving
+between React pages swapped only the page body, so the sidebar's "active"
+highlight, its badges and the cart count stayed as they were at the last
+full page load.
+
+**Now:**
+
+```
+first load:  inertia/user.blade.php  (bare HTML: stylesheets + @inertia + toasts)
+               └─ React app
+                    └─ Layouts/DashboardLayout.tsx   sidebar, top bar, footer
+                         └─ Pages/User/...           the page
+every visit: JSON { component, props: { layout: {...}, ...page props } }
+```
+
+1. **`app/Support/DashboardLayout.php` (new)** builds everything the
+   sidebar and top bar show:
+   - the user's name, initials and ID card label (`WCS1042`, or `@ username`);
+   - the cart and unread-notification counts;
+   - the greeting and date;
+   - the footer's social links;
+   - the menu itself.
+
+   The menu is a list of labels, link lists and collapsible groups. Each
+   link has its URL (from `route()`), an `active` flag (from
+   `request()->routeIs()`, like `menuActive()`) and an optional badge (KYC
+   status, pending awards, guarantor requests, project, ACB, POS, pending
+   stock requests). It picks one of three menus, with the same rules as
+   `layouts/master.blade.php`:
+   - **member**;
+   - **stockist** (`user.stockist.*`);
+   - **affiliate** (`user.affiliate.*`).
+
+   It moves the PHP that sat at the top of the three Blade partials into one
+   class.
+2. **`HandleInertiaRequests` shares it as the `layout` prop.** It is a
+   closure, so a partial reload (`only: [...]`, used by the filters and the
+   "verify a code" boxes) skips its ~8 queries. Inertia keeps the previous
+   value.
+3. **`Layouts/DashboardLayout.tsx` (new)** draws the same HTML and class
+   names as the Blade partial, so the existing CSS applies unchanged. The
+   old inline jQuery is now React state:
+   - mobile sidebar open/close, with the overlay and body scroll lock;
+   - the avatar menu, closed by an outside click or Escape;
+   - accordion groups, one open at a time.
+
+   On every visit it closes the mobile sidebar and avatar menu and opens
+   the group that holds the current page.
+4. **`app.tsx` makes it the default, persistent layout.** Every page gets
+   `layout = page => <DashboardLayout>{page}</DashboardLayout>` unless it
+   sets its own; the auth pages will. Because it is the same component on
+   every page, React keeps it mounted: clicking a menu link replaces only
+   the page body.
+5. **The root view is a bare HTML page.** It loads:
+   - Bootstrap CSS and the icon fonts;
+   - `main.css` and `custom.css`;
+   - the dashboard CSS and `app.tsx` through Vite;
+   - `color.php`;
+   - the notify partial (`window.notify` plus toasts flashed before a
+     full load);
+   - push notifications if enabled (with jQuery, which only that script
+     needs).
+
+   Left out: select2, owl, magnific-popup, isotope, main.js, and the jQuery
+   block that patched form labels and table cells on page load. That block
+   ran before React had drawn anything, so it never touched React pages.
+6. **The dashboard CSS is one file: `resources/css/dashboard.css`.**
+   - **Where it came from:**
+     - the 4,400-line inline `<style>` in `layouts/master.blade.php`;
+     - the same 180 lines copied into each of the three sidebar partials.
+   - **Where it loads:**
+     - Vite builds it as its own entry (`vite.config.ts`, about 32 kB
+       gzipped);
+     - the Blade master layout loads it with `@vite`;
+     - so does the React root view.
+   - **What else changed:**
+     - The partials' identical sidebar script is now one include,
+       `partials/dashboard_script.blade.php`.
+     - The inline `style=""` badges became `.bank-nav-pill-*` classes.
+
+**Links to pages that are still Blade.** Inertia cannot show a Blade page
+inside the React layout. There are two safeguards:
+
+- **`DashboardLayout::BLADE_ROUTES`** lists the menu links that must do a
+  full page load:
+  - Dashboard;
+  - Affiliate (dashboard, orders, ads);
+  - Add Distributor;
+  - Bonus Transfer;
+  - Sign Out.
+
+  The layout renders these as a plain `<a>` and the rest as `<Link>`.
+  **Remove a route from this list when its page moves to React.**
+- **`router.on('invalid')` in `app.tsx` is the safety net for any other
+  link.** When a GET visit gets HTML back, the browser loads that URL
+  normally, instead of Inertia showing the HTML in a pop-up. Form posts
+  keep the pop-up, because there it is the only place a server error
+  shows.
+
+**Fixes made on the way:**
+
+- **Find Stockist** is a member Shop page, but its route starts with
+  `user.stockist.`, so the Blade master showed the *stockist* sidebar on it,
+  even to non-stockists. The React layout shows the member menu there.
+- **The "Find Stockist" link was never highlighted.** It checked
+  `menuActive('user.stockist.fin')`, a typo.
+- **"Deposit History" was highlighted together with "Deposit"** on the
+  deposit page. Now only "Deposit" is.
+- **The avatar menu said "Change.password"**, with a typo and the same icon
+  as Profile. It now reads "Change Password", with a key icon.
+- **The Tawk.to live chat never loaded.** `layouts/app.blade.php` checked
+  `routeIs('user.dashboard')`, but the dashboard route is `user.home`. The
+  check is fixed for the Blade dashboard. The React dashboard (5b) loads the
+  chat itself.
+- **Deleted:** `layouts/master_stockist.blade.php`,
+  `partials/master_stockist.blade.php` and
+  `partials/dashboard_stockist.blade.php`. No view or controller used them;
+  they were an older copy of the stockist sidebar.
+
+**Kept on purpose:** `layouts/master.blade.php` and the three
+`partials/dashboard*.blade.php` files. They are still needed by:
+
+- the automatic payment-gateway pages (Stripe, Paystack…);
+- the pages 5b/5c still have to move;
+- the one-line rollback for each migrated page (Part 2, rule 4).
+
+When you change the menu, change `DashboardLayout.php` **and** the partial
+until those pages are gone.
+
+### Step 79: Verification for 5a
+
+**Server.** Real routes run against the SQLite fixtures, with
+`request()->routeIs()` working (`p5a_check.php`).
+
+- **Members:**
+  - **Demo user (section 1, Mega stockist), on Transactions, Orders and Find
+    Stockist:**
+    - the member menu, with User Tree, Achievements and Stockist Dashboard;
+    - the correct group open and the correct link highlighted;
+    - the project pill, a "Pending" KYC badge, cart 3, and ID label
+      `WCS1042`.
+  - **A section-2 member with no stockist:**
+    - no tree, achievements or stockist link;
+    - KYC "!" and guarantor badge 1;
+    - label `@ bola`.
+- **Stockists:**
+  - **POS and Inventory orders:** the stockist menu, with "Back to Main Menu",
+    POS badge, My Orders and Stock Requests (Mega).
+  - **A Mini on "Buy from Mega":** that link and My Orders, and no Stock
+    Requests.
+- **Requests and queries:**
+  - A partial reload returns only the requested prop and runs 3 queries.
+  - A full visit runs 13 queries, against 18 for Orders.
+- **Pages:**
+  - **The first page load** has `data-page`, the dashboard CSS, `notify()`
+    and `<title inertia>`, and no Blade sidebar, jQuery or select2.
+  - **Blade pages still on the master layout** (Bonus Transfer, Affiliate
+    orders) still render their Blade sidebar (the affiliate one on
+    `/user/affiliate/*`), with the built CSS and the shared script, and no
+    inline CSS.
+
+**Browser (`phase5a.mjs`, 29 checks).** These run on the real build with the
+same stylesheet tags as the root view.
+
+- **Layout:**
+  - sidebar, top bar, body and footer;
+  - profile, greeting and badges;
+  - the project colour;
+  - the footer social link.
+- **Accordion:** opening one group closes the other; clicking again closes
+  it.
+- **Moving between pages:**
+  - **Clicking Orders** sends one Inertia request with no full page load.
+    The sidebar is the **same DOM node** afterwards, the highlight moves and
+    the URL updates.
+  - **Dashboard** (Blade) is a normal page load.
+  - **A link whose server answers with HTML** is loaded by the browser, with
+    no pop-up.
+- **Avatar menu:** opens; closes on an outside click and on Escape.
+- **Section-2 and stockist menus.**
+- **Mobile (375 px):**
+  - the sidebar starts off screen;
+  - the toggle slides it in, with the overlay and scroll lock;
+  - an overlay click closes it;
+  - following a link closes it.
+- **Side by side:** a screenshot of the React layout next to the Blade one
+  looks the same.
+
+**All earlier suites still pass** (they now read the CSS from
+`resources/css/dashboard.css`): **384 browser checks, 0 failures**. That is
+355 + 14 (pilot) + 29 (this step).
+
 ## Part 4: Working on the front end
 
 ### Run locally
@@ -2441,7 +2639,11 @@ appear instantly.
      needed.
    - Links to **other React pages** → `<Link href>`. Links to **Blade
      pages** must stay plain `<a href>`: a Blade page is not an Inertia
-     response.
+     response. (A mistake here no longer shows an error pop-up: since Step
+     78 the browser then loads the page normally. That still costs a
+     second request.)
+   - When the page is in the sidebar menu, remove its route from
+     `DashboardLayout::BLADE_ROUTES`.
 3. **Type the props:** `type Props = PageProps<{ ... }>`.
 4. **Controller:** replace `view(...)` with
    `Inertia::render('<Area>/<Name>', [...props])->withViewData(compact('pageTitle'))`.
@@ -2456,9 +2658,8 @@ appear instantly.
 
 ### Known limitations of the current hybrid set-up
 
-- **The sidebar is still Blade.** Moving between two React pages does not
-  update the sidebar's "active" highlight until a full reload. This goes
-  away in phase 5.
+- ~~**The sidebar is still Blade.**~~ Fixed in Step 78: the sidebar is React
+  and updates on every visit.
 - **Every Inertia response includes the whole translation file.** That is
   fine while it is small. If it grows large, cache it per asset version or
   share only the keys a page needs.

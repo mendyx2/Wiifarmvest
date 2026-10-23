@@ -7,6 +7,47 @@ export interface AuthUser {
     fullname: string;
 }
 
+/** A small pill next to a menu link (App\Support\DashboardLayout). */
+export interface NavBadge {
+    text: string;
+    tone: 'danger' | 'project' | 'award' | 'acb' | 'verified' | 'pending' | 'pos';
+    /** Project colour, for tone "project" */
+    color?: string;
+    title?: string;
+}
+
+export interface NavLink {
+    label: string;
+    icon: string;
+    url: string;
+    active: boolean;
+    badge: NavBadge | null;
+    /** The page is still Blade: open it with a full page load, not an Inertia visit. */
+    reload: boolean;
+    logout?: boolean;
+}
+
+export type NavEntry =
+    | { type: 'label'; text: string }
+    | { type: 'links'; items: NavLink[] }
+    | { type: 'group'; id: string; label: string; icon: string; badge: NavBadge | null; active: boolean; items: NavLink[] };
+
+/** Everything the dashboard layout shows around a page. */
+export interface DashboardChrome {
+    variant: 'member' | 'stockist' | 'affiliate';
+    logo: string;
+    homeUrl: string;
+    /** The dashboard page is still Blade */
+    homeReload: boolean;
+    user: { fullname: string; firstname: string; email: string; initials: string; idLabel: string };
+    greeting: string;
+    today: string;
+    counts: { cart: number; notifications: number };
+    links: Record<'deposit' | 'cart' | 'notifications' | 'profile' | 'password' | 'twofactor' | 'logout', string>;
+    nav: NavEntry[];
+    socials: { url: string; title: string; icon: string }[];
+}
+
 /** Props shared with every page by App\Http\Middleware\HandleInertiaRequests. */
 export interface SharedProps {
     auth: { user: AuthUser | null };
@@ -16,6 +57,8 @@ export interface SharedProps {
     translations: Record<string, string>;
     /** Messages flashed with ->withNotify() on the previous request. */
     notify: NotifyMessage[];
+    /** Sidebar, top bar and footer data (App\Support\DashboardLayout); null for guests. */
+    layout: DashboardChrome | null;
     [key: string]: unknown;
 }
 

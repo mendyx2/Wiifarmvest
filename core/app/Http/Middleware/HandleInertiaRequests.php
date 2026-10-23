@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\DashboardLayout;
 use App\Support\Vite;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -9,9 +10,9 @@ use Inertia\Middleware;
 class HandleInertiaRequests extends Middleware
 {
     /**
-     * The Blade view that wraps every Inertia page on its first (full) load.
-     * It extends the existing dashboard layout, so React pages render inside
-     * the current sidebar/header while the rest of the site stays on Blade.
+     * The Blade view that wraps every Inertia page on its first (full) load:
+     * a bare HTML page with the stylesheets. The sidebar and header are React
+     * (Layouts/DashboardLayout.tsx), fed by the shared "layout" prop below.
      *
      * @var string
      */
@@ -52,6 +53,9 @@ class HandleInertiaRequests extends Middleware
             'locale'       => app()->getLocale(),
             'translations' => fn () => (object) $this->translations(), // object, so an empty file is {} not []
             'notify'       => fn () => $request->session()->get('notify', []),
+            // Sidebar, top bar and footer. A closure, so partial reloads
+            // (router.reload({ only: [...] })) skip its queries.
+            'layout'       => fn () => DashboardLayout::for($request),
         ]);
     }
 

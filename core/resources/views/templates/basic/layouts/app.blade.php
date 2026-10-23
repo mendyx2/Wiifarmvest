@@ -115,7 +115,10 @@
     <script src=" {{ asset($activeTemplateTrue . 'js/isotope.min.js') }}"></script>
     <script src="{{ asset($activeTemplateTrue . 'js/main.js') }}"></script>
     
-     @if(request()->routeIs('user.dashboard'))
+    {{-- Live chat on the member dashboard. This checked 'user.dashboard', a route
+         name that does not exist (the dashboard is 'user.home'), so the chat never
+         loaded anywhere (notes Step 78). --}}
+    @if(request()->routeIs('user.home'))
     <!--Start of Tawk.to Script-->
         <script type="text/javascript">
         var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();

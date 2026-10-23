@@ -10,7 +10,7 @@ import path from 'node:path';
 export default defineConfig({
     plugins: [
         laravel({
-            input: ['resources/js/app.tsx'],
+            input: ['resources/css/dashboard.css', 'resources/js/app.tsx'],
             publicDirectory: '..',
             buildDirectory: 'build',
             hotFile: 'public/hot',
