@@ -51,22 +51,9 @@ class UserController extends Controller
     }
 
     public function home()
-    {   $user = User::find(auth()->id());
-        
-        if ($user->section == 1) {
-            $currentUserMatrix = returnCurrentMatrixStage(auth()->id());
-
-        }
-
-        $user->flashcardPreferences()->create([
-            'type' => 'image',
-            'content_url' => asset('storage/announcements/new-feature.jpg'),
-            'title' => 'Announcement: New Feature',
-            'description' => 'We\'ve added a new dashboard feature!',
-            'is_active' => true,
-        ]);
-
-            
+    {
+        // Read-only: this page used to insert an "Announcement: New Feature"
+        // row into user_flashcard_preferences on every visit (see notes Step 75).
         $pageTitle        = 'Dashboard';
         $totalDeposit     = Deposit::where('user_id', auth()->id())->where('status', 1)->sum('amount');
         $totalWithdraw    = Withdrawal::where('user_id', auth()->id())->where('status', 1)->sum('amount');

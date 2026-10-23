@@ -47,17 +47,6 @@ class User extends Authenticatable
         return Flashcard::active()->whereNotIn('id', $viewedIds)->latest()->get();
     }
 
-    // Legacy (kept for backward-compat)
-    public function flashcardPreferences()
-    {
-        return $this->hasMany(UserFlashcardPreference::class);
-    }
-
-    public function activeFlashcards()
-    {
-        return $this->flashcardPreferences()->active()->notDismissed();
-    }
-    
 
     public function loginLogs()
     {
