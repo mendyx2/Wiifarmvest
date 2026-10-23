@@ -348,7 +348,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::get('/',               'index')->name('index');
                 Route::post('/transfer',      'transfer')->name('submit');
                 Route::post('/transfer-all',  'transferAll')->name('all');
-                Route::get('/check-purchase', 'checkPurchase')->name('check.purchase');
+                // GET /check-purchase removed: the page receives the autoship status with its props.
             });
 
             // My Project  

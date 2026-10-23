@@ -113,8 +113,7 @@ export default function AffiliateDashboard({ shopLink, stats, recentOrders, adsC
 
             <p className="text-muted small mt-3">
                 {t('Your affiliate bonus is credited to')} <strong>{stats.bonus}</strong> {t('and can be moved to your Money Box from')}{' '}
-                {/* Bonus Transfer is still a Blade page: a normal link. */}
-                <a href={urls.bonusTransfer}>{t('Bonus Transfer')}</a>.
+                <Link href={urls.bonusTransfer}>{t('Bonus Transfer')}</Link>.
             </p>
         </div>
     );

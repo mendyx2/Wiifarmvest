@@ -234,8 +234,7 @@ export default function Dashboard(props: Props) {
                 )}
 
                 {autoship && (
-                    // Bonus Transfer is still a Blade page: a normal link.
-                    <a href={urls.bonusTransfer} className="bk-autoship-strip" style={{ textDecoration: 'none' }}>
+                    <Link href={urls.bonusTransfer} className="bk-autoship-strip" style={{ textDecoration: 'none' }}>
                         <div className="bk-autoship-left">
                             <span className="bk-autoship-icon">
                                 <i className="las la-sync-alt" />
@@ -251,7 +250,7 @@ export default function Dashboard(props: Props) {
                                 {t('Transfer')} <i className="las la-arrow-right" />
                             </span>
                         </div>
-                    </a>
+                    </Link>
                 )}
 
                 {pv && (

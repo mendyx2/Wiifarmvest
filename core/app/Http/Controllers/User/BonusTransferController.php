@@ -9,10 +9,12 @@ use App\Models\Order;
 use App\Models\Transfer;
 use App\Models\User;
 use App\Models\WelcomePackage;
+use App\Services\AutoshipService;
 use App\Services\WalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Inertia\Inertia;
 
 class BonusTransferController extends Controller
 {
@@ -33,19 +35,70 @@ class BonusTransferController extends Controller
 
     public function index()
     {
-        $pageTitle             = 'Bonus Transfer';
-        $user                  = $this->authUser();
-        $hasPurchasedThisMonth = $this->hasMonthlyPurchase($user->id);
-        $transfers             = Transfer::where('user_id', $user->id)->latest()->paginate(15);
-        $isAcb                 = $user->isAcb();
-        $bonusFields           = $this->visibleFields($isAcb);
-        $totalTransferable     = $this->computeTotalTransferable($user, $hasPurchasedThisMonth);
-        $welcomePackages       = WelcomePackage::where('user_id', $user->id)->latest()->get();
+        $user      = $this->authUser();
+        $autoship  = $this->autoshipStatus($user->id);
+        $isAcb     = $user->isAcb();
+        $eligible  = $this->eligibleFields($autoship['eligible'], $isAcb);
 
-        return view('Template::user.bonus_transfer', compact(
-            'pageTitle', 'user', 'bonusFields', 'hasPurchasedThisMonth', 'transfers',
-            'totalTransferable', 'isAcb', 'welcomePackages'
-        ));
+        // A row per bonus with money in it; ACB members always see their ACB row.
+        $wallets = [];
+        foreach ($this->visibleFields($isAcb) as $field => $config) {
+            $balance = (float) ($user->$field ?? 0);
+            if ($balance <= 0 && empty($config['requires_acb'])) {
+                continue;
+            }
+            $wallets[] = [
+                'field'   => $field,
+                'label'   => $config['label'],
+                'icon'    => $config['icon'],
+                'kind'    => !empty($config['is_autoship']) ? 'autoship' : (!empty($config['requires_acb']) ? 'acb' : 'bonus'),
+                'balance' => showAmount($balance),
+                'amount'  => round($balance, 2),
+                'locked'  => !isset($eligible[$field]),
+            ];
+        }
+
+        $summary = collect($wallets)->filter(fn ($w) => $w['amount'] > 0)->map(fn ($w) => [
+            'label'   => $w['label'],
+            'balance' => $w['balance'],
+            'skipped' => $w['locked'],
+        ])->values();
+
+        return Inertia::render('User/BonusTransfer', [
+            'moneyBox'          => showAmount($user->balance),
+            'totalTransferable' => showAmount($this->computeTotalTransferable($user, $autoship['eligible'])),
+            'canTransferAll'    => $this->computeTotalTransferable($user, $autoship['eligible']) > 0,
+            'wallets'           => $wallets,
+            'summary'           => $summary,
+            'autoship'          => [
+                'eligible' => $autoship['eligible'],
+                'pv'       => $autoship['pv'],
+                'minPv'    => AutoshipService::MIN_PV,
+                'month'    => now()->format('F Y'),
+                'balance'  => showAmount($user->autoship ?? 0),
+                'order'    => $autoship['order'],
+            ],
+            'welcomePackages'   => WelcomePackage::where('user_id', $user->id)->latest()->get()->map(fn ($wp) => [
+                'code'       => $wp->code,
+                'title'      => ucfirst($wp->source) . ' Welcome Package',
+                'amount'     => showAmount($wp->amount),
+                'redeemed'   => $wp->isRedeemed(),
+                'redeemedAt' => $wp->redeemed_at?->format('M d, Y'),
+            ])->values(),
+            'transfers'         => Transfer::where('user_id', $user->id)->latest()->paginate(15)->through(fn (Transfer $t) => [
+                'id'     => $t->id,
+                'source' => $t->source_label,
+                'amount' => showAmount($t->amount),
+                'status' => $t->status_text,
+                'date'   => $t->created_at?->format('M d, Y'),
+                'time'   => $t->created_at?->format('h:i A'),
+            ]),
+            'urls'              => [
+                'transfer'    => route('user.bonus.transfer.submit'),
+                'transferAll' => route('user.bonus.transfer.all'),
+                'shop'        => route('user.products'),
+            ],
+        ])->withViewData(['pageTitle' => 'Bonus Transfer']);
     }
 
     public function transfer(Request $request)
@@ -62,13 +115,14 @@ class BonusTransferController extends Controller
         $config = $this->bonusFields[$field];
 
         if (!Hash::check($request->password, $user->password)) {
-            return back()
-                ->withInput($request->only('bonus_field', 'amount'))
-                ->withErrors(['password' => 'Incorrect password. Please try again.']);
+            return back()->withErrors(['password' => 'Incorrect password. Please try again.']);
         }
 
-        if (!empty($config['requires_purchase']) && !$this->hasMonthlyPurchase($user->id)) {
-            $notify[] = ['error', 'You need at least one purchase this month to transfer your Matching Bonus.'];
+        // Autoship unlocks with MIN_PV of products bought this month, the rule the
+        // matching bonus applies when it holds the 20% back (MatchingBonusService).
+        // This used to accept any order at all, and its message named the Matching Bonus.
+        if (!empty($config['requires_purchase']) && !$this->autoshipStatus($user->id)['eligible']) {
+            $notify[] = ['error', 'Buy ' . AutoshipService::MIN_PV . ' PV of products this month to transfer your ' . $config['label'] . '.'];
             return back()->withNotify($notify);
         }
 
@@ -98,17 +152,10 @@ class BonusTransferController extends Controller
         $user = $this->authUser();
 
         if (!Hash::check($request->password, $user->password)) {
-            return back()->withErrors(['password' => 'Incorrect password. Please try again.'])
-                         ->with('reopen_all_modal', true);
+            return back()->withErrors(['password' => 'Incorrect password. Please try again.']);
         }
 
-        $hasPurchase = $this->hasMonthlyPurchase($user->id);
-        $isAcb       = $user->isAcb();
-
-        $eligibleFields = array_filter($this->bonusFields, fn ($config) =>
-            !(!empty($config['requires_purchase']) && !$hasPurchase)
-            && !(!empty($config['requires_acb']) && !$isAcb)
-        );
+        $eligibleFields = $this->eligibleFields($this->autoshipStatus($user->id)['eligible'], $user->isAcb());
 
         $total = DB::transaction(function () use ($user, $eligibleFields) {
             // Amounts come from the locked row, not the copy loaded at the start
@@ -138,37 +185,6 @@ class BonusTransferController extends Controller
 
         $notify[] = ['success', getAmount($total) . ' total transferred to your Money Box.'];
         return back()->withNotify($notify);
-    }
-
-    public function checkPurchase()
-    {
-        $user  = $this->authUser();
-        $has   = $this->hasMonthlyPurchase($user->id);
-        $month = now()->format('F Y');
-
-        $order = null;
-        if ($has) {
-            $order = Order::where('user_id', $user->id)
-                ->where('status', '!=', Status::ORDER_CANCELED)
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->latest()
-                ->select(['invoice_code', 'total_amount', 'created_at'])
-                ->first();
-        }
-
-        return response()->json([
-            'eligible' => $has,
-            'month'    => $month,
-            'message'  => $has
-                ? "You have a qualifying purchase in {$month}. You can transfer your Matching Bonus."
-                : "No qualifying purchase found for {$month}. Make at least one purchase this month to unlock Matching Bonus transfer.",
-            'order'    => $order ? [
-                'invoice' => $order->invoice_code,
-                'amount'  => getAmount($order->total_amount),
-                'date'    => $order->created_at->format('M d, Y'),
-            ] : null,
-        ]);
     }
 
     /** @return User */
@@ -202,26 +218,42 @@ class BonusTransferController extends Controller
         ]);
     }
 
-    private function hasMonthlyPurchase(int $userId): bool
+    /**
+     * Autoship status for this month: PV bought, whether it unlocks the
+     * transfer, and the latest qualifying order.
+     *
+     * @return array{eligible: bool, pv: float, order: ?array}
+     */
+    private function autoshipStatus(int $userId): array
     {
-        return Order::where('user_id', $userId)
+        $pv = app(AutoshipService::class)->monthlyPv($userId);
+
+        $order = Order::where('user_id', $userId)
             ->where('status', '!=', Status::ORDER_CANCELED)
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->exists();
+            ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()])
+            ->latest()
+            ->first(['invoice_code', 'created_at']);
+
+        return [
+            'eligible' => $pv >= AutoshipService::MIN_PV,
+            'pv'       => $pv + 0,
+            'order'    => $order ? ['invoice' => $order->invoice_code, 'date' => $order->created_at?->format('M d, Y')] : null,
+        ];
     }
 
-    private function computeTotalTransferable(User $user, bool $hasPurchase): float
+    /** The bonus fields this member may move right now. */
+    private function eligibleFields(bool $autoshipUnlocked, bool $isAcb): array
     {
-        $isAcb = $user->isAcb();
+        return array_filter($this->bonusFields, fn ($config) =>
+            !(!empty($config['requires_purchase']) && !$autoshipUnlocked)
+            && !(!empty($config['requires_acb']) && !$isAcb)
+        );
+    }
+
+    private function computeTotalTransferable(User $user, bool $autoshipUnlocked): float
+    {
         $total = 0.0;
-        foreach ($this->bonusFields as $field => $config) {
-            if (!empty($config['requires_purchase']) && !$hasPurchase) {
-                continue;
-            }
-            if (!empty($config['requires_acb']) && !$isAcb) {
-                continue;
-            }
+        foreach ($this->eligibleFields($autoshipUnlocked, $user->isAcb()) as $field => $config) {
             $total += (float) ($user->$field ?? 0);
         }
         return $total;

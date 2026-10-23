@@ -2810,6 +2810,97 @@ single-page link now.
     Center as a plain link; copy link; My Sales as an Inertia visit with
     item counts, and the highlight moves.
 
+### Step 83: Bonus Transfer in React (5c-2)
+
+**What changed.** `BonusTransferController@index` renders
+`User/BonusTransfer`. The 580 lines of page CSS moved to
+`Pages/User/BonusTransfer.css`, scoped under `.page-bonus-transfer` with
+`scripts/extract-page-css.mjs`. The Blade page's `:root` variables now sit on
+the scope itself.
+
+The controller sends display-ready props:
+
+- the hero totals;
+- one row per bonus with money in it, plus the ACB row for ACB members,
+  each with `locked` set when it cannot be moved yet;
+- the "Transfer All" summary, with the skipped rows marked;
+- the autoship status (PV bought this month, the target, the latest order);
+- welcome packages;
+- the paginated history.
+
+The three dialogs are React: transfer one bonus, Transfer All, and "why
+autoship is locked". A wrong password comes back as an Inertia validation
+error. The dialog stays open, shows it, and keeps the amount. The old
+`reopen_all_modal` session flag and the hidden `#btAutoReopen` data div are
+gone.
+
+**Bugs fixed:**
+
+- **The page crashed for anyone with an autoship balance.** The view used
+  `$autoshipMinPv` and `$autoshipPv`, but the controller never passed them
+  ("Undefined variable").
+- **The autoship rule was not the one stated.** Autoship is 20% of the
+  matching bonus, held back until the member buys `AutoshipService::MIN_PV`
+  (10) PV of products in the month. That is what `MatchingBonusService`
+  and the page text say. The transfer only checked for *any* order this
+  month, and its error message named the Matching Bonus. The transfer, the
+  total, the summary and "Transfer All" now all use
+  `AutoshipService::monthlyPv()`.
+- **Non-ACB members never saw their welcome packages here.** The Blade
+  loop only printed them just before the ACB row, which only ACB members
+  have. They are now listed after the bonus rows for everyone.
+- **The footnote** said the Matching Bonus needs a purchase. It now
+  describes the autoship rule.
+
+**Removed:** `GET /user/bonus-transfer/check-purchase`. The page used to fetch
+the autoship status when the dialog opened; it now arrives with the page.
+
+**Menu and links.** `user.bonus.transfer.index` left
+`DashboardLayout::BLADE_ROUTES`. The dashboard's autoship strip and the
+affiliate dashboard's Bonus Transfer link are single-page links now.
+
+**Unchanged:** the money movement itself (`WalletService::transferBonus`,
+which locks the user row) and the per-source history rows.
+
+**Verification:**
+
+- **Server (`p5c2_check.php`).** The demo user has 8 PV this month and a
+  10 PV target:
+  - **Page:** the total is ₦5,050.50, without the locked autoship. Autoship
+    is `LOCKED`, and the summary marks it skipped. The welcome package is
+    listed, and the sidebar link is no longer a reload.
+  - **Wrong password** → a validation error, and nothing moves.
+  - **500 from Direct** → direct 1,500 → 1,000 and Money Box
+    20,000 → 20,500.
+  - **Refused:**
+    - 5,000 (more than the balance) → "Insufficient Direct Bonus balance";
+    - autoship while locked → "Buy 10 PV…", and the balance is unchanged;
+    - the ACB bonus for a non-member.
+  - **Transfer All:**
+    - with a wrong password → error;
+    - otherwise it moves everything except autoship (Money Box ₦25,050.50),
+      with one history row per source.
+  - **Unlocked:** after another purchase (12 PV), autoship unlocks and
+    100 of it transfers.
+  - **ACB:** an ACB member sees the ₦0.00 ACB row.
+  - **`check-purchase`** is gone.
+- **Browser (`phase5c2.mjs`, 17 checks):**
+  - **Page:** the hero; the locked row text; the welcome card; the empty
+    history; the sidebar highlight.
+  - **Autoship dialog:** shows the PV and the invoice without a request,
+    links to the shop, and Escape closes it.
+  - **Transfer dialog:**
+    - it is pre-filled on the first render;
+    - more than the balance → warning and disabled button;
+    - it posts `{bonus_field, amount, password}`;
+    - a wrong password keeps the dialog open, with the error, the amount
+      kept and the password cleared;
+    - success closes it.
+  - **Transfer All:** shows Skipped plus the PV notice, posts only
+    `{password}`, and closes on an outside click.
+  - **Unlocked fixture:** autoship has a Transfer button, and the history is
+    numbered.
+
 ## Part 4: Working on the front end
 
 ### Run locally
