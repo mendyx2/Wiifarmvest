@@ -38,6 +38,9 @@ use App\Models\GatewayCurrency;
 use App\Models\NotificationLog;
 use App\Models\GuarantorRequest;
 use App\Models\WelcomePackage;
+use App\Models\Useridcard;
+use App\Services\AutoshipService;
+use Illuminate\Support\Str;
 
 
 
@@ -54,35 +57,131 @@ class UserController extends Controller
     {
         // Read-only: this page used to insert an "Announcement: New Feature"
         // row into user_flashcard_preferences on every visit (see notes Step 75).
-        $pageTitle        = 'Dashboard';
-        $totalDeposit     = Deposit::where('user_id', auth()->id())->where('status', 1)->sum('amount');
-        $totalWithdraw    = Withdrawal::where('user_id', auth()->id())->where('status', 1)->sum('amount');
-        $completeWithdraw = Withdrawal::where('user_id', auth()->id())->where('status', 1)->count();
+        $user   = auth()->user();
+        $userId = $user->id;
 
-        $total_ref = Transaction::where('user_id', auth()->id())->where('remark', 'referral_commission')->where('trx_type', '+')->sum('amount');
+        $idCard   = Useridcard::where('user_id', $userId)->first();
+        $matrix   = Matrix::where('user_id', $userId)->first();
+        $inMatrix = Matrix::where('user_id', $userId)->where('is_active', 1)->exists();
 
-        $total_ref_debit = Transaction::where('user_id', auth()->id())->where('remark', 'referral_commission')->where('trx_type', '-')->sum('amount');
+        $totalDividends = $user->shtransactions()->where('status', 'completed')->sum('amount');
+        $totalShares    = Rinvestment::where('user_id', $userId)->where('status', 1)->sum('units');
 
-        $pendingWithdraw  = Withdrawal::where('user_id', auth()->id())->where('status', 2)->count();
-        $totalRef         = User::where('ref_by', auth()->id())->count();
-        $totalBvCut       = BvLog::where('user_id', auth()->id())->where('trx_type', '-')->sum('amount');
+        $adminNotices = NotificationLog::where('user_id', $userId)->where('is_admin_notice', true)->where('user_read', false);
+        $adminNoticeCount = (clone $adminNotices)->count();
 
-        $recentTransactions = Transaction::where('user_id', auth()->id())->latest()->limit(8)->get();
-        $totalShares      = Rinvestment::where('user_id', auth()->id())->where('status', 1)->sum('units');
-        $totalDividends   = auth()->user()->shtransactions()->where('status', 'completed')->sum('amount');
-        $userMatrix       = Matrix::where('user_id', auth()->id())->first();
+        $pvLeft  = (float) ($matrix->pv_left_pairing ?? 0);
+        $pvRight = (float) ($matrix->pv_right_pairing ?? 0);
+        $pvMax   = max($pvLeft, $pvRight, 1);
 
-        $unreadAdminNoticeCount = NotificationLog::where('user_id', auth()->id())->where('is_admin_notice', true)->where('user_read', false)->count();
-        $latestAdminNotice      = $unreadAdminNoticeCount > 0
-            ? NotificationLog::where('user_id', auth()->id())->where('is_admin_notice', true)->where('user_read', false)->latest()->first()
-            : null;
+        $isNewUser = (int) $user->kv === Status::KYC_UNVERIFIED;
 
-        $pendingWelcomePackages = WelcomePackage::where('user_id', auth()->id())->pending()->latest()->get();
-
-        return view('Template::user.dashboard', compact('pageTitle', 'totalDeposit', 'totalWithdraw', 'completeWithdraw', 'pendingWithdraw', 'totalRef', 'totalBvCut', 'total_ref', 'total_ref_debit', 'recentTransactions', 'totalShares', 'totalDividends', 'userMatrix', 'unreadAdminNoticeCount', 'latestAdminNotice', 'pendingWelcomePackages'));
+        return Inertia::render('User/Dashboard', [
+            'card' => [
+                'balance'  => showAmount($user->balance),
+                'masked'   => gs('cur_sym') . ' ••••••',
+                // Last 4 characters of the "WCS<id>" card number.
+                'last4'    => $idCard ? str_pad(substr('WCS' . $idCard->id, -4), 4, '0', STR_PAD_LEFT) : '0000',
+                'holder'   => strtoupper($user->fullname),
+                'validThru'=> now()->format('m/y'),
+                'visa'     => showAmount($user->visa ?? 0),
+            ],
+            // Admin-written HTML from General Settings (the Blade page echoed it as is).
+            'notices'    => array_values(array_filter([gs('notice'), gs('free_user_notice')])),
+            'noticeTime' => now()->format('M d · h:i A'),
+            'stats' => [
+                'totalDeposit'     => showAmount(Deposit::where('user_id', $userId)->where('status', 1)->sum('amount')),
+                'totalWithdraw'    => showAmount(Withdrawal::where('user_id', $userId)->where('status', 1)->sum('amount')),
+                'completeWithdraw' => Withdrawal::where('user_id', $userId)->where('status', 1)->count(),
+                'referralEarnings' => showAmount(Transaction::where('user_id', $userId)->where('remark', 'referral_commission')->where('trx_type', '+')->sum('amount')),
+                'totalRef'         => User::where('ref_by', $userId)->count(),
+                'dividends'        => showAmount($totalDividends),
+                'shares'           => number_format((float) $totalShares),
+            ],
+            'project' => $user->project ? [
+                'title' => $user->project->title,
+                'color' => $user->project->color,
+                'icon'  => $user->project->icon,
+            ] : null,
+            'earnings' => [
+                'productWallet' => showAmount($user->product_wallet ?? 0),
+                'direct'        => showAmount($user->direct_bonus ?? 0),
+                'indirect'      => showAmount($user->indirect_bonus ?? 0),
+                'upgrade'       => showAmount($user->upgrade_bonus ?? 0),
+                'unilevel'      => showAmount($user->unilevel_bonus ?? 0),
+                'matching'      => showAmount($user->matching_bonus ?? 0),
+                'keyIn'         => showAmount($user->key_in_bonus ?? 0),
+            ],
+            'adminNotice' => $adminNoticeCount ? [
+                'count'   => $adminNoticeCount,
+                'subject' => (clone $adminNotices)->latest()->value('subject') ?: 'You have a new notice',
+            ] : null,
+            'welcomePackages' => WelcomePackage::where('user_id', $userId)->pending()->latest()->get()
+                ->map(fn ($wp) => [
+                    'code'   => $wp->code,
+                    'label'  => ucfirst($wp->source) . ' Welcome Package — ' . showAmount($wp->amount),
+                ])->values(),
+            'acb'      => $user->isAcb() ? showAmount($user->acb ?? 0) : null,
+            'autoship' => (float) ($user->autoship ?? 0) > 0 ? [
+                'amount' => showAmount($user->autoship),
+                'minPv'  => AutoshipService::MIN_PV,
+            ] : null,
+            'pv' => $matrix ? [
+                'position' => $matrix->position ? ucfirst($matrix->position) : null,
+                'positionKey' => $matrix->position,
+                'left'     => number_format($pvLeft, 2),
+                'right'    => number_format($pvRight, 2),
+                'leftPct'  => min(100, (int) round($pvLeft / $pvMax * 100)),
+                'rightPct' => min(100, (int) round($pvRight / $pvMax * 100)),
+            ] : null,
+            'recentTransactions' => Transaction::where('user_id', $userId)->latest()->limit(8)->get()
+                ->map(fn ($trx) => [
+                    'id'      => $trx->id,
+                    'details' => Str::limit($trx->details, 32),
+                    'date'    => $trx->created_at->format('M d, Y · h:i A'),
+                    'credit'  => $trx->trx_type === '+',
+                    'amount'  => $trx->trx_type . showAmount($trx->amount),
+                ])->values(),
+            'portfolio' => [
+                'shares'       => number_format((float) $totalShares),
+                'shareCredits' => showAmount($user->shares ?? 0),
+                'dividends'    => showAmount($totalDividends),
+            ],
+            'status' => [
+                'active'          => (int) $user->status === 1,
+                'kyc'             => match ((int) $user->kv) { Status::KYC_VERIFIED => 'verified', Status::KYC_PENDING => 'pending', default => 'unverified' },
+                'kycRejection'    => $isNewUser ? ($user->kyc_rejection_reason ?: null) : null,
+                'pendingWithdraw' => Withdrawal::where('user_id', $userId)->where('status', 2)->count(),
+                'inMatrix'        => $inMatrix,
+            ],
+            'flashcards' => $user->pendingFlashcards()->map(fn ($fc) => [
+                'id'          => $fc->id,
+                'type'        => $fc->type === 'image' ? 'image' : 'video',
+                'url'         => $fc->file_url,
+                'title'       => $fc->title,
+                'description' => $fc->description,
+            ])->values(),
+            'isStockist' => $user->stockist()->exists(),
+            'urls' => [
+                'deposit'       => route('user.deposit.index'),
+                'withdraw'      => route('user.withdraw.history'),
+                'transactions'  => route('user.transactions'),
+                'portfolio'     => route('user.investment.portfolio'),
+                'products'      => route('user.products'),
+                'referrals'     => route('user.my.ref'),
+                'tree'          => route('user.my.tree'),
+                'stages'        => route('user.my.stages'),
+                'epin'          => route('user.epin.recharge'),
+                'profile'       => route('user.profile.setting'),
+                'notifications' => route('user.notifications'),
+                'acb'           => route('user.acb'),
+                'bonusTransfer' => route('user.bonus.transfer.index'),
+                'kyc'           => route('user.kyc.form'),
+                'flashcardDismiss' => route('user.flashcard.dismiss', ['id' => '__ID__']),
+            ],
+        ])->withViewData(['pageTitle' => 'Dashboard']);
     }
-    
-    
+
     public function stockists()
     { 
         $pageTitle        = 'Stockists Dashboard';

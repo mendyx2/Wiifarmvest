@@ -79,7 +79,7 @@ gets replaced, one page at a time.
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
 | **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects ✅ · 4c network trees ✅ · 4d shop/cart/orders ✅ · 4e stockist area ✅ | ✅ Done (Steps 32–74); a few member pages remain, see Step 74 |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
-| **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard · 5c remaining member pages · 5d auth pages | In progress |
+| **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages · 5d auth pages | In progress |
 | **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
 | **7. Admin panel** | 186 views. Use a separate root view (`inertia.admin`) and `AdminLayout`, applying the same recipe | Last |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
@@ -2602,8 +2602,124 @@ same stylesheet tags as the root view.
   looks the same.
 
 **All earlier suites still pass** (they now read the CSS from
-`resources/css/dashboard.css`): **384 browser checks, 0 failures**. That is
+`resources/css/dashboard.css`): **398 browser checks, 0 failures**. That is
 355 + 14 (pilot) + 29 (this step).
+
+### Step 80: The member dashboard is React (5b)
+
+`UserController@home` now returns `Inertia::render('User/Dashboard')`, and the
+page is `Pages/User/Dashboard.tsx`. Every value arrives display-ready: amounts
+go through `showAmount()`, dates are formatted, the card's last 4 digits and
+the PV bar widths are computed. It reuses the dashboard classes in
+`resources/css/dashboard.css` (`bk-*`, `nc-*`, `fc-*`), so the page looks the
+same. Visiting it still writes nothing (Step 75).
+
+**What the page shows:**
+
+- the balance card, where the eye hides the balance;
+- quick actions, where stockists get Genealogy instead of Withdraw;
+- the two site notices from General Settings;
+- the four stat cards and the seven MLM/product earnings;
+- strips: the admin notice, welcome packages (copy code), ACB and autoship;
+- binary PV bars;
+- recent transactions;
+- the portfolio, account status and quick links;
+- the admin flashcards overlay.
+
+**Removed / replaced:**
+
+- `user/dashboard.blade.php` and `partials/flashcards.blade.php` are deleted.
+  The controller changed shape, so a one-line rollback was not possible
+  anyway.
+- The unused `totalBvCut` and `total_ref_debit` queries are dropped. The
+  page never showed them.
+- The route `GET /user/flashcards` (`user.flashcards.index`) is removed. It
+  pointed at `FlashcardController::index()`, which does not exist, so the
+  URL was a server error.
+- `user.home` is no longer in `DashboardLayout::BLADE_ROUTES`. The logo,
+  "Back to Main Menu" and the Dashboard link are now single-page links.
+
+**Fixed on the way:**
+
+- **The KYC rejection reason could never be read.** The old page had a
+  Bootstrap modal for it, but nothing opened it. An unverified member with
+  a rejection reason now gets a "Why?" link next to the KYC badge. It opens
+  the reason and a "Submit KYC again" button.
+- **Only one site notice could be dismissed.** Both notices used
+  `id="ncWrap"`, so the × closed only the first one. Each has its own ×
+  now.
+- **"Vise wallet"** now reads "Visa wallet" (the column is `users.visa`).
+- **Tawk.to live chat.** It loads once, from the dashboard page itself
+  (`useTawkChat`). Leaving the dashboard hides the widget and coming back
+  shows it again, without loading the script twice. The never-matching
+  check in `layouts/app.blade.php` (Step 78) is gone.
+
+**Flashcards.**
+
+- **"Got it"** records that card as seen. It sends
+  `POST /user/flashcard/{id}/dismiss` with the CSRF header, the same endpoint
+  as before, and moves to the next card.
+- **The ×** records every remaining card. This is the old behaviour.
+- The overlay is a component, so it no longer depends on a global
+  `fcDismissCurrent()`.
+
+### Step 81: Verification for 5b
+
+**Server (`p5b_check.php`).**
+
+- **Demo user (Mega stockist, KYC pending)** gets the correct values:
+  - balance ₦20,000.00 and card digits `1042`;
+  - referral earnings ₦300.00 / 2 referrals and dividends ₦330.00 / 7 units;
+  - re-purchase wallet ₦10,000.00;
+  - one welcome package;
+  - PV 80/40 → 100%/50%;
+  - 6 recent transactions;
+  - 2 pending withdrawals;
+  - flashcards 1 and 2 (the inactive card 3 is left out);
+  - the sidebar's Dashboard link is active and is not a full reload.
+- **A member with everything switched on:**
+  - KYC rejected → the reason is sent;
+  - ACB ₦250.00;
+  - autoship ₦1,500.00 / 10 PV;
+  - 2 unread admin notices, with the latest subject;
+  - both site notices;
+  - one flashcard left, because they had already seen card 1.
+- **No writes:** a visit writes 0 rows (`flashcard_views`,
+  `notification_logs`).
+- **Dismissing a card:**
+  - it records once, and a second dismiss does not add a row;
+  - dismissing an inactive card is a 404;
+  - after a dismiss, that card is gone from the next visit.
+- **`GET /user/flashcards`** is gone.
+
+**Browser (`phase5b.mjs`, 31 checks).**
+
+- **Flashcards:**
+  - **"Got it, Next"** sends a POST with the CSRF header and moves to the
+    next card.
+  - **"Got it, Close"** and **×** each record the remaining cards and remove
+    the overlay.
+- **Balance card:** the eye hides and shows the balance.
+- **Quick actions** by stockist status.
+- **Values on the page:**
+  - stats, earnings and the project chip;
+  - PV bar widths;
+  - welcome code copy (with a tick);
+  - debit row `-₦2,000.00`;
+  - account status.
+- **Strips:**
+  - the admin notice, ACB and autoship strips;
+  - autoship is a plain link, because Bonus Transfer is still Blade.
+- **Site notices:** dismissing one leaves the other.
+- **Empty state** for no transactions.
+- **KYC "Why?"** opens and closes the modal.
+- **Navigation:**
+  - History quick action → Inertia visit, and the chat is hidden;
+  - sidebar → back to the dashboard with no full load, the chat is shown
+    again, and there is still only one Tawk script.
+
+**All suites: 429 browser checks, 0 failures** (398 + 31). `route:cache`
+and `view:cache` both work.
 
 ## Part 4: Working on the front end
 

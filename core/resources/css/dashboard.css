@@ -4588,3 +4588,6 @@
 .bank-nav-pill-verified { background: #D1FAE5; color: #059669; }
 .bank-nav-pill-pending { background: #FFFBEB; color: #D97706; }
 .bank-nav-pill-toggle { font-size: .6rem; }
+
+/* "Why?" next to an unverified KYC badge on the dashboard: opens the rejection reason. */
+.bk-kyc-reason-btn { background: none; border: 0; padding: 0 6px 0 0; font-size: .72rem; font-weight: 700; color: #DC2626; text-decoration: underline; cursor: pointer; }

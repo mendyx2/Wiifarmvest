@@ -116,8 +116,8 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 
                 Route::post('/flashcard/{id}/dismiss',  'dismiss')
                     ->name('flashcard.dismiss');
-                Route::get('/flashcards', 'index')
-                    ->name('flashcards.index');
+                // GET /flashcards (flashcards.index) removed: FlashcardController has no
+                // index() method, so the URL was a server error (notes Step 80).
 
             }); 
 
