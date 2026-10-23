@@ -3,20 +3,19 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use App\Models\StockistRedemption;
 use App\Models\WelcomePackage;
 use App\Services\WelcomePackageService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use RuntimeException;
 
 /**
  * StockistWelcomePackageController
  *
- * Lets a stockist look up and redeem a customer's Welcome Back Package
- * code in person. Kept separate from StockistController so the redemption
- * workflow (and its own service dependency) stays a single responsibility.
+ * Lets a stockist look up a customer's Welcome Back Package code and see
+ * their redemption history. The package itself is redeemed in the POS, as
+ * goods worth exactly its value taken from the stockist's stock, so stock
+ * and money always move together.
  */
 class StockistWelcomePackageController extends Controller
 {
@@ -72,49 +71,11 @@ class StockistWelcomePackageController extends Controller
             'code'     => $code,
             'package'  => $package,
             'error'    => $error,
-            // Set by redeem() for the success dialog.
-            'redeemed' => session('wp_redeemed'),
             'urls'     => [
-                'index'  => route('user.stockist.welcome-pack.index'),
-                'redeem' => route('user.stockist.welcome-pack.redeem'),
+                'index' => route('user.stockist.welcome-pack.index'),
+                // A package is always redeemed in the POS, as goods taken from stock.
+                'pos'   => route('user.stockist.pos.index', $package ? ['code' => $package['code']] : []),
             ],
         ])->withViewData(compact('pageTitle'));
-    }
-
-    public function redeem(Request $request)
-    {
-        $request->validate([
-            'code' => 'required|string',
-        ]);
-
-        $stockist = auth()->user()->stockist;
-
-        try {
-            // The package row is locked inside redeem(), so a double click or two
-            // stockists can't both be paid for the same code.
-            DB::transaction(function () use ($request, $stockist, &$package) {
-                $package = $this->packages->findByCode($request->code);
-                $package = $this->packages->redeem($package, $stockist);
-
-                StockistRedemption::create([
-                    'stockist_id'        => $stockist->id,
-                    'type'               => StockistRedemption::TYPE_WELCOME_PACK,
-                    'trx'                => $package->trx,
-                    'reference_code'     => $package->code,
-                    'welcome_package_id' => $package->id,
-                    'customer_user_id'   => $package->user_id,
-                    'items'              => [],
-                    'quantity'           => 0,
-                    'amount'             => $package->amount,
-                    'redeemed_at'        => $package->redeemed_at,
-                ]);
-            });
-        } catch (RuntimeException $e) {
-            return to_route('user.stockist.welcome-pack.index', ['code' => $request->code])
-                ->withErrors(['code' => $e->getMessage()]);
-        }
-
-        return to_route('user.stockist.welcome-pack.index')
-            ->with('wp_redeemed', showAmount($package->amount) . ' credited to your stockist wallet.');
     }
 }

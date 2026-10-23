@@ -1,4 +1,4 @@
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import Modal from '@/Components/Modal';
 import Pagination from '@/Components/Pagination';
@@ -14,24 +14,20 @@ type Props = PageProps<{
     code: string;
     package: Package | null;
     error: string | null;
-    redeemed: string | null;
-    urls: { index: string; redeem: string };
+    urls: { index: string; pos: string };
 }>;
 
 const LEN = 10;
 const clean = (v: string) => v.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 
-export default function WelcomePack({ totalRedeemed, history, code, package: pkg, error, redeemed, urls }: Props) {
+export default function WelcomePack({ totalRedeemed, history, code, package: pkg, error, urls }: Props) {
     const t = useTrans();
-    const { errors } = usePage().props as { errors?: Record<string, string> };
     const [chars, setChars] = useState<string[]>(() => Array.from({ length: LEN }, (_, i) => (pkg ? '' : code)[i] ?? ''));
     const [busy, setBusy] = useState(false);
-    const [problem, setProblem] = useState<string | null>(error ?? errors?.code ?? null);
-    const [success, setSuccess] = useState<string | null>(redeemed);
+    const [problem, setProblem] = useState<string | null>(error);
     const boxes = useRef<(HTMLInputElement | null)[]>([]);
 
-    useEffect(() => setProblem(error ?? errors?.code ?? null), [error, errors?.code]);
-    useEffect(() => setSuccess(redeemed), [redeemed]);
+    useEffect(() => setProblem(error), [error]);
     useEffect(() => {
         if (!pkg) setChars(Array.from({ length: LEN }, () => ''));
     }, [pkg]);
@@ -71,10 +67,6 @@ export default function WelcomePack({ totalRedeemed, history, code, package: pkg
         router.get(urls.index, { code: value }, { preserveState: true, preserveScroll: true, onStart: () => setBusy(true), onFinish: () => setBusy(false) });
     };
     const reset = () => router.get(urls.index, {}, { preserveScroll: true });
-    const redeem = () => {
-        if (!pkg || busy) return;
-        router.post(urls.redeem, { code: pkg.code }, { preserveScroll: true, onStart: () => setBusy(true), onFinish: () => setBusy(false) });
-    };
 
     return (
         <div className="nc-wrap" id="ncWrap">
@@ -197,13 +189,13 @@ export default function WelcomePack({ totalRedeemed, history, code, package: pkg
                                 <div className="rwp-value-box">
                                     <p className="rwp-value-label"><i className="las la-gift" /> &nbsp;{t('Welcome Package Value')}</p>
                                     <p className="rwp-value-amount">{pkg.amount}</p>
-                                    <p className="rwp-value-sub">{t('Will be credited to your stockist wallet upon confirmation')}</p>
+                                    <p className="rwp-value-sub">{t('Hand over goods worth exactly this amount in the POS. Your stockist wallet is credited when the sale completes.')}</p>
                                 </div>
                                 <div className="rwp-reveal-actions">
                                     <button type="button" className="rwp-cancel-btn" onClick={reset} disabled={busy}><i className="las la-times" /> {t('Check Another')}</button>
-                                    <button type="button" className="rwp-confirm-btn" onClick={redeem} disabled={busy}>
-                                        <i className={`las ${busy ? 'la-spinner la-spin' : 'la-check-circle'}`} /> {busy ? t('Processing...') : t('Confirm & Redeem Package')}
-                                    </button>
+                                    <Link href={urls.pos} className="rwp-confirm-btn">
+                                        <i className="las la-cash-register" /> {t('Hand over in POS')}
+                                    </Link>
                                 </div>
                             </div>
                         </div>
@@ -243,18 +235,6 @@ export default function WelcomePack({ totalRedeemed, history, code, package: pkg
                     )}
                 </div>
             </div>
-
-            <Modal open={success !== null} onClose={() => setSuccess(null)} labelledBy="wp-success-title" contentClassName="rwp-modal-content" contentStyle={{ maxWidth: 420, margin: '0 auto' }}>
-                <div className="rwp-modal-header-success">
-                    <div className="rwp-modal-icon-circle"><i className="las la-check-double" /></div>
-                    <div className="rwp-confetti" aria-hidden="true">🎁 🎉 ✨ 🎊 🎁</div>
-                    <h5 id="wp-success-title">{t('Package Redeemed!')}</h5>
-                </div>
-                <div className="rwp-modal-body">
-                    <p>{success}</p>
-                    <button type="button" className="rwp-modal-btn" onClick={() => setSuccess(null)}>{t('Continue Scanning')}</button>
-                </div>
-            </Modal>
 
             <Modal open={problem !== null} onClose={() => setProblem(null)} labelledBy="wp-error-title" contentClassName="rwp-modal-content" contentStyle={{ maxWidth: 420, margin: '0 auto' }}>
                 <div className="rwp-modal-header-error">

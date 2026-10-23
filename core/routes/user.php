@@ -227,8 +227,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
             // Welcome Back Package redemption
             Route::controller('StockistWelcomePackageController')->middleware(['stockist'])->prefix('stockist/welcome-pack')->name('stockist.welcome-pack.')->group(function () {
-                Route::get('/', 'index')->name('index'); // ?code= verifies a code
-                Route::post('/redeem', 'redeem')->name('redeem');
+                Route::get('/', 'index')->name('index'); // ?code= verifies a code; redeeming happens in the POS
             });
 
             // Affiliate Program — every member gets this, no extra gating middleware
