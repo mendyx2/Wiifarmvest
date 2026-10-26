@@ -12,11 +12,11 @@ Route::namespace('User\Auth')->name('user.')->middleware(['guest', 'XssSanitizer
 
     Route::controller('RegisterController')->middleware(['guest'])->group(function () {
         Route::get('register', 'showRegistrationForm')->name('register');
-        Route::get('signup', 'showRegistrationForm')->name('register1');
-        // Route::get('signup', 'showRegistrationForm1')->name('register1');
+        // Removed duplicate page: old sign-up links (with ?ref=) land on the register page.
+        Route::get('signup', fn () => to_route('user.register', request()->query()))->name('register1');
         Route::post('register', 'register');
-        //Route::post('register2', 'register2')->name('register2');
-        Route::post('check-user', 'checkUser')->name('checkUser')->withoutMiddleware('guest');
+        // Live checks on the register page (replaces check-user and the /check/* routes).
+        Route::get('register/check', 'check')->name('register.check')->middleware('throttle:30,1');
     }); 
 
     Route::controller('ForgotPasswordController')->prefix('password')->name('password.')->group(function () {

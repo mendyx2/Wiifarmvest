@@ -1,5 +1,6 @@
 import { Head, useForm } from '@inertiajs/react';
 import { Fragment, useEffect, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useGeoLookup, type Geo } from '@/lib/geo';
 import { useTrans } from '@/lib/i18n';
 import type { PageProps } from '@/types';
 
@@ -17,7 +18,6 @@ type Props = PageProps<{
 }>;
 
 type Check = { usernameTaken?: boolean; emailUsed?: boolean; mobileUsed?: boolean; parent?: { found: boolean; left: boolean; right: boolean } };
-type Geo = { status: 'idle' | 'loading' | 'ok' | 'failed'; options: string[] };
 
 const STEPS = [
     { n: 1, icon: 'las la-user-friends', name: 'Referral & Project', short: 'Referral' },
@@ -60,8 +60,7 @@ export default function Distributor({ sponsorUsername, visa, projects, countries
     const [placement, setPlacement] = useState(prefill.parent !== '' || prefill.position !== '');
     const [check, setCheck] = useState<Check>({});
     const [shown, setShown] = useState({ password: false, password_confirmation: false });
-    const [states, setStates] = useState<Geo>({ status: 'idle', options: [] });
-    const [cities, setCities] = useState<Geo>({ status: 'idle', options: [] });
+    const { states, cities } = useGeoLookup(urls.geo, form.data.country, form.data.state);
     const paneRef = useRef<HTMLDivElement>(null);
     const project = projects.find((p) => String(p.id) === form.data.project_id);
     const country = countries.find((c) => c.name === form.data.country);
@@ -76,33 +75,6 @@ export default function Distributor({ sponsorUsername, visa, projects, countries
             // A failed live check is not worth an error: the server checks again on submit.
         }
     };
-
-    // Country → states → cities, from the same free lookup service the old page used.
-    // When it is down, the member can still type the state and city.
-    useEffect(() => {
-        if (!form.data.country) return;
-        let cancelled = false;
-        setStates({ status: 'loading', options: [] });
-        setCities({ status: 'idle', options: [] });
-        geo(`${urls.geo}/states`, { country: form.data.country }, (data) => data?.states?.map((s) => s.name))
-            .then((options) => !cancelled && setStates({ status: options.length ? 'ok' : 'failed', options }))
-            .catch(() => !cancelled && setStates({ status: 'failed', options: [] }));
-        return () => {
-            cancelled = true;
-        };
-    }, [form.data.country, urls.geo]);
-
-    useEffect(() => {
-        if (!form.data.state || states.status !== 'ok') return;
-        let cancelled = false;
-        setCities({ status: 'loading', options: [] });
-        geo(`${urls.geo}/state/cities`, { country: form.data.country, state: form.data.state }, (data) => data)
-            .then((options) => !cancelled && setCities({ status: options.length ? 'ok' : 'failed', options }))
-            .catch(() => !cancelled && setCities({ status: 'failed', options: [] }));
-        return () => {
-            cancelled = true;
-        };
-    }, [form.data.state, states.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (placement && prefill.parent) runCheck({ parent: prefill.parent });
@@ -474,7 +446,7 @@ export default function Distributor({ sponsorUsername, visa, projects, countries
                                     <Field label={<>{t('City / LGA')} <span className="text--danger">*</span></>} error={err('city')}>
                                         <GeoSelect
                                             name="city"
-                                            geo={states.status === 'failed' ? states : cities}
+                                            geo={cities}
                                             value={form.data.city}
                                             placeholder={form.data.state ? t('— Select city —') : t('— Select a state first —')}
                                             onChange={(v) => form.setData('city', v)}
@@ -574,16 +546,6 @@ function GeoSelect({ name, geo, value, placeholder, onChange, icon }: { name: st
             )}
         </div>
     );
-}
-
-/** countriesnow.space answers { error, data: { states: [{ name }] } } or { error, data: [city names] }. */
-type GeoData = { states?: { name: string }[] } & string[];
-
-async function geo(url: string, body: Record<string, string>, pick: (data: GeoData) => string[] | undefined): Promise<string[]> {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const json = await res.json();
-    if (!res.ok || json?.error) throw new Error('geo lookup failed');
-    return pick(json.data) ?? [];
 }
 
 function CountryOption({ country, separator }: { country: Country; separator: boolean }) {

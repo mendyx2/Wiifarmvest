@@ -87,9 +87,8 @@ Route::controller('SiteController')->group( function () {
         Route::get('/product1/{id}/{slug}', fn ($id, $slug) => to_route('user.product.details', [$id, $slug]))->name('product.details1');
     });
 
-    Route::post('/check/referral', 'checkUsername')->name('check.referral');
-    Route::post('/check/matrixParent', 'checkParent')->name('check.parentMatrix');
-    Route::post('/get/user/position', 'userPosition')->name('get.user.position');
+    // /check/referral, /check/matrixParent and /get/user/position removed: only the old
+    // register page used them (now GET user/register/check). See notes Step 87.
 
     Route::get('policy/{slug}', 'policyPages')->name('policy.pages');
 

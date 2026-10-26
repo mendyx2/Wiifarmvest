@@ -79,8 +79,8 @@ gets replaced, one page at a time.
 | **3. Deposit and withdraw flows** | Deposit methods, manual deposit proof, withdraw request, withdraw preview; `DynamicForm` for the admin-built forms; removal of the duplicate `*1` flows. Automatic gateway pages (Paystack, Stripe…) stay Blade on purpose. | ✅ Done (Steps 24–31) |
 | **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects ✅ · 4c network trees ✅ · 4d shop/cart/orders ✅ · 4e stockist area ✅ | ✅ Done (Steps 32–74); a few member pages remain, see Step 74 |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
-| **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages | In progress |
-| **6. Auth and public pages** | Login, register, password reset and authorization; home, blog and FAQ need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
+| **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
+| **6. Public pages** | Login, register, password reset and authorization moved in 5d. Left: home, blog, FAQ, contact, policy pages; they need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
 | **7. Admin panel** | 186 views. Use a separate root view (`inertia.admin`) and `AdminLayout`, applying the same recipe | Last |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
@@ -3232,6 +3232,115 @@ other gateway pages (Phase 3), it posts to the IPN routes.
     to resend); the right code → a full load of the payment page.
   - **2FA** has no resend link.
   - **Banned:** full-screen card with no dashboard.
+
+### Step 87: Register in React; Phase 5 done (5d-2)
+
+**What changed.**
+
+- **`RegisterController@showRegistrationForm`** renders `Auth/Register`, the
+  same two-panel, four-step page. Its CSS moved to `Pages/Auth/Register.css`,
+  scoped under `.page-register`.
+- **The country → state → city lookup** moved to `lib/geo.ts`
+  (`useGeoLookup`). Register and Add Distributor share it. When the free
+  lookup service is down, both pages offer text boxes.
+- **Live checks** use one throttled guest endpoint,
+  `GET /user/register/check` (`throttle:30,1`). It answers:
+  - is the username taken;
+  - is the email or mobile already used? A used email opens the "Account
+    Already Exists" dialog, as before;
+  - is the referral an active member;
+  - does the parent exist, and which slots are free? A taken slot is
+    disabled.
+
+  It replaces four endpoints, three of which sent back HTML:
+  - `POST /check/referral`;
+  - `POST /check/matrixParent`;
+  - `POST /get/user/position`;
+  - `POST /user/check-user`.
+
+  The matching `SiteController` methods are deleted. Nothing else used
+  them; the admin's `checkUser` class is only a CSS class.
+- **After signing up**, the member is logged in (with a new session id) and
+  sent on with `Inertia::location` to the Blade payment page `user.data`.
+
+**`register()` cleaned up:**
+
+- **Form checks are validation rules now:**
+  - the username, referral and parent formats;
+  - `position` required with a parent;
+  - `agree` → `accepted`.
+
+  They used to be hand-written checks after validation, answered with
+  toasts. The rules themselves are the same.
+- **Passwords are no longer flashed to the session.** Every refusal used
+  `withInput($request->all())`.
+- **Refusals throw `DomainException` inside one `DB::transaction()`:**
+  unknown referral, tree crossing, taken slot, unknown parent. The old
+  early `return back()` calls inside `DB::beginTransaction()` left the
+  transaction open. Unexpected errors are reported with `report($e)`.
+- **Registration switched off** now says so. It used to answer with a bare
+  redirect and no message.
+- **Deleted:**
+  - `create()`, which could not run: it used `$request`, `$user` and
+    `$user_parent_matrix`, none of which exist there;
+  - `registered()`, which was never called because `register()` is
+    overridden. Its intent was a `UserExtra` row and `updateFreeCount()`
+    after sign-up; that has never happened in production. ⚠️ **Owner:**
+    decide whether sign-up should do it.
+  - `checkUser()`.
+- **Duplicate page:** `GET /user/signup` (`user.register1`) redirects to
+  `/user/register`, keeping `?ref=`. This is the last `*1` duplicate from
+  Step 16.
+- **Deleted views:** `register.blade.php`, plus `registration_online` and
+  `registration_try`, which nothing referenced. The whole `user/auth` view
+  folder is gone.
+
+**Verification:**
+
+- **Server (`p5d2_check.php`):**
+  - **Page:**
+    - `?ref=demo` → referrer fixed; an unknown or inactive referral →
+      back to home with an error;
+    - 242 countries, Nigeria first;
+    - `signup?ref=demo` → `register?ref=demo`.
+  - **Check endpoint:** answers each field; the four old endpoints are
+    gone.
+  - **Refused:**
+    - validation errors for a username with a space or too short, a
+      parent without a position, a parent with a dash, and terms not
+      ticked;
+    - toasts for an unknown referral, tree crossing, a taken slot, and
+      registration switched off.
+
+    Nothing is created, and no password is in the session.
+  - **Valid sign-up** → 409 to the dashboard. `ngozi_1` is created under
+    demo, with bola/right recorded and a pending rmatrix (bola, right),
+    and logged in.
+  - **No referral** → sponsor #1 and no parent.
+- **Browser (`phase5d2.mjs`, 19 checks):**
+  - **Step 1:** a `?ref` link fixes the sponsor; a typed referral is
+    looked up, and an unknown one blocks Continue; the parent check marks
+    the left slot taken; a parent without a position is refused.
+  - **Step 2:** the username check; the "Account Already Exists" dialog;
+    the strength meter (Weak → Strong).
+  - **Step 3:** the state → city lookups; a digits-only mobile.
+  - **Review:** the right values; Submit stays disabled until the terms are
+    ticked.
+  - **Submit:** posts every field with `agree=1`; a server error jumps to
+    step 2 with the passwords cleared; success → a full load of the payment
+    page.
+  - **Registration off:** the notice shows and the form is disabled.
+
+**All suites: 546 browser checks, 0 failures.** That is 506 + 21 (5d-1) +
+19 (5d-2). In `phase5c4` the Escape check now waits for the dialog's close
+event: it fires a moment after `open` turns false, which made the check
+fail now and then. `route:cache` and `view:cache` work, and the route-name
+scan is clean.
+
+**Phase 5 is complete.** Every user-area page is React, apart from the
+automatic payment gateway pages and the registration payment page
+(`user_data`), which stay on Blade on purpose. Signed-in navigation is fully
+single-page.
 
 ## Part 4: Working on the front end
 
