@@ -11,7 +11,13 @@
     BANKING DASHBOARD — CORE LAYOUT
     ============================================= */
     /* Reset for banking layout */
-    html, body { overflow: auto !important; padding: 0 !important; margin: 0 !important; }
+    html, body { padding: 0 !important; margin: 0 !important; }
+    /* This also said "overflow: auto !important" for html and body. With
+       overflow set on the html element, the body became a scroll box of its
+       own that never scrolls, so no position: sticky worked (top bar, shop
+       header, cart summary), and the !important beat the scroll locks of the
+       mobile sidebar (body.style.overflow) and the Ad Center viewer
+       (html.adc-noscroll). Left out, the body's overflow applies to the window. */
     body { background: #F2F5F8 !important; }
     .scrollToTop, .cookies-card { display: none !important; }
     #preloader, .overlay { display: none !important; }
