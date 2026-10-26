@@ -61,3 +61,27 @@
     border-top-left-radius: unset;
     border-top-right-radius: unset;
 }
+
+/* Components/Admin/FilterCard.tsx: on phones the "Filter" button folds the
+   card away and back (was a jQuery slideToggle). */
+@media (max-width: 767px) {
+    .responsive-filter-card.is-hidden {
+        display: none;
+    }
+}
+
+/* Components/Admin/DateRangeField.tsx */
+.admin-date-range input[type='date'] {
+    flex: 1 1 140px;
+    min-width: 0;
+}
+
+.admin-date-range__preset {
+    flex: 1 1 140px;
+}
+
+/* Pages/Admin/Reports/NotificationHistory.tsx: SMS / push text keeps its line breaks. */
+.admin-notify-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+}

@@ -1122,10 +1122,8 @@ class ManageUsersController extends Controller
 
     public function notificationLog($id)
     {
-        $user      = User::findOrFail($id);
-        $pageTitle = 'Notifications Sent to ' . $user->username;
-        $logs      = NotificationLog::where('user_id', $id)->with('user')->orderBy('id', 'desc')->paginate(getPaginate());
-        return view('admin.reports.notification_history', compact('pageTitle', 'logs', 'user'));
+        // Same page as Report → Notification History, for one member.
+        return app(ReportController::class)->notificationPage(request(), User::findOrFail($id));
     }
  
      public function tree($username)

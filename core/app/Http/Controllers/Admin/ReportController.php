@@ -13,6 +13,9 @@ use App\Models\NotificationLog;
 use App\Http\Controllers\Controller;
 use App\Services\FinancialReportService;
 use Illuminate\Support\Facades\DB;
+use App\Constants\Status;
+use App\Support\AdminPresenter;
+use Inertia\Inertia;
 
 class ReportController extends Controller
 {
@@ -27,51 +30,89 @@ class ReportController extends Controller
 
     public function transaction(Request $request, $userId = null)
     {
-        $pageTitle = 'Transaction Logs';
-
-        $remarks = Transaction::distinct('remark')->orderBy('remark')->get('remark');
+        $remarks = Transaction::distinct('remark')->orderBy('remark')->pluck('remark')
+            ->map(fn ($r) => ['value' => (string) $r, 'label' => __(keyToTitle((string) $r))])->values();
 
         $transactions = Transaction::searchable(['trx', 'user:username'])->filter(['trx_type', 'remark'])->dateFilter()->orderBy('id', 'desc')->with('user');
         if ($userId) {
             $transactions = $transactions->where('user_id', $userId);
         }
-        $transactions = $transactions->paginate(getPaginate());
 
-        return view('admin.reports.transactions', compact('pageTitle', 'transactions', 'remarks'));
+        return $this->transactionPage('Transaction Logs', $transactions, $remarks);
     }
 
     public function loginHistory(Request $request)
     {
-        $pageTitle = 'User Login History';
-        $loginLogs = UserLogin::orderBy('id', 'desc')->searchable(['user:username'])->dateFilter()->with('user')->paginate(getPaginate());
-        return view('admin.reports.logins', compact('pageTitle', 'loginLogs'));
+        $logs = UserLogin::orderBy('id', 'desc')->searchable(['user:username'])->dateFilter()->with('user');
+
+        return $this->loginPage('User Login History', $logs, null);
     }
 
     public function loginIpHistory($ip)
     {
-        $pageTitle = 'Login by - ' . $ip;
-        $loginLogs = UserLogin::where('user_ip', $ip)->orderBy('id', 'desc')->with('user')->paginate(getPaginate());
-        return view('admin.reports.logins', compact('pageTitle', 'loginLogs', 'ip'));
+        $logs = UserLogin::where('user_ip', $ip)->orderBy('id', 'desc')->with('user');
+
+        return $this->loginPage('Login by - ' . $ip, $logs, (string) $ip);
     }
 
     public function notificationHistory(Request $request)
     {
-        $pageTitle = 'Notification History';
-        $logs      = NotificationLog::orderBy('id', 'desc')->searchable(['user:username'])->dateFilter()->with('user')->paginate(getPaginate());
-        return view('admin.reports.notification_history', compact('pageTitle', 'logs'));
+        return $this->notificationPage($request, null);
     }
 
+    /**
+     * Pages/Admin/Reports/NotificationHistory.tsx: every notification, or one
+     * member's (Manage Users → member → Notifications, which needs the
+     * "view users" permission instead of "Report", so it keeps its own route).
+     */
+    public function notificationPage(Request $request, ?User $user)
+    {
+        $query = NotificationLog::orderBy('id', 'desc')->with('user');
+        $query = $user ? $query->where('user_id', $user->id) : $query->searchable(['user:username'])->dateFilter();
+
+        $logs = $query->paginate(getPaginate())->withQueryString()
+            ->through(fn (NotificationLog $log) => [
+                'id'      => $log->id,
+                'user'    => AdminPresenter::user($log->user),
+                'when'    => AdminPresenter::when($log->created_at),
+                'type'    => (string) $log->notification_type,
+                'typeLabel' => keyToTitle((string) $log->notification_type),
+                'sender'  => __((string) $log->sender),
+                'subject' => $log->subject ? __($log->subject) : null,
+                'sentTo'  => (string) $log->sent_to,
+                // Emails open in a sandboxed frame; SMS and push messages are shown as text.
+                'detailUrl' => $log->notification_type === 'email' ? route('admin.report.email.details', $log->id) : null,
+                'message'   => $log->notification_type === 'email' ? null : (string) $log->message,
+                'image'     => $log->notification_type !== 'email' && $log->image ? asset(getFilePath('push') . '/' . $log->image) : null,
+            ]);
+
+        $title = $user ? 'Notifications Sent to ' . $user->username : 'Notification History';
+
+        return Inertia::render('Admin/Reports/NotificationHistory', [
+            'title'   => $title,
+            'logs'    => $logs,
+            // One member's list has no filters, as before.
+            'filters' => $user ? null : $this->filters($request),
+        ])->withViewData(['pageTitle' => $title]);
+    }
+
+    /**
+     * The body of one email, for the frame on the Notification History page.
+     * The page loads it in <iframe sandbox>: email HTML can carry text a
+     * member typed (a name, a ticket subject), and it must not run as the admin.
+     */
     public function emailDetails($id)
     {
         $pageTitle = 'Email Details';
         $email     = NotificationLog::findOrFail($id);
-        return view('admin.reports.email_details', compact('pageTitle', 'email'));
+
+        return response()->view('admin.reports.email_details', compact('pageTitle', 'email'))
+            ->header('Content-Security-Policy', "script-src 'none'; frame-ancestors 'self'")
+            ->header('X-Content-Type-Options', 'nosniff');
     }
- 
+
     public function invest(Request $request, $userId = null)
     {
-        $pageTitle = 'Investment Logs';
-
         $query = Rinvestment::searchable(['trx', 'user:username', 'plan:name'])->dateFilter();
         if ($userId) {
             $query->where('user_id', $userId);
@@ -80,36 +121,63 @@ class ReportController extends Controller
         $totalUnits  = (clone $query)->sum('units');
         $totalAmount = (clone $query)->sum('five');
 
-        $investments = $query->with(['user', 'plan'])->latest()->paginate(getPaginate());
+        $investments = $query->with(['user', 'plan'])->latest()->paginate(getPaginate())->withQueryString()
+            ->through(fn (Rinvestment $inv) => [
+                'id'       => $inv->id,
+                'user'     => AdminPresenter::user($inv->user),
+                'plan'     => $inv->plan?->name ?? '—',
+                'units'    => number_format((float) $inv->units),
+                'unitCost' => showAmount($inv->unit_cost),
+                'total'    => showAmount($inv->five),
+                'trx'      => (string) $inv->trx,
+                // Same as GlobalStatus::badgeData(), without the HTML.
+                'status'   => (int) $inv->status === Status::ENABLE
+                    ? AdminPresenter::badge('Enabled', 'badge--success')
+                    : AdminPresenter::badge('Disabled', 'badge--warning'),
+                'when'     => AdminPresenter::when($inv->created_at),
+            ]);
 
-        return view('admin.reports.investments', compact('pageTitle', 'investments', 'totalUnits', 'totalAmount', 'userId'));
+        return Inertia::render('Admin/Reports/Investments', [
+            'investments' => $investments,
+            'totals'      => [
+                'units'  => number_format((float) $totalUnits),
+                'amount' => showAmount($totalAmount),
+                'count'  => number_format($investments->total()),
+            ],
+            'filters' => $this->filters($request),
+        ])->withViewData(['pageTitle' => 'Investment Logs']);
     }
 
     public function bvLog(Request $request, $userId = null)
     {
-        
-        if ($request->type) {
-            if ($request->type == 'leftBV') {
-                $pageTitle = "Left BV";
-            } elseif ($request->type == 'rightBV') {
-                $pageTitle = "Right BV";
-            } elseif ($request->type == 'cutBV') {
-                $pageTitle = "Cut BV";
-            } else {
-                $pageTitle = "All Paid BV";
-            }
-            $logs = $this->bvData($request->type);
-        } else {
-            $pageTitle = "BV Log";
-            $logs      = $this->bvData();
-        }
+        $titles = ['leftBV' => 'Left BV', 'rightBV' => 'Right BV', 'cutBV' => 'Cut BV', 'paidBV' => 'All Paid BV'];
+        // Any other ?type= (including a made-up one) showed "All Paid BV" over the full log.
+        $type      = array_key_exists((string) $request->type, $titles) ? (string) $request->type : null;
+        $pageTitle = $type ? $titles[$type] : 'BV Log';
+
+        $logs = $this->bvData($type);
         if ($userId) {
             $logs = $logs->where('user_id', $userId);
         }
 
-        $logs = $logs->latest('id')->paginate(getPaginate());
+        $logs = $logs->with('user')->latest('id')->paginate(getPaginate())->withQueryString()
+            ->through(fn (BvLog $log) => [
+                'id'       => $log->id,
+                'user'     => AdminPresenter::user($log->user),
+                'amount'   => ($log->trx_type === '+' ? '+ ' : '- ') . getAmount($log->amount),
+                'credit'   => $log->trx_type === '+',
+                'position' => (int) $log->position === Status::LEFT
+                    ? AdminPresenter::badge('Left', 'badge--success')
+                    : AdminPresenter::badge('Right', 'badge--primary'),
+                'date'     => showDateTime($log->created_at),
+                'details'  => (string) $log->details,
+            ]);
 
-        return view('admin.reports.bvLog', compact('pageTitle', 'logs'));
+        return Inertia::render('Admin/Reports/BvLog', [
+            'logs'    => $logs,
+            'title'   => $pageTitle,
+            'filters' => $this->filters($request),
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
     protected function bvData($scope = null)
@@ -126,38 +194,86 @@ class ReportController extends Controller
 
     public function refCom(Request $request, $userId = null)
     {
-        $pageTitle    = 'Referral Commission Logs';
-        $transactions = Transaction::searchable(['trx', 'user:username'])->where('remark', 'referral_commission')->with('user');
-        if ($userId) {
-            $transactions = $transactions->where('user_id', $userId);
-        }
-        $transactions = $transactions->latest()->paginate(getPaginate());
-
-        return view('admin.reports.transactions', compact('pageTitle', 'transactions'));
+        return $this->commissionPage('Referral Commission Logs', 'referral_commission', $userId);
     }
 
     public function stageOutCom(Request $request, $userId = null)
     {
-        $pageTitle    = 'Stage-Out Commission Logs';
-        $transactions = Transaction::searchable(['trx', 'user:username'])->where('remark', 'stageOut_commission')->with('user');
-        if ($userId) {
-            $transactions = $transactions->where('user_id', $userId);
-        }
-        $transactions = $transactions->latest()->paginate(getPaginate());
-
-        return view('admin.reports.transactions', compact('pageTitle', 'transactions'));
+        return $this->commissionPage('Stage-Out Commission Logs', 'stageOut_commission', $userId);
     }
 
     public function binaryCom(Request $request, $userId = null)
     {
-        $pageTitle    = 'Binary Commission Logs';
-        $transactions = Transaction::searchable(['trx', 'user:username'])->where('remark', 'binary_commission')->with('user');
+        return $this->commissionPage('Binary Commission Logs', 'binary_commission', $userId);
+    }
+
+    /** One remark's transactions (no Type/Remark filters, as before). */
+    private function commissionPage(string $title, string $remark, $userId)
+    {
+        $transactions = Transaction::searchable(['trx', 'user:username'])->where('remark', $remark)->dateFilter()->with('user');
         if ($userId) {
             $transactions = $transactions->where('user_id', $userId);
         }
-        $transactions = $transactions->latest()->paginate(getPaginate());
 
-        return view('admin.reports.transactions', compact('pageTitle', 'transactions'));
+        return $this->transactionPage($title, $transactions->latest('id'), null);
+    }
+
+    /** Pages/Admin/Reports/Transactions.tsx: the full log, or one commission type when $remarks is null. */
+    private function transactionPage(string $title, $query, $remarks)
+    {
+        $transactions = $query->paginate(getPaginate())->withQueryString()
+            ->through(fn (Transaction $trx) => [
+                'id'          => $trx->id,
+                'user'        => AdminPresenter::user($trx->user),
+                'trx'         => (string) $trx->trx,
+                'when'        => AdminPresenter::when($trx->created_at),
+                'amount'      => $trx->trx_type . ' ' . showAmount($trx->amount),
+                'credit'      => $trx->trx_type === '+',
+                'postBalance' => showAmount($trx->post_balance),
+                'details'     => __((string) $trx->details),
+            ]);
+
+        return Inertia::render('Admin/Reports/Transactions', [
+            'title'        => $title,
+            'transactions' => $transactions,
+            'remarks'      => $remarks,
+            'filters'      => $this->filters(request()),
+        ])->withViewData(['pageTitle' => $title]);
+    }
+
+    private function loginPage(string $title, $query, ?string $ip)
+    {
+        $logs = $query->paginate(getPaginate())->withQueryString()
+            ->through(fn (UserLogin $log) => [
+                'id'       => $log->id,
+                'user'     => AdminPresenter::user($log->user),
+                'when'     => AdminPresenter::when($log->created_at),
+                'ip'       => (string) $log->user_ip,
+                'ipUrl'    => $log->user_ip ? route('admin.report.login.ipHistory', [$log->user_ip]) : null,
+                'location' => trim(__((string) $log->city) . ', ' . __((string) $log->country), ', '),
+                'browser'  => __((string) $log->browser),
+                'os'       => __((string) $log->os),
+            ]);
+
+        return Inertia::render('Admin/Reports/Logins', [
+            'title'   => $title,
+            'logs'    => $logs,
+            'ip'      => $ip,
+            'filters' => $this->filters(request()),
+            'urls'    => ['all' => route('admin.report.login.history')],
+        ])->withViewData(['pageTitle' => $title]);
+    }
+
+    /** The list filters, sent back so the inputs show what is applied. */
+    private function filters(Request $request): array
+    {
+        return [
+            'search'   => (string) $request->query('search', ''),
+            'trx_type' => (string) $request->query('trx_type', ''),
+            'remark'   => (string) $request->query('remark', ''),
+            'type'     => (string) $request->query('type', ''),
+            'date'     => AdminPresenter::dateRange($request->query('date')),
+        ];
     }
 
     public function stageTwice(Request $request)

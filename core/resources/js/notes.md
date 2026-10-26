@@ -3804,6 +3804,100 @@ Media.
   `route:cache` and `view:cache` succeed, and the route-name scan finds
   only the 21 known `ipn.` references.
 
+### Step 95: Reports and logs in React (7b-1)
+
+**Pages** (`Pages/Admin/Reports/`):
+
+| Page | Routes |
+|---|---|
+| `Transactions.tsx` | `admin.report.transaction` and the three commission logs (`referral.commission`, `stageOut.commission`, `binary.commission`): one table, one remark each |
+| `Logins.tsx` | `admin.report.login.history`, `admin.report.login.ipHistory` |
+| `NotificationHistory.tsx` | `admin.report.notification.history` and `admin.users.notification.log` (one member) |
+| `Investments.tsx` | `admin.report.invest` |
+| `BvLog.tsx` | `admin.report.bvLog` (`?type=leftBV`, `rightBV`, `cutBV`, `paidBV`) |
+
+**Shared admin components** (`Components/Admin/`), for the rest of Phase 7:
+
+| Component | Replaces |
+|---|---|
+| `DataTable` | The card + `table--light style--two` + page links. Every cell gets `data-label`, which app.css uses to show rows as cards on phones; `admin/js/app.js` used to add it with jQuery. |
+| `FilterCard` | The filter card, and on phones the "Filter" button that folds it (was jQuery `slideToggle`). It also shows the server's "Invalid date format" error. |
+| `DateRangeField` | The jQuery date-range picker (moment.js + daterangepicker.js): two date inputs and the same quick ranges (Today … This Year). |
+| `SearchForm` | `<x-search-form>` in the title row. It can keep other query values (the BV log keeps `?type=`). |
+| `Cells` | `UserCell` (name + @username: filters the list, or opens the member page), `WhenCell` (date + "2 days ago"), `BadgeCell`. |
+| `StatWidget` | `<x-widget style="2">`. |
+
+`App\Support\AdminPresenter` formats the same pieces on the server: user,
+date, badge, and the date filter turned back into the inputs' values.
+
+**Date filter (`App\Lib\Searchable::dateFilter`).**
+
+- **The problem:** it split the value on every `-`. An ISO range such as
+  `2026-10-01 - 2026-10-26` became six pieces.
+- **Now** it splits on ` - ` first. A single ISO day also works. The old
+  formats still work: `October 01, 2026 - October 26, 2026` from the old
+  picker, and `2026/10/19 - 2026/10/26` from the partner dashboard's links.
+- `AdminPresenter::dateRange()` reads all of them, so a link from a Blade
+  page fills the React date inputs.
+
+**Duplicates removed:**
+
+- **`reports/pvLog.blade.php`** was a copy of `bvLog.blade.php` with one
+  word changed, and nothing used it. Deleted. The PV log is
+  `admin/pv-log` (7b-2).
+- **The member's "Notifications" page** (`admin.users.notification.log`)
+  rendered the Notification History view for one member. It now shares the
+  React page and one builder, `ReportController::notificationPage()`. The
+  route stays because it needs a different permission ("view users" instead
+  of "Report").
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Security.** The email detail opened in a same-origin frame that printed the stored email HTML unescaped. Emails can contain text a member typed (name, ticket subject); a `<script>` in it would run with the admin's session. | The frame has `sandbox` (no scripts, no access to the admin page), and the detail response sends `Content-Security-Policy: script-src 'none'`. Checked: a script in the email does not run. |
+| SMS and push messages were inserted into the dialog as HTML. | Shown as text, line breaks kept. |
+| The commission logs showed a Date box that did nothing (their queries had no date filter). | The date filter applies. |
+| Login History and Notification History had no filters, though their queries read `?search=` and `?date=` (a member's page linked with `?search=`). | A filter card with username and date. |
+| BV log with an unknown `?type=` was titled "All Paid BV" over the full log. | Titled "BV Log" (the full log, as before). |
+| Report lists lost their filters on page 2 (no `withQueryString()`). | Kept. |
+
+**Deleted:** `reports/{transactions,logins,notification_history,investments,bvLog,pvLog}.blade.php`.
+Still Blade: `reports/email_details.blade.php`, the raw email body that
+the frame loads.
+
+**Verification:**
+
+- **Server checks** (`p7b_check.php`):
+  - **Type filter:** Minus shows only debits.
+  - **Search and dates:** search + ISO range; the old dashboard format and
+    a single ISO day fill the inputs.
+  - **Bad date:** gives the "Invalid date format" error.
+  - **One member's transactions:** the page links keep the path.
+  - **Commission logs:** no remark filter, but the date filter applies.
+  - **Logins:** filtered by date and by IP.
+  - **Notification History:** the SMS text is sent raw for the page to
+    escape; emails get a detail URL. The member version is the same page
+    with no filters.
+  - **Email detail:** sends the CSP header.
+  - **Investments:** totals.
+  - **BV log:** `?type=leftBV`; a made-up `?type=truncate` leaves the table
+    untouched.
+  - **Sidebar:** the Report group is open and the React links are marked.
+- **Browser checks** (`e2e/phase7b1.mjs`, 30 checks):
+  - **Filters:** sent with an ISO range; "Last 7 Days" fills both inputs;
+    the date error shows.
+  - **Table:** `data-label` on every cell.
+  - **Links:** username filter, IP link, page links (all Inertia); the
+    member page opens with a full load.
+  - **Notification details:** the email opens in a sandboxed frame and its
+    script does not run; SMS shows as literal text.
+  - **Widgets:** the investment totals.
+  - **BV log:** search keeps `?type=`.
+  - **Phones:** the Filter button folds the card; table cells show their
+    labels; no sideways scroll on any of the six pages.
+- **Regression:** 23 browser suites, 674 checks, all pass.
+
 ## Part 4: Working on the front end
 
 ### Run locally

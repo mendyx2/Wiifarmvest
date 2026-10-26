@@ -36,6 +36,17 @@ class AdminLayout
         'admin.profile',
         'admin.password',
         'admin.notifications',
+        // 7b: reports and logs
+        'admin.report.transaction',
+        'admin.report.referral.commission',
+        'admin.report.stageOut.commission',
+        'admin.report.binary.commission',
+        'admin.report.login.history',
+        'admin.report.login.ipHistory',
+        'admin.report.notification.history',
+        'admin.report.invest',
+        'admin.report.bvLog',
+        'admin.users.notification.log',
     ];
 
     public static function for(Request $request): ?array
