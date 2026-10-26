@@ -14,7 +14,7 @@ class ResetPasswordController extends Controller
     public function showResetForm(Request $request, $token)
     {
         $pageTitle = "Account Recovery";
-        $resetToken = AdminPasswordReset::where('token', $token)->where('status', Status::ENABLE)->first();
+        $resetToken = ForgotPasswordController::validReset(session()->get('pass_res_mail'), $token);
 
         if (!$resetToken) {
             $notify[] = ['error', 'Verification code mismatch'];
@@ -33,17 +33,17 @@ class ResetPasswordController extends Controller
             'password' => 'required|confirmed|min:4',
         ]);
 
-        $reset = AdminPasswordReset::where('token', $request->token)->orderBy('created_at', 'desc')->first();
-        $admin = Admin::where('email', $reset->email)->first();
-        if ($reset->status == Status::DISABLE) {
+        $reset = ForgotPasswordController::validReset(session()->get('pass_res_mail'), $request->token);
+        $admin = $reset ? Admin::where('email', $reset->email)->first() : null;
+        if (!$reset || !$admin) {
             $notify[] = ['error', 'Invalid code'];
             return to_route('admin.login')->withNotify($notify);
         }
 
         $admin->password = Hash::make($request->password);
         $admin->save();
-        $reset->status = Status::DISABLE;
-        $reset->save();
+        AdminPasswordReset::where('email', $reset->email)->where('status', Status::ENABLE)->update(['status' => Status::DISABLE]);
+        session()->forget('pass_res_mail');
 
         $ipInfo = getIpInfo();
         $browser = osBrowser();

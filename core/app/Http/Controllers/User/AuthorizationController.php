@@ -8,6 +8,7 @@ use Illuminate\Validation\ValidationException;
 use App\Http\Controllers\Controller;
 use App\Constants\Status;
 use App\Lib\Intended;
+use Inertia\Inertia;
 
 class AuthorizationController extends Controller
 {
@@ -52,8 +53,28 @@ class AuthorizationController extends Controller
             ],[$type]);
         }
 
-        return view('Template::user.auth.authorization.'.$type, compact('user', 'pageTitle'));
+        if ($type === 'ban') {
+            return Inertia::render('Auth/Banned', [
+                'reason' => $user->ban_reason,
+                'id'     => $user->id,
+                'date'   => now()->format('d M Y'),
+                'urls'   => ['ticket' => route('ticket.open'), 'home' => route('home'), 'logout' => route('user.logout')],
+            ])->withViewData(compact('pageTitle'));
+        }
 
+        $pages = [
+            'email' => ['title' => 'Verify Email Address', 'text' => 'A 6 digit verification code sent to your email address: ' . showEmailAddress($user->email), 'submit' => route('user.verify.email')],
+            'sms'   => ['title' => 'Verify Mobile Number', 'text' => 'A 6 digit verification code sent to your mobile number: +' . showMobileNumber($user->mobileNumber), 'submit' => route('user.verify.mobile')],
+            '2fa'   => ['title' => '2FA Verification', 'text' => 'Enter the 6 digit code from your authenticator app.', 'submit' => route('user.2fa.verify')],
+        ];
+
+        return Inertia::render('Auth/VerifyCode', $pages[$type] + [
+            'kind'     => $type,
+            // Seconds until "Try again" may send a new code (codes are resent every 2 minutes at most).
+            'resendIn' => $type === '2fa' ? null : max(0, ($user->ver_code_send_at?->copy()->addMinutes(2)->timestamp ?? 0) - time()),
+            'resend'   => $type === '2fa' ? null : route('user.send.verify.code', $type),
+            'logout'   => route('user.logout'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function sendVerifyCode($type)
@@ -100,8 +121,7 @@ class AuthorizationController extends Controller
             $user->ver_code_send_at = null;
             $user->save();
 
-            $redirection = Intended::getRedirection();
-            return $redirection ? $redirection : to_route('user.home');
+            return $this->leave();
         }
         throw ValidationException::withMessages(['code' => 'Verification code didn\'t match!']);
     }
@@ -119,8 +139,7 @@ class AuthorizationController extends Controller
             $user->ver_code = null;
             $user->ver_code_send_at = null;
             $user->save();
-            $redirection = Intended::getRedirection();
-            return $redirection ? $redirection : to_route('user.home');
+            return $this->leave();
         }
         throw ValidationException::withMessages(['code' => 'Verification code didn\'t match!']);
     }
@@ -133,11 +152,21 @@ class AuthorizationController extends Controller
         ]); 
         $response = verifyG2fa($user,$request->code);
         if ($response) {
-            $redirection = Intended::getRedirection();
-            return $redirection ? $redirection : to_route('user.home');
+            return $this->leave();
         }else{
             $notify[] = ['error','Wrong verification code'];
             return back()->withNotify($notify);
         }
+    }
+
+    /**
+     * Verified: on to where the member was going. A full page load, because the
+     * next page may still be Blade (the registration payment page).
+     */
+    private function leave()
+    {
+        $redirection = Intended::getRedirection();
+
+        return Inertia::location($redirection ? $redirection->getTargetUrl() : route('user.home'));
     }
 }

@@ -27,13 +27,7 @@ class RegistrationStep
                 ]);
             }else{
                 
-                if($user->section == 1){
-                     return to_route('user.data');
-                }else{
-                    return to_route('user.data1');
-                }
-
-               
+                return to_route('user.data');
             }
         }
         return $next($request);

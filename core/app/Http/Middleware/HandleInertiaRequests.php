@@ -18,6 +18,9 @@ class HandleInertiaRequests extends Middleware
      */
     protected $rootView = 'inertia.user';
 
+    /** Pages drawn by Layouts/AuthLayout.tsx instead of the dashboard. */
+    private const GUEST_PAGES = ['user.login', 'user.register', 'user.password.*', 'user.authorization'];
+
     /**
      * Asset version: when the build changes, Inertia forces a full reload so
      * users never run stale JavaScript.
@@ -55,7 +58,9 @@ class HandleInertiaRequests extends Middleware
             'notify'       => fn () => $request->session()->get('notify', []),
             // Sidebar, top bar and footer. A closure, so partial reloads
             // (router.reload({ only: [...] })) skip its queries.
-            'layout'       => fn () => DashboardLayout::for($request),
+            // Not on the login / password / verification pages: they have their own
+            // layout, and an unverified member has no dashboard yet.
+            'layout'       => fn () => $request->routeIs(self::GUEST_PAGES) ? null : DashboardLayout::for($request),
         ]);
     }
 

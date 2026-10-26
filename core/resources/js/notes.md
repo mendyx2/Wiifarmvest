@@ -3086,6 +3086,153 @@ page. The affiliate dashboard's Ad Center button is a single-page link.
 **What is still Blade in the user area:** the automatic payment gateway pages
 (Stripe, Paystack…), on purpose (Phase 3), and the auth pages (5d).
 
+### Step 86: Login, password reset and verification in React; security fixes (5d-1)
+
+**New layout for guest pages: `Layouts/AuthLayout.tsx`.** It is the green
+gradient with one centred card, the design of the old login page
+(`layouts/app1.blade.php`). Its CSS moved to `Layouts/AuthLayout.css`,
+scoped under `.auth-shell`.
+
+- **Opting in:** a page sets `Page.layout = withAuthLayout`, which replaces
+  the default dashboard layout from `app.tsx`.
+- **No dashboard data:** `HandleInertiaRequests` sends no `layout` prop on
+  these routes (`GUEST_PAGES`). An unverified member has no dashboard yet.
+- **Fonts:** Inter and Courier Prime load with plain `<link>` tags in the
+  root view. A CSS `@import` that the browser cannot load (blocked Google
+  Fonts) makes Chromium reject the *whole* stylesheet. Vite then throws
+  "Unable to preload CSS", and the page never draws.
+
+**Pages:**
+
+| Page | Replaces |
+|---|---|
+| `Auth/Login` | `user/auth/login.blade.php` (+ `layouts/app1`) |
+| `Auth/ForgotPassword` | `passwords/email.blade.php` |
+| `Auth/VerifyCode` | `passwords/code_verify`, `authorization/email`, `sms`, `2fa` (four near-copies) |
+| `Auth/ResetPassword` | `passwords/reset.blade.php` |
+| `Auth/Banned` | `authorization/ban.blade.php` (full screen, its CSS scoped to `.page-banned`) |
+
+**Shared pieces:**
+
+- **`Components/VerificationCode`:** the six-box code input. It takes
+  digits only and submits by itself on the sixth digit, as before. Its CSS
+  is a copy of `assets/global/css/verification-code.css` without the global
+  `.form-control:focus` rule. The input is also clipped inside its own box:
+  it is wider than the box on purpose, and focusing it used to scroll the
+  whole card sideways.
+- **`Components/Captcha`** with **`App\Support\CaptchaPresenter`:** the
+  Google reCAPTCHA 2 site key and a freshly drawn custom captcha (digits,
+  tilt and the signed answer). These are data now, not the HTML that
+  `App\Lib\Captcha` prints. It sends the same fields
+  (`g-recaptcha-response`, `captcha`, `captcha_secret`), so
+  `verifyCaptcha()` is unchanged.
+
+**Full page load after login and verification.** The next stop can be a
+Blade page: the registration payment page `user.data`, or the page the
+member first asked for. So `LoginController::authenticated()` and
+`AuthorizationController::leave()` answer with `Inertia::location()`, a 409
+plus `X-Inertia-Location`. The browser then loads the next page normally.
+
+**Fixed:**
+
+- 🔴 **Password reset could take over any account with a pending reset.**
+  `ResetPasswordController::reset()` looked the reset up by the 6-digit code
+  alone and ignored the email. Codes never expired, and nothing limited
+  guesses. Now:
+  - a code works only for the email this browser started the reset with;
+  - it expires after 60 minutes (`ForgotPasswordController::CODE_MINUTES`);
+  - 5 wrong guesses cancel it;
+  - it is deleted once used;
+  - the routes are throttled.
+
+  The hidden `email` field is gone.
+- 🔴 **The same flaw in the admin password reset**, with worse
+  consequences: anyone could request a reset for the admin email and
+  then guess. `Admin\Auth\ForgotPasswordController::validReset()` now:
+  - requires the session's email, an enabled status and an age under 60
+    minutes;
+  - disables older codes when a new one is sent, and all of them after a
+    change;
+  - is backed by throttled routes.
+
+  The admin pages themselves stay Blade (Phase 7).
+- **Unlimited guesses on 6-digit codes.** Email / SMS verification and 2FA
+  at login are now `throttle:10,1`, and resending is `throttle:6,1`.
+- **Login with a captcha switched on was impossible.** `login()` always
+  called `verifyCaptcha()`, but the login page never showed a captcha.
+  Login and Forgot Password now render it.
+- **Logout wrote the whole session to the log.** It logged
+  `session()->all()`, CSRF token included, before and after every logout.
+  Removed.
+- **No User-Agent header → server error.** `ClientInfo::osBrowser()` read
+  `$_SERVER['HTTP_USER_AGENT']` directly. Requests without that header
+  (some bots, scripts, health checks) crashed the login. It now falls back
+  to "".
+- **Redirect loop for section-2 members.** `RegistrationStep` and
+  `userData()` sent them to `user.data1`, which ran the same method and
+  redirected to itself. `user-data1` now just redirects to `user-data`.
+  It is one of the `*1` duplicates Step 16 left for this phase.
+- **Removed:**
+  - **`POST /user/user-data-submit` and `userDataSubmit()`:** no page posted
+    there, and the method could not run; `$user_parent_matrix` was only set
+    when a parent was given.
+  - **`login1.blade.php`:** unused.
+  - **The template's `partials/verification_code`.**
+
+**Still Blade on purpose:** `user/user_data.blade.php`, the registration
+**payment** page (Paystack inline checkout, or an activation pin). Like the
+other gateway pages (Phase 3), it posts to the IPN routes.
+
+**Verification:**
+
+- **Server (`p5d_check.php`):**
+  - **Login:**
+    - the page has no dashboard layout, and the captcha config is off;
+    - a wrong password → a field error;
+    - a right password (by email) → 409 to the dashboard, with the login
+      log written.
+  - **Verification pages:**
+    - email verification shows the masked address and resend in 90 s;
+    - a wrong code → error; the right code → 409 and `ev=1`;
+    - the 2FA page has no resend link;
+    - the ban page shows the reason.
+  - **Password reset:**
+    - **Requesting a code:** an unknown account is refused; a known one
+      gets a code and goes to the code page.
+    - **Wrong codes:** another account's valid code fails from this
+      session, and the 5th wrong code cancels the reset.
+    - **Expiry:** a 61-minute-old code fails.
+    - **Right code** → the reset form.
+    - **Reset:** "reset with Ada's code" leaves Ada's password unchanged;
+      a mismatched confirmation is refused; a proper reset works and
+      deletes the code; reusing the code fails.
+  - **Admin:**
+    - only the newest code is enabled, and an older one fails;
+    - the code without the reset session fails, and the password is
+      unchanged;
+    - the proper flow changes it and disables every code.
+  - **Throttles** are on all five POST routes; `/user/user-data1`
+    redirects; `user-data-submit` is gone.
+- **Browser (`phase5d1.mjs`, 21 checks):**
+  - **Login:**
+    - the card renders with no sidebar; no captcha or sign-up link while
+      they are off;
+    - the eye button works;
+    - a wrong password → error, password cleared;
+    - success → a full load of the dashboard via `X-Inertia-Location`;
+    - with a custom captcha it shows 6 tilted digits and sends
+      `captcha` + `captcha_secret`.
+  - **Forgot → code page** as an Inertia visit.
+  - **Code box:** digits only; auto-submits at 6 digits; an error clears
+    the box.
+  - **Reset form:** the secure-password rules tick as you type; a
+    mismatched confirmation disables Submit; it posts
+    `{token, password, password_confirmation}`.
+  - **Email verification:** a countdown, then "Try again" (an Inertia GET
+    to resend); the right code → a full load of the payment page.
+  - **2FA** has no resend link.
+  - **Banned:** full-screen card with no dashboard.
+
 ## Part 4: Working on the front end
 
 ### Run locally

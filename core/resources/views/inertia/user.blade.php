@@ -24,6 +24,9 @@
     <link href="{{ asset('assets/global/css/line-awesome.min.css') }}" rel="stylesheet">
     <link href="{{ asset($activeTemplateTrue . 'css/main.css') }}" rel="stylesheet">
     <link href="{{ asset($activeTemplateTrue . 'css/custom.css') }}" rel="stylesheet">
+    {{-- Fonts for the login / verification pages. Plain <link>s, not CSS @import: a blocked
+         @import makes the browser fail the whole stylesheet, and the page with it. --}}
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Courier+Prime&display=swap" rel="stylesheet">
     @viteReactRefresh
     @vite(['resources/css/dashboard.css', 'resources/js/app.tsx'])
     <link href="{{ asset($activeTemplateTrue . 'css/color.php') }}?color={{ gs('base_color') }}&secondColor={{ gs('secondary_color') }}" rel="stylesheet">
@@ -32,6 +35,11 @@
     @php echo loadExtension('google-analytics') @endphp
 
     @inertia
+
+    {{-- The live-chat extension the old login layout (layouts/app1) loaded. --}}
+    @if (request()->routeIs('user.login'))
+        @php echo loadExtension('tawk-chat') @endphp
+    @endif
 
     {{-- window.notify(), and the toasts flashed before this full page load --}}
     @include('partials.notify')

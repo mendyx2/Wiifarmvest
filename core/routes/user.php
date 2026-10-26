@@ -21,29 +21,32 @@ Route::namespace('User\Auth')->name('user.')->middleware(['guest', 'XssSanitizer
 
     Route::controller('ForgotPasswordController')->prefix('password')->name('password.')->group(function () {
         Route::get('reset', 'showLinkRequestForm')->name('request');
-        Route::post('email', 'sendResetCodeEmail')->name('email');
+        Route::post('email', 'sendResetCodeEmail')->name('email')->middleware('throttle:5,1');
         Route::get('code-verify', 'codeVerify')->name('code.verify');
-        Route::post('verify-code', 'verifyCode')->name('verify.code');
+        Route::post('verify-code', 'verifyCode')->name('verify.code')->middleware('throttle:10,1');
     });
 
     Route::controller('ResetPasswordController')->group(function () {
-        Route::post('password/reset', 'reset')->name('password.update');
+        Route::post('password/reset', 'reset')->name('password.update')->middleware('throttle:10,1');
         Route::get('password/reset/{token}', 'showResetForm')->name('password.reset');
     });
 });
 
 Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
     Route::get('user-data', 'User\UserController@userData')->name('data');
-    Route::get('user-data1', 'User\UserController@userData')->name('data1');
-    Route::post('user-data-submit', 'User\UserController@userDataSubmit')->name('data.submit');
+    // Removed duplicate page: for section-2 members it redirected to itself (an endless loop).
+    Route::get('user-data1', fn () => to_route('user.data'))->name('data1');
+    // POST user-data-submit removed: no page posted to it, and its code could not run
+    // (it used a variable that was only set when a parent was given). See notes Step 86.
 
     //authorization
     Route::middleware('registration.complete')->namespace('User')->controller('AuthorizationController')->group(function () {
         Route::get('authorization', 'authorizeForm')->name('authorization');
-        Route::get('resend-verify/{type}', 'sendVerifyCode')->name('send.verify.code');
-        Route::post('verify-email', 'emailVerification')->name('verify.email');
-        Route::post('verify-mobile', 'mobileVerification')->name('verify.mobile');
-        Route::post('verify-g2fa', 'g2faVerification')->name('2fa.verify');
+        Route::get('resend-verify/{type}', 'sendVerifyCode')->name('send.verify.code')->middleware('throttle:6,1');
+        // Throttled: the codes are six digits.
+        Route::post('verify-email', 'emailVerification')->name('verify.email')->middleware('throttle:10,1');
+        Route::post('verify-mobile', 'mobileVerification')->name('verify.mobile')->middleware('throttle:10,1');
+        Route::post('verify-g2fa', 'g2faVerification')->name('2fa.verify')->middleware('throttle:10,1');
     }); 
 
     //['middleware' => ['XssSanitizer']],

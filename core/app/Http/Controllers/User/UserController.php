@@ -678,9 +678,6 @@ class UserController extends Controller
         if ($user->profile_complete == Status::YES) {
             return to_route('user.home');
         }
-        if ($user->section == 2) {
-            return to_route('user.data1');
-        }
 
         $general = gs();
 
@@ -704,129 +701,6 @@ class UserController extends Controller
         $pageTitle = 'Payment Page';
         return view('Template::user.user_data', compact('pageTitle', 'user', 'data'));
     }
-
-    public function userDataSubmit(Request $request)
-    {
-
-        //dd($request);
-        $user = auth()->user(); 
-
-
-        if ($user->profile_complete == Status::YES) {
-            return to_route('user.home');
-        }
-
-        /*
-        $pin = Pin::where('pin', $user->pin)->where('status', Status::NO)->first();
-        if(!$pin){
-            $notify[] = ['error', 'Pin has been used, by another User.'];
-            return back()->withNotify($notify)->withInput($request->all());
-        }
-
-            */
-        if($request->parent){
-
-            $request->validate([
-
-                'parent'       => 'required|string',
-                'position'     => 'required|string|max:6',
-                'username'     => 'required|unique:users|min:6',
-            ]);
-
-
-             $parent = User::where('username', $request->parent)->first();      
-
-            if(!$parent){
-                    $notify[] = ['error', 'Parent is not in the network..'];
-                return back()->withNotify($notify)->withInput($request->all());
-            }
-
-            // later check if this parent is still in stage one
-             $user_parent_matrix = Matrix::where('user_id', $parent->id)->where($request->position, 0)->first();
-             //dd($user_matrix);
-
-             // check if the parent is in the matrix before assignment to new user
-            if(!$user_parent_matrix){
-                $notify[] = ['error', 'Chose another position. Parent request->position is filled'];
-                return back()->withNotify($notify)->withInput($request->all());
-            }
-              
-            // all check has been completed move to assignment 
-
-            $user->parent = $request->parent;
-            $user->position = $request->position;// NOTE: to be crab later
-
-            $parent_id = $parent->id; //set parent ID                          
-
-        }else{
-            $request->validate([
-                'username'     => 'required|unique:users|min:6',
-                
-            ]);
-             $parent_id = 0; //set parent ID
-        }
- 
-         if (preg_match("/[^a-z0-9_]/", trim($request->username))) {
-            $notify[] = ['info', 'Username can contain only small letters, numbers and underscore.'];
-            $notify[] = ['error', 'No special character, space or capital letters in username.'];
-            return back()->withNotify($notify)->withInput($request->all());
-        }
-
-
-        DB::beginTransaction();
-
-            try {
-                // $pin->status = Status::YES;
-                // $pin->user_id = $user->id;
-                // $pin->save(); 
-
-                if($user_parent_matrix){
-                    if($request->position == 'left'){
-                        $user_parent_matrix->left = $user->id;
-                        $user_parent_matrix->save();
-                    }
-                    if($request->position == 'right'){
-                       $user_parent_matrix->right = $user->id;
-                        $user_parent_matrix->save();
-                    } 
-                      
-                }
-
-                $matrixRoot = $parent_id;
-                //$placement = $this->findPlacementNode($matrixRoot, $stage);
-                Matrix::create([
-                    'user_id' => $user->id,
-                    'matrix_owner_id' => $matrixRoot,
-                    'parent_id' => $parent_id,
-                    'stage_id' => 1,
-                    '$request->position' => $request->position,
-                    'is_active' => 1
-                ]);
-
-                UserStageProgress::firstOrCreate([
-                    'user_id' => $user->id,
-                    'stage_id' => 1
-                ]);
-
-                $user->username     = $request->username;
-                $user->profile_complete = Status::YES;
-                $user->save();
-                $details = 'Bonus gotten from username: '.$user->username;
-                referralStageMAtrix($user->id, $details, 1, 1);
-
-
-                DB::commit();
-            } catch (\Throwable $e) {
-                DB::rollBack();
-                throw $e;
-            }
-
-       
-        
-
-        return to_route('user.home');
-    }
-   
 
     public function addDeviceToken(Request $request)
     {
