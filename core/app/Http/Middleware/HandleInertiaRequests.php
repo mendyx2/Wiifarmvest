@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\AdminLayout;
 use App\Support\DashboardLayout;
 use App\Support\PublicLayout;
 use App\Support\Vite;
@@ -21,6 +22,12 @@ class HandleInertiaRequests extends Middleware
 
     /** Pages drawn by Layouts/AuthLayout.tsx instead of the dashboard. */
     private const GUEST_PAGES = ['user.login', 'user.register', 'user.password.*', 'user.authorization'];
+
+    /** Admin pages use their own root view (resources/views/inertia/admin.blade.php). */
+    public function rootView(Request $request): string
+    {
+        return $request->routeIs('admin.*') ? 'inertia.admin' : $this->rootView;
+    }
 
     /**
      * Asset version: when the build changes, Inertia forces a full reload so
@@ -61,9 +68,11 @@ class HandleInertiaRequests extends Middleware
             // (router.reload({ only: [...] })) skip its queries.
             // Not on the login / password / verification pages: they have their own
             // layout, and an unverified member has no dashboard yet.
-            'layout'       => fn () => $request->routeIs([...self::GUEST_PAGES, ...PublicLayout::ROUTES]) ? null : DashboardLayout::for($request),
+            'layout'       => fn () => $request->routeIs([...self::GUEST_PAGES, ...PublicLayout::ROUTES, 'admin.*']) ? null : DashboardLayout::for($request),
             // Shop header and footer, for the public pages (Layouts/PublicLayout.tsx).
             'publicLayout' => fn () => $request->routeIs(PublicLayout::ROUTES) ? PublicLayout::for($request) : null,
+            // Admin sidebar and top bar (Layouts/AdminLayout.tsx); null outside the admin panel.
+            'adminLayout'  => fn () => $request->routeIs('admin.*') ? AdminLayout::for($request) : null,
         ]);
     }
 

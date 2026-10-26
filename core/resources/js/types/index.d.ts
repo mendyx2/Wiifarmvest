@@ -66,6 +66,33 @@ export interface PublicChrome {
     links: Record<'shop' | 'cart' | 'cartAdd' | 'terms' | 'login' | 'register' | 'dashboard' | 'affiliate' | 'logout', string>;
 }
 
+/** One sidebar link in the admin panel (App\Support\AdminLayout). */
+export interface AdminNavLink {
+    title: string;
+    icon: string;
+    url: string;
+    active: boolean;
+    counter: number | null;
+    /** The page is still Blade: open it with a full page load. */
+    reload: boolean;
+}
+
+export type AdminNavEntry =
+    | { type: 'header'; title: string }
+    | ({ type: 'link' } & AdminNavLink)
+    | { type: 'group'; id: string; title: string; icon: string; active: boolean; alert: boolean; items: AdminNavLink[] };
+
+/** Sidebar and top bar of the admin panel (App\Support\AdminLayout). */
+export interface AdminChrome {
+    logo: string;
+    admin: { username: string; image: string };
+    nav: AdminNavEntry[];
+    notifications: { count: number; items: { id: number; title: string; time: string; url: string }[] };
+    version: { name: string; version: string };
+    links: Record<'dashboard' | 'website' | 'notifications' | 'settings' | 'profile' | 'password' | 'logout' | 'search', string>;
+    react: Record<'notifications' | 'profile' | 'settings' | 'dashboard', boolean>;
+}
+
 /** Props shared with every page by App\Http\Middleware\HandleInertiaRequests. */
 export interface SharedProps {
     auth: { user: AuthUser | null };
@@ -79,6 +106,8 @@ export interface SharedProps {
     layout: DashboardChrome | null;
     /** Shop header and footer (App\Support\PublicLayout); null outside the public pages. */
     publicLayout: PublicChrome | null;
+    /** Admin sidebar and top bar (App\Support\AdminLayout); null outside the admin panel. */
+    adminLayout: AdminChrome | null;
     [key: string]: unknown;
 }
 

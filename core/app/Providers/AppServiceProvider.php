@@ -3,14 +3,9 @@
 namespace App\Providers;
 
 use URL;
-use App\Models\User;
 use App\Lib\Searchable;
-use App\Models\Deposit;
 use App\Models\Frontend;
 use App\Constants\Status;
-use App\Models\Withdrawal;
-use App\Models\SupportTicket;
-use App\Models\StockTransfer;
 use App\Models\AdminNotification;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\View;
@@ -63,35 +58,12 @@ class AppServiceProvider extends ServiceProvider
         view()->share($viewShare);
 
 
+        // Same counters as the React admin sidebar (App\Support\AdminLayout).
         view()->composer('admin.partials.sidenav', function ($view) {
-            $view->with([
-                'bannedUsersCount'           => User::banned()->count(),
-                'emailUnverifiedUsersCount' => User::emailUnverified()->count(),
-                'mobileUnverifiedUsersCount'   => User::mobileUnverified()->count(),
-                'kycUnverifiedUsersCount'   => User::kycUnverified()->count(),
-                'kycPendingUsersCount'   => User::kycPending()->count(),
-                'pendingTicketCount'         => SupportTicket::whereIN('status', [Status::TICKET_OPEN, Status::TICKET_REPLY])->count(),
-                'pendingDepositsCount'    => Deposit::pending()->count(),
-                'pendingWithdrawCount'    => Withdrawal::pending()->count(),
-                'pendingStockTransfersCount' => StockTransfer::where('status', StockTransfer::STATUS_PENDING)->count(),
-                'updateAvailable'    => version_compare(gs('available_version'), systemDetails()['version'], '>') ? 'v' . gs('available_version') : false,
+            $view->with(\App\Support\AdminLayout::counters() + [
+                'updateAvailable' => version_compare(gs('available_version'), systemDetails()['version'], '>') ? 'v' . gs('available_version') : false,
             ]);
-        }); 
-
-        view()->composer('admin.partials.sidenavs', function ($view) {
-            $view->with([
-                'bannedUsersCount'           => User::banned()->count(),
-                'emailUnverifiedUsersCount' => User::emailUnverified()->count(),
-                'mobileUnverifiedUsersCount'   => User::mobileUnverified()->count(),
-                'kycUnverifiedUsersCount'   => User::kycUnverified()->count(),
-                'kycPendingUsersCount'   => User::kycPending()->count(),
-                'pendingTicketCount'         => SupportTicket::whereIN('status', [Status::TICKET_OPEN, Status::TICKET_REPLY])->count(),
-                'pendingDepositsCount'    => Deposit::pending()->count(),
-                'pendingWithdrawCount'    => Withdrawal::pending()->count(),
-                'pendingStockTransfersCount' => StockTransfer::where('status', StockTransfer::STATUS_PENDING)->count(),
-                'updateAvailable'    => version_compare(gs('available_version'), systemDetails()['version'], '>') ? 'v' . gs('available_version') : false,
-            ]);
-        }); 
+        });
 
         view()->composer('admin.partials.topnav', function ($view) {
             $view->with([

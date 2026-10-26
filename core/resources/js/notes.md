@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 186 views. Use a separate root view (`inertia.admin`) and `AdminLayout`, applying the same recipe | Last |
+| **7. Admin panel** | 185 views. 7a root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94). Next, lowest risk first: 7b reports and logs (read-only) · 7c users · 7d shop, stockists, affiliate · 7e deposits, withdrawals, pins, savings and loans (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -3640,6 +3640,170 @@ public pages on Blade, or turn on Inertia SSR. Neither was needed:
 
 **Regression:** all 21 browser suites pass, 601 checks in total.
 
+## Part 3g: Phase 7 change log (admin panel)
+
+### Step 93: The admin panel's frame in React (7a)
+
+**The survey.**
+
+- **185 Blade views** in `resources/views/admin`.
+- **The frame** is `admin/layouts/master` + `app`, with:
+  - the sidebar `partials/sidenav.blade.php`, built from
+    `partials/sidenav.json`;
+  - the top bar `partials/topnav.blade.php` (search, notifications, profile
+    menu).
+- **Access:** every admin route goes through `AdminAccessMiddleware`
+  (deny by default, `config/admin_access.php`), and the sidebar hides
+  links the admin may not open.
+
+**New root view: `resources/views/inertia/admin.blade.php`.**
+
+- It loads the same stylesheets as the Blade master layout (Bootstrap,
+  Font Awesome, Line Awesome, `assets/admin/css/app.css`, Poppins) and the
+  React app.
+- No jQuery, Bootstrap JS, select2, nicEdit, cuModal or `admin/js/app.js`:
+  React pages do those jobs themselves.
+- **How it is chosen:** `HandleInertiaRequests::rootView()` picks it for
+  `admin.*` routes; everything else keeps `inertia.user`.
+
+**New shared prop: `adminLayout`.**
+
+- It is built by `App\Support\AdminLayout::for()`, only on `admin.*` routes.
+  There the member `layout` prop is `null`.
+- **Sidebar:** from the same `sidenav.json`, with the same rules as the Blade
+  sidebar:
+  - only links `AdminAccessMiddleware::allows()`;
+  - empty groups are dropped;
+  - a section header moves to the next visible entry;
+  - per-entry `roles`;
+  - the same counters.
+- **Counters:** `AdminLayout::counters()` is now the one copy. The Blade
+  view composer uses it too. A second composer, for a view that does not
+  exist (`admin.partials.sidenavs`), was deleted.
+- **Top bar:** the 10 newest unread notifications and the unread count, the
+  admin's name and photo, and the links.
+- **`AdminLayout::REACT_ROUTES`** lists the admin pages that are React.
+  Links to them are Inertia visits; every other admin link stays a full
+  page load, because those pages are still Blade.
+
+**New layout: `Layouts/AdminLayout.tsx`.**
+
+- **Same markup and classes** as the Blade sidebar and top bar.
+- **The jobs `admin/js/app.js` and Bootstrap did:**
+  - groups open and close;
+  - the group of the current page is open;
+  - the mobile sidebar opens, and closes with ×, a tap outside or a visit;
+  - the bell and profile menus close on an outside click or Escape;
+  - the current link is scrolled into view.
+- **Invalid HTML fixed:** the top-bar icons were an `<a>` inside a
+  `<button>`; they are plain links now.
+- **Chosen in `app.tsx`:** every page under `Pages/Admin/` gets this layout.
+  It is loaded with `import()`, so its JS and CSS reach the admin panel
+  only. A static import would have put the admin CSS into the bundle every
+  member page loads.
+
+**Search box.**
+
+- **Before:** `admin/js/search.js` searched a list printed into every admin
+  page. That list held **every admin route URL** plus every menu and
+  settings entry, including pages the admin could not open (which then
+  answered 403).
+- **Now:**
+  - the list comes from a new endpoint, `GET /admin/search-index`
+    (`admin.search.index`, open to any logged-in admin);
+  - it is fetched once, the first time the box is used;
+  - it is filtered by the same `AdminAccessMiddleware::allows()` as the
+    sidebar.
+- **Keyboard:** ↑ / ↓ move, Enter opens, Escape closes.
+
+**Duplicates removed from the menu** (`sidenav.json`; the Blade sidebar
+reads the same file):
+
+- **"Affiliate"** repeated four links of "Affiliate Program" (same routes).
+- **"Ad Manager"** repeated "Ad Materials & Media" (`admin.ads.index`). Its
+  search keywords moved to the remaining entry.
+
+**Bug fixed: three groups never opened on their own pages.** "Shop",
+"Affiliate Program" and "Savings & Loans" used `"a*|b*"` as their active
+pattern. `routeIs()` does not understand `|`, so the group stayed closed
+on its own pages. They are lists now. For example, on `/admin/ads` the
+Blade sidebar now opens Affiliate Program and highlights Ad Materials &
+Media.
+
+### Step 94: First admin pages in React: Profile and Notifications (7a)
+
+**Profile: `Pages/Admin/Profile.tsx`.**
+
+- **Duplicate merged:** Profile and Password Setting were two pages with the
+  same profile card and one form each. They are one page now.
+- `/admin/password` (route name kept) redirects to it. The top bar's
+  "Password" link opens `/admin/profile#password`.
+- **Photo:** a new `Components/Admin/ImageUploader.tsx`, the React version of
+  `<x-image-uploader>`, shows a preview of the picked file. The form is sent
+  as multipart.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| Two admins could save the same email; password-reset codes are looked up by email. | `unique:admins,email` (ignoring the admin's own row). |
+| New admin password: 5 characters minimum. | 8. It only applies to the next change. |
+| Wrong current password: a toast, and the typed passwords stayed in the form. | An error under "Current Password"; all three boxes are emptied after every submit. |
+
+**Notifications: `Pages/Admin/Notifications.tsx`.**
+
+- **Actions:**
+  - open one, delete one;
+  - mark all as read;
+  - delete all, which asks first in `ConfirmDialog` (the same dialog as the
+    member pages).
+- **After each action** the props come back, so the bell count updates
+  without a page load.
+- **Opening a notification** stays a full page load: it marks it read and
+  goes to its page, which is usually still Blade.
+
+**Shared admin components:**
+
+- `Components/Admin/PageHeader.tsx`: the title row, with action buttons (the
+  old `breadcrumb-plugins` stack); it also sets the tab title.
+- `Components/Admin/ImageUploader.tsx`.
+
+**Deleted:** `admin/profile.blade.php`, `admin/password.blade.php`,
+`admin/notifications.blade.php`.
+
+**Verification:**
+
+- **Server checks** (`p7_check.php`):
+  - **Super-admin:** the full sidebar (counters, alerts, headers), a
+    100-entry search index (95 after the duplicates were removed), and the
+    admin root view on a full load.
+  - **Admin with only "manage account":** sidebar and search show
+    Dashboard only.
+  - **Profile:** the email check, the 8-character rule, the wrong current
+    password, the password change and `/admin/password` → 302.
+  - **Notifications:** delete one, read all (the bell count goes to 0) and
+    delete all.
+  - **Member pages:** still get `inertia.user` and no `adminLayout`.
+  - **Blade sidebar,** rendered with the edited JSON: no duplicates, and
+    Affiliate Program opens on `/admin/ads`.
+- **Browser checks** (`e2e/phase7a.mjs`, 43 checks):
+  - **Sidebar:** groups open and close; Blade pages get a full load.
+  - **Bell:** count, menu, outside click; "View all" is an Inertia visit.
+  - **Profile menu:** Password opens the profile page at `#password`;
+    Logout is a full load.
+  - **Search:** loaded once; found by keyword and title; ↓ + Enter; no
+    results; Escape.
+  - **Limited admin:** sees Dashboard only.
+  - **Profile:** multipart upload with a preview; server errors in place;
+    the password boxes are emptied.
+  - **Notifications:** confirm and delete, mark all read, delete all, and
+    "No" sends nothing.
+  - **Phone width:** the sidebar opens and closes, and no page scrolls
+    sideways at 375 px.
+- **Regression:** all 22 browser suites pass, 644 checks in total.
+  `route:cache` and `view:cache` succeed, and the route-name scan finds
+  only the 21 known `ipn.` references.
+
 ## Part 4: Working on the front end
 
 ### Run locally
@@ -3679,6 +3843,10 @@ appear instantly.
      second request.)
    - When the page is in the sidebar menu, remove its route from
      `DashboardLayout::BLADE_ROUTES`.
+   - **Admin pages** go in `Pages/Admin/` (they get `AdminLayout`
+     automatically) and their route goes in `AdminLayout::REACT_ROUTES`,
+     so the sidebar and search open them as Inertia visits. Start the page
+     with `<PageHeader title>` (Step 94).
 3. **Type the props:** `type Props = PageProps<{ ... }>`.
 4. **Controller:** replace `view(...)` with
    `Inertia::render('<Area>/<Name>', [...props])->withViewData(compact('pageTitle'))`.

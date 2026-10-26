@@ -238,7 +238,7 @@
         "keyword": ["Shop", "Product", "Category", "Sales", "Order", "Manage Shop", "Inventory", "Merchandise"],
         "title": "Shop",
         "icon": "las la-store",
-        "menu_active": "admin.product*|admin.category*|admin.sales*|admin.order*|admin.state*|admin.repurchase-award*",
+        "menu_active": ["admin.product*", "admin.category*", "admin.sales*", "admin.order*", "admin.state*", "admin.repurchase-award*"],
         "submenu": [
             {
                 "keyword": ["Product", "Item", "Manufacture", "Inventory"],
@@ -281,7 +281,7 @@
     "affiliate_program": {
         "title": "Affiliate Program",
         "icon": "las la-bullhorn",
-        "menu_active": "admin.affiliate*|admin.ads*",
+        "menu_active": ["admin.affiliate.dashboard", "admin.affiliate.order*", "admin.affiliate.affiliates", "admin.affiliate.settings*", "admin.ads*"],
         "submenu": [
             {
                 "keyword": ["Affiliate Dashboard", "Affiliate Program", "Marketing"],
@@ -290,7 +290,7 @@
                 "menu_active": "admin.affiliate.dashboard"
             },
             {
-                "keyword": ["Ad Center", "Marketing Ads", "Ad Materials", "Social Media Ads"],
+                "keyword": ["Ad Center", "Marketing Ads", "Ad Materials", "Social Media Ads", "Ad Manager", "Ads", "Adverts", "Social share"],
                 "title": "Ad Materials & Media",
                 "route_name": "admin.ads.index",
                 "menu_active": "admin.ads*"
@@ -421,7 +421,7 @@
         "keyword": ["Savings","Loans","Fixed Box","Target Savings","Farm Yield","Loan Products","Cooperate Finance"],
         "title": "Savings & Loans",
         "icon": "las la-piggy-bank",
-        "menu_active": "admin.savings*|admin.loans*",
+        "menu_active": ["admin.savings*", "admin.loans*"],
         "submenu": [
             {
                 "keyword": ["Savings Settings","Interest Rate","Savings Rate"],
@@ -497,70 +497,6 @@
 
             
         ]
-    },
-    "affiliate": {
-        "title": "Affiliate",
-        "icon": "las la-link",
-        "counters": [],
-        "menu_active": [
-            "admin.affiliate.dashboard",
-            "admin.affiliate.order*",
-            "admin.affiliate.affiliates",
-            "admin.affiliate.settings*"
-        ],
-        "submenu": [
-            {
-                "keyword": [
-                    "Affiliate",
-                    "Dashboard"
-                ],
-                "title": "Dashboard",
-                "route_name": "admin.affiliate.dashboard",
-                "menu_active": "admin.affiliate.dashboard"
-            },
-            {
-                "keyword": [
-                    "Affiliate",
-                    "Orders",
-                    "Shop Orders"
-                ],
-                "title": "Orders",
-                "route_name": "admin.affiliate.orders",
-                "menu_active": "admin.affiliate.orders*"
-            },
-            {
-                "keyword": [
-                    "Affiliate",
-                    "Affiliates",
-                    "Members"
-                ],
-                "title": "Affiliates",
-                "route_name": "admin.affiliate.affiliates",
-                "menu_active": "admin.affiliate.affiliates"
-            },
-            {
-                "keyword": [
-                    "Affiliate",
-                    "Settings"
-                ],
-                "title": "Settings",
-                "route_name": "admin.affiliate.settings",
-                "menu_active": "admin.affiliate.settings"
-            }
-        ]
-    },
-    "ad_manager": {
-        "keyword": [
-            "Ad Manager",
-            "Ads",
-            "Adverts",
-            "Social share",
-            "Marketing"
-        ],
-        "title": "Ad Manager",
-        "icon": "las la-bullhorn",
-        "route_name": "admin.ads.index",
-        "menu_active": "admin.ads*"
     },
     "deposits": {
         "title": "Deposits",

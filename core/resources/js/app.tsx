@@ -56,11 +56,18 @@ createInertiaApp({
 
         const module = await page();
 
-        // Every page sits inside the dashboard layout unless it sets its own
-        // (e.g. the login pages). Because it is the same layout component on
-        // every page, React keeps it mounted between visits: the sidebar
-        // keeps its state and only the page body is replaced.
-        module.default.layout ??= (content: ReactNode) => <DashboardLayout>{content}</DashboardLayout>;
+        // Every page sits inside the dashboard layout (admin pages: the admin
+        // layout) unless it sets its own (e.g. the login pages). Because it is
+        // the same layout component on every page, React keeps it mounted
+        // between visits: the sidebar keeps its state and only the page body
+        // is replaced.
+        if (name.startsWith('Admin/')) {
+            // Its own chunk (and CSS), downloaded only in the admin panel.
+            const { default: AdminLayout } = await import('@/Layouts/AdminLayout');
+            module.default.layout ??= (content: ReactNode) => <AdminLayout>{content}</AdminLayout>;
+        } else {
+            module.default.layout ??= (content: ReactNode) => <DashboardLayout>{content}</DashboardLayout>;
+        }
 
         return module;
     },

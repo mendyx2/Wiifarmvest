@@ -36,6 +36,9 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('password', 'password')->name('password'); 
         Route::post('password', 'passwordUpdate')->name('password.update');
 
+        // Top-bar search (React admin layout): the pages this admin may open
+        Route::get('search-index', 'searchIndex')->name('search.index');
+
         //Notification
         Route::get('notifications', 'notifications')->name('notifications');
         Route::get('notification/read/{id}', 'notificationRead')->name('notification.read');

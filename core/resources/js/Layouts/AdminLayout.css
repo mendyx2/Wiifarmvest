@@ -1,0 +1,63 @@
+/*
+ * Layouts/AdminLayout.tsx. The sidebar, top bar and page styles are in
+ * assets/admin/css/app.css; this file only adds what jQuery and Bootstrap's
+ * JavaScript did on the Blade pages.
+ */
+
+/* Top-bar icon links. The Blade top bar nested an <a> inside a <button>
+   (invalid HTML); these are plain links styled like ".navbar__right button". */
+.navbar__right .admin-top-btn {
+    display: inline-block;
+    position: relative;
+}
+
+.navbar__right .admin-top-btn i {
+    color: #5b6e88;
+    text-shadow: 1px 2px 5px rgba(0, 0, 0, 0.15);
+    font-size: 1.5rem;
+}
+
+/* Bootstrap's dropdown script (Popper) placed these menus; place them here. */
+.navbar__action-list .dropdown {
+    position: relative;
+}
+
+.navbar__action-list .dropdown-menu.show {
+    display: block;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: auto;
+    margin-top: 8px;
+}
+
+@media (max-width: 420px) {
+    .navbar__action-list .dropdown-menu.show {
+        position: fixed;
+        top: 60px;
+        left: 15px;
+        right: 15px;
+    }
+}
+
+/* Behind the open mobile sidebar: tap to close it. */
+.admin-sidebar-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 998; /* the sidebar is 999 */
+}
+
+/* The search results: the keyboard choice. */
+.search-list li.active {
+    background-color: #f3f3f9;
+}
+
+/* Pages/Admin/Profile.tsx: was a <style> push in profile.blade.php / password.blade.php. */
+.admin-profile-list .list-group-item:first-child {
+    border-top-left-radius: unset;
+    border-top-right-radius: unset;
+}
