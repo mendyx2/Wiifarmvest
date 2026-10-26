@@ -3286,7 +3286,7 @@ other gateway pages (Phase 3), it posts to the IPN routes.
   - `registered()`, which was never called because `register()` is
     overridden. Its intent was a `UserExtra` row and `updateFreeCount()`
     after sign-up; that has never happened in production. ⚠️ **Owner:**
-    decide whether sign-up should do it.
+    decide whether sign-up should do it. (Decided in Step 88.)
   - `checkUser()`.
 - **Duplicate page:** `GET /user/signup` (`user.register1`) redirects to
   `/user/register`, keeping `?ref=`. This is the last `*1` duplicate from
@@ -3341,6 +3341,59 @@ scan is clean.
 automatic payment gateway pages and the registration payment page
 (`user_data`), which stay on Blade on purpose. Signed-in navigation is fully
 single-page.
+
+### Step 88: Decision: every member gets a `user_extras` row; `updateFreeCount()` stays off
+
+**Owner's decision (Step 87 follow-up):** "yes add it", meaning the
+`registered()` step the old sign-up never ran.
+
+**What that step did:**
+
+- create the member's `user_extras` row (BV and left/right counters);
+- call `updateFreeCount()`.
+
+**Done: the `user_extras` row.** `User::booted()` now creates it whenever a
+user is created. That covers every path: sign-up, Add Distributor, and an
+admin creating a member. Migration `2026_10_26_000001_backfill_user_extras`
+adds the missing rows for existing members, in chunks of 1,000. It is safe
+to run twice and keeps existing rows untouched.
+
+This matters beyond the counters. `admin/users/detail.blade.php` reads
+`$user->userExtra->bv_left` with no null check, so the admin user page
+failed for every member without a row: everyone who signed up through this
+site.
+
+**Not done, on purpose: `updateFreeCount()` on sign-up.** It walks the
+*original script's* tree (`users.pos_id`), not this app's tree
+(`matrices`). Two problems:
+
+- **Wrong member credited:** sign-up and Add Distributor set `pos_id = 1` for
+  every new member. Each sign-up would therefore add to member #1's "free"
+  count, whatever the real placement.
+- **Endless loop:** if member #1's own `pos_id` is 1, the loop never ends.
+  The sign-up request hangs, and keeps writing, until it times out.
+
+A new member also has no place in the tree yet: placement happens when they
+pay (`user.data` → Paystack). If free/paid leg counts are wanted, they should
+be computed from `matrices` at payment. That is a separate change for the
+owner to request.
+
+**Hardening.** `updateBV()` (used by Admin → Supply), `updateFreeCount()` and
+`updatePaidCount()` share the same `pos_id` walk. Now they:
+
+- **stop on a repeat:** they remember the members they visited, so a cycle
+  cannot loop forever;
+- **create a missing row:** a missing `user_extras` row is created
+  (`firstOrCreate`) instead of crashing on `null->bv_left`.
+
+**Verification:**
+
+- **Backfill:** 1 → 5 rows, one per member; demo's existing `bv_left` is
+  kept; a second run changes nothing.
+- **Sign-up:** a new member gets a row.
+- **Walkers:** `updateFreeCount()` on a `pos_id` cycle returns in 0.007 s
+  (it used to never return); `updatePaidCount()` with an upline that does
+  not exist returns cleanly.
 
 ## Part 4: Working on the front end
 

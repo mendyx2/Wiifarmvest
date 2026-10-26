@@ -202,6 +202,16 @@ class User extends Authenticatable
         return $this->hasOne(UserExtra::class);
     }
 
+    /**
+     * Every member gets a user_extras row (BV and left/right counters) as soon as
+     * they exist. Sign-up never created one, and the admin user page reads
+     * $user->userExtra->bv_left without a null check (notes Step 88).
+     */
+    protected static function booted(): void
+    {
+        static::created(fn (User $user) => UserExtra::firstOrCreate(['user_id' => $user->id]));
+    }
+
     public function refBy()
     {
         return $this->belongsTo(User::class, 'ref_by');

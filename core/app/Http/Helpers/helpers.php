@@ -838,7 +838,12 @@ function shortDescription($string, $length = 120)
 
 function updateBV($id, $bv, $details)
 {
-    while ($id != "" || $id != "0") {
+    // Walks the old users.pos_id tree. New members all get pos_id = 1, so a
+    // member whose pos_id points back to someone already visited would loop
+    // forever: stop on a repeat (notes Step 88).
+    $seen = [];
+    while ($id != "" && $id != "0" && !isset($seen[$id])) {
+        $seen[$id] = true;
         if (isUserExists($id)) {
             $posId = getPositionId($id);
             if ($posId == "0") {
@@ -847,7 +852,7 @@ function updateBV($id, $bv, $details)
             $posUser = User::find($posId);
             if ($posUser->plan_id) {
                 $position       = getPositionLocation($id);
-                $extra          = UserExtra::where('user_id', $posId)->first();
+                $extra          = UserExtra::firstOrCreate(['user_id' => $posId]);
                 $bvLog          = new BvLog();
                 $bvLog->user_id = $posId;
 
@@ -949,7 +954,12 @@ function mlmPositions()
 
 function updateFreeCount($id)
 {
-    while ($id != "" || $id != "0") {
+    // Walks the old users.pos_id tree. New members all get pos_id = 1, so a
+    // member whose pos_id points back to someone already visited would loop
+    // forever: stop on a repeat (notes Step 88).
+    $seen = [];
+    while ($id != "" && $id != "0" && !isset($seen[$id])) {
+        $seen[$id] = true;
         if (isUserExists($id)) {
             $posid = getPositionId($id);
             if ($posid == "0") {
@@ -957,7 +967,7 @@ function updateFreeCount($id)
             }
             $position = getPositionLocation($id);
 
-            $extra = UserExtra::where('user_id', $posid)->first();
+            $extra = UserExtra::firstOrCreate(['user_id' => $posid]);
 
             if ($position == 1) {
                 $extra->free_left += 1;
@@ -1325,14 +1335,19 @@ function showSingleUserinTree($user)
 
 function updatePaidCount($id)
 {
-    while ($id != "" || $id != "0") {
+    // Walks the old users.pos_id tree. New members all get pos_id = 1, so a
+    // member whose pos_id points back to someone already visited would loop
+    // forever: stop on a repeat (notes Step 88).
+    $seen = [];
+    while ($id != "" && $id != "0" && !isset($seen[$id])) {
+        $seen[$id] = true;
         if (isUserExists($id)) {
             $posid = getPositionId($id);
             if ($posid == "0") {
                 break;
             }
             $position = getPositionLocation($id);
-            $extra    = UserExtra::where('user_id', $posid)->first();
+            $extra    = UserExtra::firstOrCreate(['user_id' => $posid]);
 
             if ($position == 1) {
                 $extra->free_left -= 1;

@@ -8,4 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 class UserExtra extends Model
 {
     use HasFactory;
+
+    protected $fillable = ['user_id'];
 }
