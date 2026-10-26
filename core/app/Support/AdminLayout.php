@@ -47,6 +47,9 @@ class AdminLayout
         'admin.report.invest',
         'admin.report.bvLog',
         'admin.users.notification.log',
+        'admin.report.financial',
+        'admin.pv-logs.index',
+        'admin.system.action.log',
     ];
 
     public static function for(Request $request): ?array

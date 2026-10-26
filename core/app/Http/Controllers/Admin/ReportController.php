@@ -19,13 +19,83 @@ use Inertia\Inertia;
 
 class ReportController extends Controller
 {
+    /** Pages/Admin/Reports/Financial.tsx; the numbers come from FinancialReportService. */
     public function financial(Request $request, FinancialReportService $reports)
     {
-        $pageTitle   = 'Financial Report';
         [$from, $to] = FinancialReportService::rangeFromRequest($request->date);
         $report      = $reports->build($from, $to);
+        $standing    = $report['standing'];
 
-        return view('admin.reports.financial', compact('pageTitle', 'report'));
+        $group = fn (array $g, string $bg, ?string $note = null) => $this->financialGroup($g, $bg, $note);
+
+        $netChange = !is_null($standing['net_change']) && abs($standing['net_change']) < 1000
+            ? ' (' . ($standing['net_change'] > 0 ? '+' : '') . $standing['net_change'] . '%)'
+            : '';
+
+        return Inertia::render('Admin/Reports/Financial', [
+            'period'    => $report['period'],
+            'allTime'   => $report['is_all_time'],
+            'totals'    => [
+                'income'  => showAmount($report['income']['total']),
+                'outflow' => showAmount($report['outflow']['total']),
+                'net'     => showAmount($standing['net']),
+            ],
+            'income'    => array_map(fn ($g) => $group($g, 'success'), $report['income']['groups']),
+            'cashIn'    => $group(['label' => 'Cash In — not added to income', 'icon' => 'las la-wallet'] + $report['cash_in'], '1',
+                __('Members spend this money on subscriptions, shares and products, which are already counted in Income. Adding it again would count the same naira twice.')),
+            'outflow'   => array_map(fn ($g) => $group($g, '9'), $report['outflow']['groups']),
+            'cashOut'   => $group(['label' => 'Cash Out — not added to outflow', 'icon' => 'las la-money-bill-wave'] + $report['cash_out'], '1',
+                __('Withdrawals pay out bonuses and balances that were already counted in Outflow when they were credited. Loans are lent, not spent, and come back as repayments.')),
+            'unclassified' => $report['unclassified'] ? $group([
+                'label' => 'Unclassified Credits — not in Income or Outflow',
+                'icon'  => 'las la-exclamation-triangle',
+                'lines' => array_map(fn ($row) => [
+                    'label' => $row['remark'], 'amount' => $row['amount'], 'count' => $row['count'],
+                    'note'  => $row['ledger'] . ' ledger · ' . number_format($row['count']) . ' records',
+                    'icon'  => 'las la-question-circle', 'link' => route('admin.report.transaction', ['remark' => $row['remark']]),
+                ], $report['unclassified']),
+            ], 'warning', __('These credits use a ledger remark the report does not know yet. Add each one to config/financial_report.php so it is counted in the right place.')) : null,
+            'owedMembers' => $group(['label' => 'Owed to members & stockists', 'icon' => 'las la-users'] + $report['owed']['members'], '10'),
+            'owedCompany' => $group(['label' => 'Owed to the company', 'icon' => 'las la-building'] + $report['owed']['company'], 'success'),
+            'standing'  => [
+                'verdict'      => $standing['verdict'],
+                'trend'        => $standing['trend'],
+                'net'          => showAmount($standing['net']),
+                'netBreakdown' => showAmount($standing['income']) . ' − ' . showAmount($standing['outflow']),
+                'margin'       => is_null($standing['margin']) ? '—' : $standing['margin'] . '%',
+                'trendNote'    => showAmount($standing['recent_net']) . ' vs ' . showAmount($standing['previous_net']) . $netChange,
+                'compareLabel' => __($standing['compare_label']),
+                'owedMembers'  => showAmount($report['owed']['members']['total']),
+                'owedCompany'  => showAmount($report['owed']['company']['total']),
+            ],
+            'date'      => AdminPresenter::dateRange($request->query('date')),
+        ])->withViewData(['pageTitle' => 'Financial Report']);
+    }
+
+    /**
+     * One panel of boxes, as the old reports/partials/financial_boxes.blade.php drew
+     * it: panels with more than 4 figures hide the empty ones and name them below.
+     */
+    private function financialGroup(array $group, string $bg, ?string $note): array
+    {
+        $hideEmpty = count($group['lines']) > 4;
+        $box = fn (array $l) => [
+            'label' => __($l['label']),
+            'icon'  => $l['icon'],
+            'link'  => $l['link'],
+            'value' => showAmount($l['amount']),
+            'note'  => $l['note'] ? __($l['note']) : null,
+        ];
+
+        return [
+            'label' => __($group['label']),
+            'icon'  => $group['icon'],
+            'total' => isset($group['total']) ? showAmount($group['total']) : null,
+            'bg'    => $bg,
+            'boxes' => array_values(array_map($box, $hideEmpty ? array_filter($group['lines'], fn ($l) => $l['amount'] != 0) : $group['lines'])),
+            'empty' => array_values(array_map(fn ($l) => __($l['label']), $hideEmpty ? array_filter($group['lines'], fn ($l) => $l['amount'] == 0) : [])),
+            'note'  => $note,
+        ];
     }
 
     public function transaction(Request $request, $userId = null)

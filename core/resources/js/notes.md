@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94). Next, lowest risk first: 7b reports and logs (read-only) · 7c users · 7d shop, stockists, affiliate · 7e deposits, withdrawals, pins, savings and loans (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96). Next: 7c users · 7d shop, stockists, affiliate · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -3897,6 +3897,93 @@ the frame loads.
   - **Phones:** the Filter button folds the card; table cells show their
     labels; no sideways scroll on any of the six pages.
 - **Regression:** 23 browser suites, 674 checks, all pass.
+
+### Step 96: PV log, Financial Report and Admin Action Log in React (7b-2)
+
+**Pages:**
+
+- **`Pages/Admin/PvLog.tsx`** (`admin.pv-logs.index`). The page has its own
+  design; its CSS moved to `PvLog.css`, scoped under `.page-pvlog` with
+  `scripts/extract-page-css.mjs`.
+  - **Filters:** search, position and type.
+  - **Chips:** each applied filter shows as a chip; × removes only that
+    filter.
+  - **Totals:** over the whole log, as before.
+  - **Fix:** made-up `?position=` / `?type=` values used to be applied as
+    they were; only 1/2 and +/− are used now.
+- **`Pages/Admin/Reports/Financial.tsx`** (`admin.report.financial`).
+  - **Server:** `ReportController::financialGroup()` formats each panel the
+    way `reports/partials/financial_boxes.blade.php` did. A panel with more
+    than 4 figures hides the empty ones and names them below.
+  - **Date range:** the same `DateRangeField`; an unreadable range shows its
+    error.
+  - **Print:** opens the browser's print dialog; app.css already hides the
+    sidebar, the top bar and the buttons when printing.
+  - **New component:** `Components/Admin/BoxWidget.tsx` is
+    `<x-widget style="6">`.
+- **`Pages/Admin/ActionLog.tsx`** (`admin.system.action.log`, super-admins
+  only).
+  - **Filters (new):** admin, method, page/description and date.
+  - **Detail dialog:**
+    - the full description, which the table cuts at 100 characters;
+    - the request, method and URI;
+    - the subject and the admin's role;
+    - IP and browser;
+    - the data sent (passwords are never stored:
+      `AdminActionLogMiddleware` drops them).
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| The Admin Action Log was not linked from anywhere (no menu entry, no settings card). | A card on System Setting, which the top-bar search also finds. Only super-admins see it, like the page. |
+| The System Setting page showed every card to every admin, including pages that then answered 403 (gateways, extensions…). | `GeneralSettingController::systemSetting()` keeps only the cards `AdminAccessMiddleware::allows()`, the same rule as the sidebar and search. |
+| A log with neither a description nor data showed the word "null". | "—". |
+
+**Deleted:**
+
+- `admin/pv-log/index.blade.php`;
+- `reports/financial.blade.php` and `reports/partials/financial_boxes.blade.php`;
+- `system/admin_action_log.blade.php`.
+
+**Still Blade, on purpose:** Stage Twice (`reports/stage_twice*`). It is a
+report, but it has a Refund button that moves money, so it moves with the
+other money pages in 7e.
+
+**Verification:**
+
+- **Server checks** (`p7b2_check.php`):
+  - **PV log:**
+    - filters (made-up values ignored) and search;
+    - a deleted member's row shows "— deleted —";
+    - row numbers carry on across pages.
+  - **Action log:**
+    - filters by admin + method, by search and by one ISO day;
+    - "—" instead of "null";
+    - a support admin may not open it; it is in the super-admin search.
+  - **System Setting cards:** super-admin 13 (with the new card); the
+    support admin 0.
+  - **Financial Report:**
+    - all time and a 7-day range;
+    - groups, cash-in with its empty figures named, standing;
+    - a bad range → "Invalid date range.".
+    - The fixture database lacked 25 of the tables and columns the
+      report reads; the script added them as it hit them.
+- **Browser checks** (`e2e/phase7b2.mjs`, 25 checks):
+  - **Scoped CSS** applies on the PV log.
+  - **Filters and chips:** × drops only its filter; the empty state shows.
+  - **Action log:** no "null"; the detail dialog shows the full
+    description and data.
+  - **Financial Report:**
+    - the headline boxes and section heads;
+    - linked boxes and the named empty figures;
+    - the standing panel;
+    - the date range and its error;
+    - print hides the frame; the Print button opens the dialog.
+  - **Phone width:** no sideways scroll at 375 px.
+- **Regression:** 24 browser suites, 699 checks, all pass. `route:cache`
+  and `view:cache` succeed, and the route-name scan finds only the 21 known
+  `ipn.` references.
 
 ## Part 4: Working on the front end
 

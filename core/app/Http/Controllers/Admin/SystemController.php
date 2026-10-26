@@ -7,7 +7,11 @@ use Illuminate\Support\Facades\Artisan;
 use App\Lib\CurlRequest;
 use App\Lib\FileManager;
 use App\Models\UpdateLog;
+use App\Models\Admin;
 use App\Models\AdminActionLog;
+use App\Support\AdminPresenter;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laramin\Utility\VugiChugi;
@@ -208,11 +212,54 @@ class SystemController extends Controller
         return view('admin.system.update_log',compact('pageTitle','updates'));
     }
 
-    public function adminActionLog()
+    /**
+     * Every change an admin made (AdminActionLogMiddleware records each
+     * successful POST / PUT / PATCH / DELETE). Super-admins only.
+     * Pages/Admin/ActionLog.tsx.
+     */
+    public function adminActionLog(Request $request)
     {
-        $pageTitle = 'Admin Action Log';
-        $logs = AdminActionLog::with('admin')->latest()->paginate(getPaginate());
-        return view('admin.system.admin_action_log', compact('pageTitle', 'logs'));
+        $logs = AdminActionLog::query()
+            ->when($request->filled('admin'), fn ($q) => $q->where('admin_id', $request->integer('admin')))
+            ->when(in_array($request->query('method'), ['POST', 'PUT', 'PATCH', 'DELETE'], true), fn ($q) => $q->where('method', $request->query('method')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $term = '%' . $request->query('search') . '%';
+                $q->where(fn ($w) => $w->where('route_name', 'like', $term)->orWhere('uri', 'like', $term)->orWhere('description', 'like', $term));
+            })
+            ->dateFilter()
+            ->latest('id')
+            ->paginate(getPaginate())
+            ->withQueryString()
+            ->through(fn (AdminActionLog $log) => [
+                'id'          => $log->id,
+                'date'        => showDateTime($log->created_at, 'd M, Y h:i A'),
+                'admin'       => $log->admin_name ?? $log->admin_username ?? __('Unknown'),
+                'role'        => (string) $log->admin_role,
+                'method'      => (string) $log->method,
+                'action'      => (string) ($log->action ?? $log->method),
+                'resource'    => (string) ($log->route_name ?? $log->uri),
+                // The old page printed "null" when a log had neither.
+                'summary'     => Str::limit((string) ($log->description ?: ($log->meta ? json_encode($log->meta) : '—')), 100),
+                // For the detail dialog: the old page cut everything at 100 characters.
+                'description' => (string) $log->description,
+                'uri'         => (string) $log->uri,
+                'subject'     => $log->subject_type ? $log->subject_type . ' #' . $log->subject_id : null,
+                'meta'        => $log->meta ? json_encode($log->meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,
+                'ip'          => (string) $log->ip_address,
+                'userAgent'   => (string) $log->user_agent,
+            ]);
+
+        return Inertia::render('Admin/ActionLog', [
+            'logs'    => $logs,
+            'admins'  => Admin::orderBy('username')->get(['id', 'name', 'username'])
+                ->map(fn (Admin $a) => ['id' => $a->id, 'label' => $a->name ? "{$a->name} ({$a->username})" : $a->username])->values(),
+            'filters' => [
+                'search' => (string) $request->query('search', ''),
+                'admin'  => (string) $request->query('admin', ''),
+                'method' => (string) $request->query('method', ''),
+                'date'   => AdminPresenter::dateRange($request->query('date')),
+            ],
+        ])->withViewData(['pageTitle' => 'Admin Action Log']);
     }
 
     protected function extractZip($file, $extractTo)

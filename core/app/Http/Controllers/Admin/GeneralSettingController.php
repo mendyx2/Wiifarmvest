@@ -13,6 +13,9 @@ class GeneralSettingController extends Controller
     public function systemSetting(){
         $pageTitle = 'System Settings';
         $settings = json_decode(file_get_contents(resource_path('views/admin/setting/settings.json')));
+        // Only the cards this admin may open (the same rule as the sidebar and search).
+        $admin    = auth('admin')->user();
+        $settings = (object) array_filter((array) $settings, fn ($setting) => \App\Http\Middleware\AdminAccessMiddleware::allows($admin, (string) $setting->route_name));
         return view('admin.setting.system', compact('pageTitle','settings'));
     }
     public function general()

@@ -275,5 +275,18 @@
         "subtitle": "Insert the robots.txt content here to enhance bot web crawlers and instruct them on how to interact with certain areas of the website.",
         "icon": "las la-robot",
         "route_name": "admin.setting.robot"
+    },
+    "admin_action_log": {
+        "keyword": [
+            "action log",
+            "audit",
+            "admin activity",
+            "who changed",
+            "history of changes"
+        ],
+        "title": "Admin Action Log",
+        "subtitle": "Every change an admin made: who, what, when and from where.",
+        "icon": "las la-history",
+        "route_name": "admin.system.action.log"
     }
 }
