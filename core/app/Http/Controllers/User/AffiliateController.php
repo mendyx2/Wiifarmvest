@@ -8,6 +8,7 @@ use App\Models\AdShare;
 use App\Models\AffiliateOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use App\Support\PublicShopPresenter;
 use Inertia\Inertia;
 
 class AffiliateController extends Controller
@@ -59,19 +60,7 @@ class AffiliateController extends Controller
             'buyer'   => $order->buyer_name,
             'total'   => showAmount($order->total_amount),
             'payment' => $order->payment_method === 'paystack' ? 'Online' : 'Cash on Pickup',
-            // Same colours as AffiliateOrder::status_badge, without sending HTML.
-            'status'  => [
-                'label' => ucwords(str_replace('_', ' ', $order->status)),
-                'class' => match ($order->status) {
-                    AffiliateOrder::STATUS_PENDING         => 'badge--warning',
-                    AffiliateOrder::STATUS_PAID            => 'badge--info',
-                    AffiliateOrder::STATUS_AWAITING_PICKUP => 'badge--primary',
-                    AffiliateOrder::STATUS_FULFILLED       => 'badge--success',
-                    AffiliateOrder::STATUS_CANCELLED       => 'badge--danger',
-                    AffiliateOrder::STATUS_EXPIRED         => 'badge--dark',
-                    default                                => 'badge--secondary',
-                },
-            ],
+            'status'  => PublicShopPresenter::orderStatus($order),
             'date'    => $order->created_at?->format($dateFormat) ?? '',
         ];
     }

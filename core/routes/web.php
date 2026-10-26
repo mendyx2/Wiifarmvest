@@ -34,7 +34,7 @@ Route::middleware('cron.secret')->group(function () {
 
 
 
-// Public Affiliate Shop (guest-accessible, no auth) — extends layouts.frontend, never layouts.master
+// Public Affiliate Shop (guest-accessible, no auth): React pages in Layouts/PublicLayout.tsx
 Route::namespace('Shop')->prefix('shop')->name('shop.')->middleware(['affiliate.track'])->group(function () {
     Route::get('/', 'ShopController@index')->name('index');
     Route::get('/product/{product}', 'ShopController@show')->name('product');
@@ -53,6 +53,7 @@ Route::namespace('Shop')->prefix('shop')->name('shop.')->middleware(['affiliate.
     Route::get('/paystack/callback', 'ShopPaystackController@callback')->name('paystack.callback')->middleware('throttle:20,1');
 
     Route::get('/order/{orderCode}', 'ShopController@orderSuccess')->name('order.success');
+    Route::get('/order/{orderCode}/pay', 'ShopCheckoutController@pay')->name('order.pay');
     Route::get('/order/{orderCode}/invoice', 'ShopController@orderInvoiceDownload')->name('order.invoice');
 });
 

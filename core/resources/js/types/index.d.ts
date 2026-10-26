@@ -48,6 +48,24 @@ export interface DashboardChrome {
     socials: { url: string; title: string; icon: string }[];
 }
 
+/** Header and footer of the public pages (App\Support\PublicLayout). */
+export interface PublicChrome {
+    logo: string;
+    user: { firstname: string; fullname: string } | null;
+    cartCount: number;
+    categories: { id: number; name: string; url: string }[];
+    /** The page is the shop list */
+    onList: boolean;
+    /** Category the shop list is filtered by, for the highlight */
+    category: number | null;
+    /** Search text on the shop list */
+    search: string;
+    socials: { url: string; title: string; icon: string }[];
+    email: string;
+    year: number;
+    links: Record<'shop' | 'cart' | 'cartAdd' | 'terms' | 'login' | 'register' | 'dashboard' | 'affiliate' | 'logout', string>;
+}
+
 /** Props shared with every page by App\Http\Middleware\HandleInertiaRequests. */
 export interface SharedProps {
     auth: { user: AuthUser | null };
@@ -59,6 +77,8 @@ export interface SharedProps {
     notify: NotifyMessage[];
     /** Sidebar, top bar and footer data (App\Support\DashboardLayout); null for guests. */
     layout: DashboardChrome | null;
+    /** Shop header and footer (App\Support\PublicLayout); null outside the public pages. */
+    publicLayout: PublicChrome | null;
     [key: string]: unknown;
 }
 

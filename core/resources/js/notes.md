@@ -80,7 +80,7 @@ gets replaced, one page at a time.
 | **4. Other user flows** | 4a KYC + support tickets ✅ · 4b investments/projects ✅ · 4c network trees ✅ · 4d shop/cart/orders ✅ · 4e stockist area ✅ | ✅ Done (Steps 32–74); a few member pages remain, see Step 74 |
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
-| **6. Public pages** | Login, register, password reset and authorization moved in 5d. Left: home, blog, FAQ, contact, policy pages; they need SEO, so either keep them on Blade or turn on Inertia SSR | Later |
+| **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
 | **7. Admin panel** | 186 views. Use a separate root view (`inertia.admin`) and `AdminLayout`, applying the same recipe | Last |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
@@ -3394,6 +3394,251 @@ owner to request.
 - **Walkers:** `updateFreeCount()` on a `pos_id` cycle returns in 0.007 s
   (it used to never return); `updatePaidCount()` with an upline that does
   not exist returns cleanly.
+
+## Part 3f: Phase 6 change log (public pages)
+
+### Step 89: Public layout and the Terms page in React (6a)
+
+**What "public pages" means in this app.** The survey for Phase 6 found
+that the marketing site is switched off:
+
+- `SiteController@index`, `pages`, `faq`, `contact` and `policyPages` all
+  start with `return to_route('user.login');`.
+- So the home, blog, FAQ, contact and policy views are never shown.
+
+The public pages people actually see are:
+
+- the **affiliate shop** (`/shop/...`), where guests buy through affiliate links;
+- the **Terms of Use** page (`/agreement`), linked from sign-up and the shop footer;
+- the **maintenance** page.
+
+**New: `Layouts/PublicLayout.tsx`.** It holds the shop header (logo, search,
+account menu, cart badge, category bar) and the footer. It replaces
+`layouts/shop.blade.php`, `partials/shop_header.blade.php` and
+`partials/shop_footer.blade.php`.
+
+- **Same markup and classes,** so the existing `shophd-*` / `shopft-*` styles
+  in `custom.css` apply unchanged.
+- **Opting in:** pages use `Page.layout = withPublicLayout`, the same way the
+  auth pages use `withAuthLayout`.
+- **Its data:** a new shared prop, `publicLayout`, built by
+  `App\Support\PublicLayout::for()`. `HandleInertiaRequests` fills it only
+  on `PublicLayout::ROUTES` (`shop.*`, `agreement`). On those routes the
+  dashboard `layout` prop is `null`, so a guest never reaches
+  `DashboardLayout::for()`.
+- **What Bootstrap's JavaScript used to do:**
+  - the account menu opens with React state and closes on an outside click
+    or Escape;
+  - the "stuck" shadow under the header is a scroll listener;
+  - neither needs jQuery now.
+- **Sign Out stays a plain `<a>`:** it ends the session, as in the dashboard.
+
+**Terms page: `Pages/Public/Agreement.tsx`.**
+
+- The text is the same as before. It is now a list of sections in the
+  file, and the contents box is built from that list, so it can no longer
+  disagree with the headings.
+- **Fixed:** the contents list called section 8 "Dispute resolution" (a
+  copy of 7) and section 3 "Purpose of the Platforme".
+- **Page CSS:** the old view's CSS was pushed to a stack the layout never
+  printed (`css-styles`), so it never applied. The page now has
+  `Agreement.css`. Contents links stop below the sticky header
+  (`scroll-margin-top`).
+
+**Duplicate removed: Cookie Policy.**
+
+- `cookie.blade.php` and `agreement.blade.php` were the same file apart
+  from one typo. Both showed the Terms of Use, under the same title.
+- `/cookie-policy` now answers `301 → /agreement`, the route name
+  `cookie.policy` still works, and the footer's second link to the same text
+  ("Cookie Policy") is gone.
+- Deleted: `cookie.blade.php`, `agreement.blade.php`.
+
+### Step 90: The public shop in React (6b)
+
+**Pages:** `Pages/Shop/{Index, Product, Cart, Checkout, Pay, OrderSuccess}.tsx`.
+
+**Shared pieces:** `Components/Shop/ShopCard.tsx` (the product tile) and
+`Components/Shop/useAddToCart.ts`.
+
+**Server:**
+
+- **Presenter:** `App\Support\PublicShopPresenter` builds what the pages
+  show. The member shop's `ShopPresenter` prices by state and links to
+  member pages. The public shop uses one flat price (`Product::shop_price`)
+  and the tokenised image URL (`shop.image`), which hides file names.
+- **Orders list:** `AffiliateController::presentOrder()` now uses the same
+  `PublicShopPresenter::orderStatus()` instead of its own copy of the
+  colour table.
+
+**How the cart works now.**
+
+- The old pages called the cart endpoints with `fetch`, read JSON back, then
+  ran `window.location.reload()` (cart page) or edited the header badge by id
+  (`cart_script.blade.php`).
+- Now `ShopCartController` `add` / `update` / `remove` answer
+  `back()->withNotify(...)`. Inertia follows the redirect and gets fresh
+  props: the cart lines, the totals and the header's cart count. The toast
+  comes from the normal `notify` prop.
+- Nothing else called those JSON endpoints.
+
+**The pay step has its own GET page.**
+
+- **Before:** the payment page was the *answer to the checkout POST*.
+  Refreshing it re-sent the form and created a second order, which held
+  stock a second time.
+- **Now:** the POST redirects to `GET /shop/order/{code}/pay`
+  (`shop.order.pay`).
+  - It is safe to reload or bookmark.
+  - It sends a paid or cash order on to the order page.
+  - It loads Paystack's inline script itself, once; if that fails it shows a
+    toast and keeps "Pay Now" disabled.
+- **After paying:** the browser does a normal page load of the callback,
+  exactly as before. The server still verifies the payment with Paystack.
+
+**Bugs fixed on the way:**
+
+| Before | Now |
+|---|---|
+| Choosing "Pay Online" while Paystack had no public key: the order was saved, its stock held and the cart emptied; *then* the buyer was sent to an empty checkout. | Checked **before** the order is created: a toast, and the cart is kept. |
+| A failed Paystack verification sent the buyer to `/shop/checkout`, which was empty (the cart had become the order), so they bounced to an empty cart. | Back to the order's pay page with the message, so they can try again. |
+| The order page said "Your payment was received" for an online order that was never paid (pop-up closed). | "Payment Not Completed" with a Pay Now button; no "invoice emailed" line until it is true. |
+| Checkout said "Final total is calculated for your selected state". The total never depends on the state (`ShopCartService::resolve()`). | "Prices are the same in every state. Your state tells us where you will collect your order." |
+| "Add" could grow one cart line past 50 (the limit `update` enforced) by adding again and again. | `ShopCartService::MAX_QUANTITY` (50) caps `add` too; one constant is used by the rules and the pages. |
+| The cart page allowed + past the stock; the server quietly showed the stock instead. | Each line carries its own `max` (stock, up to 50), and + stops there. |
+| Errors and messages used `->with('error')`, which only the checkout view printed. | `withNotify`, the toasts every other page uses. Checkout errors show under their own field. |
+
+**Kept from the old pages:**
+
+- the honeypot field on checkout;
+- the throttles on the cart and checkout routes;
+- last-click affiliate tracking (`affiliate.track` still runs on every
+  `/shop` request; React visits drop `?ref=`, so they never add clicks).
+
+**Still Blade, on purpose:**
+
+| View | Why |
+|---|---|
+| `shop/ad_preview.blade.php` | Read by link-preview bots (Facebook, WhatsApp…), which do not run JavaScript. People are redirected and never see it. |
+| `shop/pdf/invoice.blade.php` | Rendered to a PDF by DomPDF (download and email attachment). |
+| `maintenance.blade.php` | Shown while the site is down for maintenance; it should depend on as little as possible. |
+| `home`, `pages`, `faq`, `contact`, `policy` and `layouts/frontend` | Switched off by the owner (they redirect to login). Left untouched so they can be switched back on. |
+
+**Deleted:**
+
+- `shop/{index,product,cart,checkout,pay,success}.blade.php`;
+- `shop/partials/cart_script.blade.php`;
+- `layouts/shop.blade.php`;
+- `partials/shop_header.blade.php` and `partials/shop_footer.blade.php`.
+
+### Step 91: Fix: no `position: sticky` worked on any React page
+
+**The rule.** `dashboard.css` (copied from the old master layout) started
+with:
+
+```css
+html, body { overflow: auto !important; ... }
+```
+
+**What it broke.** Setting `overflow` on `<html>` stops the browser from
+handing the body's overflow to the window. The `<body>` then becomes a
+scroll box of its own, and that box never scrolls. Sticky elements stick
+inside the box that scrolls, so they never stuck:
+
+- the dashboard top bar (`.bank-topbar`);
+- the cart summary;
+- the new shop header.
+
+The `!important` also beat two scroll locks:
+
+- **the mobile sidebar,** which sets `body.style.overflow = 'hidden'`, so the
+  page scrolled behind the open menu;
+- **the Ad Center viewer,** which adds `html.adc-noscroll`.
+
+**Fix.** The `overflow` part of the rule is removed (padding and margin
+stay). `main.css` still hides sideways scrolling on the body, which now
+applies to the window as intended.
+
+**Tests.** New checks for the sticky top bar and the sidebar scroll lock fail
+with the old rule and pass with the new one.
+
+### Step 92: SEO without SSR, and verification for Phase 6
+
+**Why no server-side rendering.** The roadmap left the choice open: keep
+public pages on Blade, or turn on Inertia SSR. Neither was needed:
+
+- **The pages that matter for search** (home, blog, FAQ) are switched off.
+- **The shop's real need is link previews:** an affiliate shares a product
+  link on WhatsApp or Facebook. Previews only need the `<head>` of the
+  first HTML response.
+- **How it works:** `ShopController@show` passes `pageTitle`,
+  `seoContents` (description, social title, social description) and
+  `seoImage` (the product photo) to the root view with `withViewData()`.
+  `partials/seo` prints them as `<title>`, `description`, `og:title`,
+  `og:description` and `og:image`.
+- **Pages that do not pass them** keep the site-wide SEO settings.
+- **Shared ads** already have their own preview page (`ad_preview`).
+- **The cost of SSR** would be a Node process next to PHP on the server, for
+  no visible gain today.
+
+**Server checks** (`p6_check.php`, SQLite fixture):
+
+- **List:** filtered by category and by search. `publicLayout` shows the
+  categories, the highlight and a cart count of 0; the dashboard `layout` is
+  `null`.
+- **Product page:** the first HTML has the product's `<title>`,
+  `description`, `og:title`, `og:description` and `og:image` (the
+  `/shop/img/` URL). An inactive product → 404.
+- **Cart:**
+  - add ×2 works; ×60 is refused (max 50);
+  - an out-of-stock product → "currently unavailable";
+  - update to 9 with stock 3 shows 3;
+  - add ×50 more caps the line at 50;
+  - remove works.
+- **Checkout:**
+  - missing fields and a filled honeypot are refused;
+  - Paystack without a key: refused, the number of orders unchanged (4 → 4),
+    the cart kept;
+  - a Paystack order redirects to `/shop/order/{code}/pay`, whose props
+    hold only the gateway's public key, never the secret key;
+  - the order page shows "awaiting payment" with a pay link;
+  - the pay page for a paid order redirects to the order page;
+  - a cash order goes straight to the order page; with cash on pickup
+    switched off it is refused.
+- **Callback:** an unknown reference → shop with a toast; no secret key →
+  the order page with a toast.
+- **Old URLs and shared presenter:** `/cookie-policy` → 301 to
+  `/agreement`; the affiliate orders list still gets its status badge from
+  the shared presenter.
+- `route:cache` and `view:cache` succeed. The route-name scan finds only the
+  21 known `ipn.` references.
+
+**Browser checks** (`e2e/phase6.mjs`, 55 checks):
+
+- **Header:**
+  - categories, with "All Products" highlighted only on the list;
+  - the account menu opens, and closes on an outside click or Escape;
+  - the "stuck" shadow appears on scroll.
+- **Add to cart:** one POST with the CSRF header; the header badge updates
+  with no page reload.
+- **Search:** trims the text and keeps it in the box.
+- **Product page:** the quantity stays between 1 and the stock.
+- **Cart:**
+  - +, typed + Enter and remove send the right requests;
+  - + is disabled at the stock;
+  - an emptied box sends nothing.
+- **Checkout:** errors show under their fields; the honeypot is sent empty.
+- **Pay page:** Paystack opens with the key, email, amount in kobo and
+  reference; a finished payment does a full load of the callback; if
+  Paystack can't load, a toast shows and Pay Now stays disabled.
+- **Order page:** Copy Code works; Download Invoice is a plain link.
+- **Terms page:** 8 contents entries; links land below the sticky header.
+- **Members:** see "Hi, Ada"; Sign Out is a full page load.
+- **Phone width:** no page scrolls sideways at 375 px.
+- **Step 91:** the dashboard top bar sticks, and the open mobile sidebar
+  locks the page.
+
+**Regression:** all 21 browser suites pass, 601 checks in total.
 
 ## Part 4: Working on the front end
 

@@ -15,3 +15,16 @@ export type ProductCardData = {
 
 /** Order status key and label (App\Support\ShopPresenter::orderStatus). */
 export type OrderStatus = { key: 'pending' | 'redeemed' | 'cancelled'; label: string };
+
+/** One product tile on the public shop (App\Support\PublicShopPresenter::card). */
+export type PublicProduct = {
+    id: number;
+    name: string;
+    sku: string | null;
+    category: string;
+    image: string;
+    url: string;
+    price: Price;
+    featured: boolean;
+    inStock: boolean;
+};

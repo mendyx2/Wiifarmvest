@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\DashboardLayout;
+use App\Support\PublicLayout;
 use App\Support\Vite;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -60,7 +61,9 @@ class HandleInertiaRequests extends Middleware
             // (router.reload({ only: [...] })) skip its queries.
             // Not on the login / password / verification pages: they have their own
             // layout, and an unverified member has no dashboard yet.
-            'layout'       => fn () => $request->routeIs(self::GUEST_PAGES) ? null : DashboardLayout::for($request),
+            'layout'       => fn () => $request->routeIs([...self::GUEST_PAGES, ...PublicLayout::ROUTES]) ? null : DashboardLayout::for($request),
+            // Shop header and footer, for the public pages (Layouts/PublicLayout.tsx).
+            'publicLayout' => fn () => $request->routeIs(PublicLayout::ROUTES) ? PublicLayout::for($request) : null,
         ]);
     }
 

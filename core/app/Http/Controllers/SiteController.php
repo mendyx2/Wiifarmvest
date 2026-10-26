@@ -10,6 +10,7 @@ use App\Models\Language;
 use App\Constants\Status;
 use App\Models\Matrix;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use App\Models\SupportTicket;
 use App\Models\SupportMessage;
 use App\Models\AdminNotification;
@@ -148,22 +149,19 @@ class SiteController extends Controller
         Cookie::queue('gdpr_cookie', gs('site_name'), 43200);
     }
 
+    /** Terms of Use and Member Investment Policy (Pages/Public/Agreement.tsx). */
     public function aggreement()
-    { 
-        //$cookieContent = Frontend::where('data_keys', 'cookie.data')->first();
-        //abort_if($cookieContent->data_values->status != Status::ENABLE, 404);
-        $pageTitle = "WiiFarm Cooperative Society Ltd <br/>Terms of Use and Member Investment Policy";
-
-        //$cookie    = Frontend::where('data_keys', 'cookie.data')->first();
-        return view('Template::agreement', compact('pageTitle'));
+    {
+        return Inertia::render('Public/Agreement')->withViewData(['pageTitle' => 'Terms of Use']);
     }
+
+    /**
+     * The cookie-policy page showed the same terms text as /agreement (the
+     * two views were copies of each other), so it now sends visitors there.
+     */
     public function cookiePolicy()
     {
-        $cookieContent = Frontend::where('data_keys', 'cookie.data')->first();
-        abort_if($cookieContent->data_values->status != Status::ENABLE, 404);
-        $pageTitle = "WiiFarm Cooperative Society Ltd <br/>Terms of Use and Member Investment Policy";
-        $cookie    = Frontend::where('data_keys', 'cookie.data')->first();
-        return view('Template::cookie', compact('pageTitle', 'cookie'));
+        return redirect()->route('agreement', status: 301);
     }
 
     public function placeholderImage($size = null)

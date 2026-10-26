@@ -9,6 +9,9 @@ class ShopCartService
 {
     const SESSION_KEY = 'shop_cart';
 
+    /** Most of one product a cart line can hold. */
+    const MAX_QUANTITY = 50;
+
     public function raw(): array
     {
         return Session::get(self::SESSION_KEY, []);
@@ -18,7 +21,7 @@ class ShopCartService
     {
         $quantity = max(1, $quantity);
         $cart     = $this->raw();
-        $cart[$productId] = ($cart[$productId] ?? 0) + $quantity;
+        $cart[$productId] = min(self::MAX_QUANTITY, ($cart[$productId] ?? 0) + $quantity);
         Session::put(self::SESSION_KEY, $cart);
     }
 

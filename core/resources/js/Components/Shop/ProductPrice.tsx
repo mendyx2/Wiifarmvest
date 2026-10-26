@@ -1,8 +1,8 @@
 import { useTrans } from '@/lib/i18n';
 import type { Price } from './types';
 
-/** React version of <x-product.price>: "₦4,000 NGN" or "₦4,000–₦4,200 NGN". */
-export default function ProductPrice({ price, className = '' }: { price: Price; className?: string }) {
+/** React version of <x-product.price>: "₦4,000 NGN" or "₦4,000–₦4,200 NGN" (showCode false: no "NGN"). */
+export default function ProductPrice({ price, className = '', showCode = true }: { price: Price; className?: string; showCode?: boolean }) {
     const t = useTrans();
     return (
         <span className={`pp-price ${className}`}>
@@ -15,7 +15,11 @@ export default function ProductPrice({ price, className = '' }: { price: Price; 
                     </>
                 )}
             </span>
-            <abbr className="pp-price__code" title={t('Prices in :code', { code: price.code })}>{price.code}</abbr>
+            {showCode && (
+                <abbr className="pp-price__code" title={t('Prices in :code', { code: price.code })}>
+                    {price.code}
+                </abbr>
+            )}
         </span>
     );
 }
