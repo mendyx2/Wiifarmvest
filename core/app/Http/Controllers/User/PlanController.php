@@ -710,7 +710,7 @@ class PlanController extends Controller
     /**
      * Genealogy tree page (own tree, or a downline member's tree).
      * Migrated to React + Inertia (resources/js/Pages/User/MyTree.tsx).
-     * Legacy view: Template::user.myTree
+     * (The old Blade view, user/myTree.blade.php, was deleted in Step 99.)
      */
     private function renderTree(string $pageTitle, array $tree, User $owner)
     {
@@ -724,7 +724,7 @@ class PlanController extends Controller
 
     /**
      * Stage tree page. Migrated to React + Inertia (resources/js/Pages/User/MyStages.tsx).
-     * Legacy view: Template::user.myStages
+     * (The old Blade view, user/myStages.blade.php, was deleted in Step 99.)
      */
     private function renderStageTree(string $pageTitle, array $tree, $stage)
     {

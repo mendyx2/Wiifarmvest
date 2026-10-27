@@ -25,9 +25,10 @@ class TreePresenter
     /**
      * @param  array<string, ?User>  $tree
      * @param  bool  $slots  Empty slots under an existing member link to the distributor form.
+     * @param  bool  $admin  Admin tree: tree links stay in the admin panel, plus a link to the member's admin page.
      * @return array<string, ?array>
      */
-    public static function nodes(array $tree, bool $slots): array
+    public static function nodes(array $tree, bool $slots, bool $admin = false): array
     {
         $users    = collect($tree)->filter();
         $ids      = $users->pluck('id')->all();
@@ -48,8 +49,8 @@ class TreePresenter
                     'pvRight'     => (float) ($m->pv_right_pairing ?? 0),
                     'pvLeftRank'  => (float) ($m->pv_left ?? 0),
                     'pvRightRank' => (float) ($m->pv_right ?? 0),
-                    'treeUrl'     => route('user.other.tree', $user->username),
-                ];
+                    'treeUrl'     => route($admin ? 'admin.users.other.tree' : 'user.other.tree', $user->username),
+                ] + ($admin ? ['detailUrl' => route('admin.users.detail', $user->id)] : []);
                 continue;
             }
 

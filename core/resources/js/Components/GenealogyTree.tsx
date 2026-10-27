@@ -13,6 +13,8 @@ export type TreeMember = {
     pvLeftRank: number;
     pvRightRank: number;
     treeUrl: string;
+    /** Admin tree: the member's admin page */
+    detailUrl?: string;
 };
 /** An empty position under an existing member: links to the distributor form. */
 export type TreeSlot = { slot: { side: 'left' | 'right'; parent: string; url: string } };
@@ -132,6 +134,11 @@ export default function GenealogyTree({ nodes, images }: Props) {
                             <Link href={selected.treeUrl} className="tree-modal-btn tree_url" onClick={() => setSelected(null)}>
                                 <i className="las la-project-diagram" /> {t('View Their Tree')}
                             </Link>
+                            {selected.detailUrl && (
+                                <Link href={selected.detailUrl} className="tree-modal-btn tree-modal-btn--secondary mt-2" onClick={() => setSelected(null)}>
+                                    <i className="las la-user" /> {t('Open Member Page')}
+                                </Link>
+                            )}
                         </div>
                     </>
                 )}

@@ -1,0 +1,26 @@
+/* Bulk notification: the countdown between batches and the member picker. */
+.notify-run .notify-countdown { position: relative; width: 100px; height: 100px; margin: 0 auto; }
+.notify-run .notify-countdown svg { width: 100px; height: 100px; transform: rotateY(-180deg) rotateZ(-90deg); }
+.notify-run .notify-countdown circle {
+    stroke-dasharray: 314px; stroke-linecap: round; stroke-width: 6px; stroke: #4634ff; fill: transparent;
+    transition: stroke-dashoffset 1s linear;
+}
+.notify-run .notify-countdown::before {
+    content: ''; position: absolute; inset: 8px; border-radius: 100%; outline: 5px solid #f3f3f9;
+}
+.notify-run .notify-countdown__count {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 30px; color: #4634ff;
+}
+@media (prefers-reduced-motion: reduce) {
+    .notify-run .notify-countdown circle { transition: none; }
+}
+
+.member-picker__chosen { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.member-picker__chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 999px; background: #eef0ff; color: #4634ff; font-size: .85rem; }
+.member-picker__chip button { border: 0; background: transparent; color: inherit; font-size: 1.1rem; line-height: 1; padding: 0 6px; cursor: pointer; }
+.member-picker__list { list-style: none; margin: 6px 0 0; padding: 0; max-height: 220px; overflow-y: auto; border: 1px solid #e5e5e5; border-radius: 5px; }
+.member-picker__list li + li { border-top: 1px solid #f1f1f1; }
+.member-picker__list label { display: flex; align-items: center; gap: 10px; margin: 0; padding: 8px 12px; cursor: pointer; }
+.member-picker__list label:hover { background: #f7f7fb; }
+.member-picker__list small { color: #6b7280; }
+.member-picker__empty { padding: 8px 12px; color: #6b7280; }

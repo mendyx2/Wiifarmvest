@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96). Next: 7c users · 7d shop, stockists, affiliate · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99). Next: 7d shop, stockists, affiliate · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -4155,6 +4155,123 @@ Details button now open the member page as Inertia visits.
   - **Phone width:** no sideways scroll.
 - **Regression:** 26 browser suites, 768 checks, all pass. Two older checks
   now expect an Inertia visit to the member page instead of a full load.
+
+### Step 99: Send Notification and the admin member trees in React (7c-3)
+
+This finishes 7c (users).
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Users/NotifyOne.tsx` | `admin.users.notification.single` (Send Notification on the member page) | `users/notification_single.blade.php` |
+| `Pages/Admin/Users/NotifyAll.tsx` | `admin.users.notification.all` (Manage Users → Send Notification) | `users/notification_all.blade.php` |
+| `Pages/Admin/Users/Tree.tsx` | `admin.users.other.tree` (a member's binary tree) | `users/tree.blade.php` |
+
+**New shared pieces (`Components/Admin/`):**
+
+- `ChannelPicker.tsx`: the "Send via Email / SMS / Firebase" cards. Only
+  the channels switched on in General Settings are offered; the server
+  sends the list (`notificationChannels()`).
+- `RichTextEditor.tsx`: a small formatting box (bold, italic, lists,
+  links…) that replaces the jQuery nicEdit editor. It hands back HTML.
+  Links must start with `http(s):` or `mailto:`.
+- `NotificationFields.tsx`: channel, subject, image and message, used by
+  both pages. Email gets the editor; SMS and push get a plain text box.
+  SMS has no subject; only push takes an image. Switching channel keeps
+  the text (HTML is turned into plain text and back) instead of wiping it,
+  as the old page did.
+
+**How bulk sending works now.** The message goes out in batches with a
+pause (the "cooling period") between them.
+
+1. The first POST carries the message and the settings. The server checks
+   them, works out how many members will get it, sends the first batch and
+   keeps the run in the session.
+2. The page then shows the run: should be sent / sent / still to send /
+   per batch, a countdown and a progress bar.
+3. When the countdown ends, the page posts `continue=1` and the server
+   sends the next batch from the stored run. This repeats until all are
+   sent; then the form comes back.
+4. **Stop Sending** posts `cancel=1` (after a confirm), which forgets the
+   run.
+5. Leaving the page mid-run asks first: closing the tab, or a sidebar link.
+   Coming back later resumes the run.
+6. If a batch comes back with no progress (an error), the page waits a full
+   period again instead of retrying at once.
+
+The **"Selected Users"** picker searches active members by username or
+email (`admin.users.list`, JSON) and shows the chosen ones as removable
+chips. It replaces select2. The hint under "Being Sent To" shows how many
+active members are in the group (`admin.users.segment.count`).
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Security:** the audience name from the form was called as a query method on `User` (`User::active()->$name()`). `being_sent_to=delete`, or opening `/admin/users/count-by-segment/delete`, would have **deleted every active member**. | The name must be one of the audiences in `User::notifyToUser()`. Anything else is refused (form) or answers `{"count": null}` (count URL). |
+| The cooling-period box was pre-filled with the batch size. | Its own value (default 10 seconds, at most 3,600). |
+| A push image was only attached to the first batch. | Stored once with the run and sent with every batch. |
+| "Start from" was lost after the first batch: the next batch restarted from "sent + 1". | Each batch starts at (start − 1) + sent. |
+| "Top deposited users" sorted by join date first, so it took the oldest depositors, and its count ignored N. | Biggest depositors first, and at most N members. |
+| The batch size had no limit. | 1 to 1,000 members. |
+| The member picker JSON sent whole member records (mobile, address, bank details…). | Only id, username, email and full name. |
+| "Choose a member" errors and "no recipients" were easy to miss. | Shown under the field / as a toast. |
+
+**Trees:**
+
+- The admin tree uses the member tree component (`GenealogyTree`) with
+  `TreePresenter::nodes(..., admin: true)`. Each member's dialog has **View
+  Their Tree** (the admin tree) and a new **Open Member Page** button.
+  Empty places are not "add a member here" links in the admin tree.
+- The header shows the member, their parent in the tree (a link to the
+  parent's tree) and a username search.
+- **CSS moved:** the tree page rules (header, search, legend, tree,
+  dialog) moved from `dashboard.css` to `Components/GenealogyTree.css`, so
+  the admin panel (which does not load `dashboard.css`) gets them too. The
+  phone rules sit last in the file so they still win.
+
+**Duplicates removed:**
+
+- `admin.users.single.tree` (`/admin/users/tree/{username}`) was a second
+  admin tree page. It now redirects to `admin.users.other.tree`.
+- The member area's old `templates/basic/user/myTree.blade.php` and
+  `myStages.blade.php` were dead (React since an earlier step) and are
+  deleted.
+
+**Deleted:** `admin/users/notification_single.blade.php`,
+`notification_all.blade.php` and `tree.blade.php`. nicEdit and select2 stay
+in the Blade admin layout for the pages that are still Blade.
+
+**Verification:**
+
+- **Server checks** (`p7c3_check.php`):
+  - **Tree:** props, parent, admin URLs on the nodes; search by username;
+    unknown member → back with a message; old URL redirects; the member's
+    own tree still has member URLs only.
+  - **Notify one:** missing subject; a switched-off channel refused; email
+    sent and logged.
+  - **Whitelist:** `delete`, `forceDelete`, `truncate` → `{"count":null}`
+    and a validation error; members still all there.
+  - **A run:** start 2, batch 2 over 6 members → members 20–24 each get it
+    once, in order, over three batches; the run is then gone.
+  - **Cancel**, **selected users** (only the chosen two), **top 2
+    depositors** (the two biggest), **all channels off** (redirect).
+- **Browser checks** (`e2e/phase7c3.mjs`, 40 checks):
+  - **Tree:** header, parent link, CSS present in the admin panel, member
+    dialog with Open Member Page (Inertia visit), search.
+  - **Notify one:** the editor makes bold text; the POST carries the HTML;
+    channel switching (subject/image shown or hidden, text carried over and
+    escaped); the push image is uploaded; server errors under fields.
+  - **Notify all:** audience hint (fetched once per group), the extra boxes
+    per group, the member picker (search, chips, remove), the POST fields.
+  - **Run:** the numbers and the progress bar; the countdown posts
+    `continue`; a failed batch waits a full period; a sidebar link asks
+    first; Stop Sending posts `cancel`.
+  - **Phone width:** no sideways scroll on all three pages.
+- **Regression:** 26 browser suites, 794 checks, all pass. `route:cache`
+  and `view:cache` succeed; the route-name scan shows only the 21 known
+  `ipn.` references.
 
 ## Part 4: Working on the front end
 

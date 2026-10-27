@@ -68,6 +68,10 @@ class AdminLayout
         'admin.users.sponsor.history',
         'admin.users.referral',
         'admin.users.detail',
+        'admin.users.notification.single',
+        'admin.users.notification.all',
+        'admin.users.other.tree',
+        'admin.users.single.tree',
     ];
 
     public static function for(Request $request): ?array

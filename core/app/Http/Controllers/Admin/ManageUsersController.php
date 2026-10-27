@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use App\Support\AdminPresenter;
+use App\Support\TreePresenter;
 use Inertia\Inertia;
 
 class ManageUsersController extends Controller
@@ -1042,27 +1043,41 @@ class ManageUsersController extends Controller
         return back()->withNotify($notify);
     }
 
+    /** Channels switched on in General Settings (email, SMS, push), in that order. */
+    private function notificationChannels(): array
+    {
+        return array_keys(array_filter(['email' => (bool) gs('en'), 'sms' => (bool) gs('sn'), 'push' => (bool) gs('pn')]));
+    }
+
+    /** Send Notification to one member (Pages/Admin/Users/NotifyOne.tsx). */
     public function showNotificationSingleForm($id)
     {
         $user = User::findOrFail($id);
-        if (!gs('en') && !gs('sn') && !gs('pn')) {
+        if (!$this->notificationChannels()) {
             $notify[] = ['warning', 'Notification options are disabled currently'];
             return to_route('admin.users.detail', $user->id)->withNotify($notify);
         }
-        $pageTitle = 'Send Notification to ' . $user->username;
-        return view('admin.users.notification_single', compact('pageTitle', 'user'));
+
+        $title = 'Send Notification to ' . $user->username;
+
+        return Inertia::render('Admin/Users/NotifyOne', [
+            'title'    => $title,
+            'member'   => AdminPresenter::user($user),
+            'channels' => $this->notificationChannels(),
+            'urls'     => ['send' => route('admin.users.notification.single', $user->id)],
+        ])->withViewData(['pageTitle' => $title]);
     }
 
     public function sendNotificationSingle(Request $request, $id)
     {
         $request->validate([
-            'message' => 'required',
-            'via'     => 'required|in:email,sms,push',
-            'subject' => 'required_if:via,email,push',
+            'message' => 'required|string|max:65000',
+            'via'     => 'required|in:' . implode(',', $this->notificationChannels() ?: ['email', 'sms', 'push']),
+            'subject' => 'required_if:via,email,push|nullable|string|max:255',
             'image'   => ['nullable', 'image', new FileTypeValidate(['jpg', 'jpeg', 'png'])],
         ]);
 
-        if (!gs('en') && !gs('sn') && !gs('pn')) {
+        if (!$this->notificationChannels()) {
             $notify[] = ['warning', 'Notification options are disabled currently'];
             return to_route('admin.dashboard')->withNotify($notify);
         }
@@ -1086,138 +1101,183 @@ class ManageUsersController extends Controller
         return back()->withNotify($notify);
     }
 
-    public function showNotificationAllForm()
+    /**
+     * The audience names the bulk sender accepts: the keys of
+     * User::notifyToUser(). The request used to name the query method itself
+     * (User::...->$scope()), so being_sent_to=delete (or the count URL
+     * /count-by-segment/delete) would have deleted every active member.
+     */
+    private function audience(?string $name): ?string
     {
-        if (!gs('en') && !gs('sn') && !gs('pn')) {
-            $notify[] = ['warning', 'Notification options are disabled currently'];
-            return to_route('admin.dashboard')->withNotify($notify);
-        }
-
-        $notifyToUser = User::notifyToUser();
-        $users        = User::active()->count();
-        $pageTitle    = 'Notification to Verified Users';
-
-        if (session()->has('SEND_NOTIFICATION') && !request()->email_sent) {
-            session()->forget('SEND_NOTIFICATION');
-        }
-
-        return view('admin.users.notification_all', compact('pageTitle', 'users', 'notifyToUser'));
+        return $name !== null && array_key_exists($name, User::notifyToUser()) ? $name : null;
     }
 
-    public function sendNotificationAll(Request $request)
+    /** Send Notification to many members (Pages/Admin/Users/NotifyAll.tsx), in batches. */
+    public function showNotificationAllForm()
     {
-        $request->validate([
-            'via'                          => 'required|in:email,sms,push',
-            'message'                      => 'required',
-            'subject'                      => 'required_if:via,email,push',
-            'start'                        => 'required|integer|gte:1',
-            'batch'                        => 'required|integer|gte:1',
-            'being_sent_to'                => 'required',
-            'cooling_time'                 => 'required|integer|gte:1',
-            'number_of_top_deposited_user' => 'required_if:being_sent_to,topDepositedUsers|integer|gte:0',
-            'number_of_days'               => 'required_if:being_sent_to,notLoginUsers|integer|gte:0',
-            'image'                        => ["nullable", 'image', new FileTypeValidate(['jpg', 'jpeg', 'png'])],
-        ], [
-            'number_of_days.required_if'               => "Number of days field is required",
-            'number_of_top_deposited_user.required_if' => "Number of top deposited user field is required",
-        ]);
-
-        if (!gs('en') && !gs('sn') && !gs('pn')) {
+        if (!$this->notificationChannels()) {
             $notify[] = ['warning', 'Notification options are disabled currently'];
             return to_route('admin.dashboard')->withNotify($notify);
         }
 
+        $run = session('SEND_NOTIFICATION');
 
-        $template = NotificationTemplate::where('act', 'DEFAULT')->where($request->via . '_status', Status::ENABLE)->exists();
-        if (!$template) {
-            $notify[] = ['warning', 'Default notification template is not enabled'];
-            return back()->withNotify($notify);
+        return Inertia::render('Admin/Users/NotifyAll', [
+            'channels'  => $this->notificationChannels(),
+            'audiences' => collect(User::notifyToUser())->map(fn ($label, $key) => ['value' => $key, 'label' => __($label)])->values(),
+            'activeUsers' => User::active()->count(),
+            // A run in progress: the page counts down and asks for the next batch.
+            'run' => $run ? [
+                'via'      => $run['via'],
+                'subject'  => $run['subject'] ?? null,
+                'audience' => __(User::notifyToUser()[$run['being_sent_to']] ?? ''),
+                'total'    => (int) $run['total_user'],
+                'sent'     => (int) $run['total_sent'],
+                'batch'    => (int) $run['batch'],
+                'cooling'  => (int) $run['cooling_time'],
+            ] : null,
+            'urls' => [
+                'send'  => route('admin.users.notification.all.send'),
+                'count' => route('admin.users.segment.count', ':audience'),
+                'users' => route('admin.users.list'),
+            ],
+        ])->withViewData(['pageTitle' => 'Notification to Verified Users']);
+    }
+
+    /**
+     * One batch. The first request carries the message and the settings; they
+     * are kept in the session, and each following batch only sends
+     * `continue=1`. `cancel=1` stops a run.
+     */
+    public function sendNotificationAll(Request $request)
+    {
+        if ($request->boolean('cancel')) {
+            session()->forget('SEND_NOTIFICATION');
+            return to_route('admin.users.notification.all')->withNotify([['info', 'Sending stopped.']]);
         }
 
-        if ($request->being_sent_to == 'selectedUsers') {
-            if (session()->has("SEND_NOTIFICATION")) {
-                $request->merge(['user' => session()->get('SEND_NOTIFICATION')['user']]);
-            } else {
-                if (!$request->user || !is_array($request->user) || empty($request->user)) {
-                    $notify[] = ['error', "Ensure that the user field is populated when sending an email to the designated user group"];
-                    return back()->withNotify($notify);
-                }
+        if (!$this->notificationChannels()) {
+            $notify[] = ['warning', 'Notification options are disabled currently'];
+            return to_route('admin.dashboard')->withNotify($notify);
+        }
+
+        $run = session('SEND_NOTIFICATION');
+
+        if (!$run || !$request->boolean('continue')) {
+            $request->validate([
+                'via'                          => 'required|in:' . implode(',', $this->notificationChannels()),
+                'message'                      => 'required|string|max:65000',
+                'subject'                      => 'required_if:via,email,push|nullable|string|max:255',
+                'start'                        => 'required|integer|gte:1',
+                'batch'                        => 'required|integer|gte:1|lte:1000',
+                'being_sent_to'                => 'required|in:' . implode(',', array_keys(User::notifyToUser())),
+                'cooling_time'                 => 'required|integer|gte:1|lte:3600',
+                'number_of_top_deposited_user' => 'required_if:being_sent_to,topDepositedUsers|nullable|integer|gte:1',
+                'number_of_days'               => 'required_if:being_sent_to,notLoginUsers|nullable|integer|gte:0',
+                'user'                         => 'required_if:being_sent_to,selectedUsers|array',
+                'user.*'                       => 'integer',
+                'image'                        => ['nullable', 'image', new FileTypeValidate(['jpg', 'jpeg', 'png'])],
+            ], [
+                'number_of_days.required_if'               => 'Number of days field is required',
+                'number_of_top_deposited_user.required_if' => 'Number of top deposited user field is required',
+                'user.required_if'                         => 'Choose at least one member.',
+            ]);
+
+            $template = NotificationTemplate::where('act', 'DEFAULT')->where($request->via . '_status', Status::ENABLE)->exists();
+            if (!$template) {
+                return back()->withNotify([['warning', 'Default notification template is not enabled']]);
+            }
+
+            $run = [
+                'via'           => $request->via,
+                'subject'       => $request->subject,
+                'message'       => $request->message,
+                'being_sent_to' => $this->audience($request->being_sent_to),
+                'user'          => array_map('intval', (array) $request->user),
+                'number_of_top_deposited_user' => $request->number_of_top_deposited_user,
+                'number_of_days' => $request->number_of_days,
+                'start'         => (int) $request->start,
+                'batch'         => (int) $request->batch,
+                'cooling_time'  => (int) $request->cooling_time,
+                // Stored once: the old code only attached the image to the first batch.
+                'image'         => $request->via === 'push' && $request->hasFile('image') ? fileUploader($request->image, getFilePath('push')) : null,
+                'total_sent'    => 0,
+            ];
+            $run['total_user'] = $this->audienceCount($run);
+
+            if ($run['total_user'] <= 0) {
+                return back()->withNotify([['error', 'Notification recipients were not found among the selected user base.']]);
             }
         }
 
-        $scope     = $request->being_sent_to;
-        $userQuery = User::oldest()->active()->$scope();
+        // The scopes read their options from the request (selected ids, top N, days).
+        $request->merge(['user' => $run['user'], 'number_of_top_deposited_user' => $run['number_of_top_deposited_user'], 'number_of_days' => $run['number_of_days']]);
 
-        if (session()->has("SEND_NOTIFICATION")) {
-            $totalUserCount = session('SEND_NOTIFICATION')['total_user'];
-        } else {
-            $totalUserCount = (clone $userQuery)->count() - ($request->start - 1);
-        }
-
-
-        if ($totalUserCount <= 0) {
-            $notify[] = ['error', "Notification recipients were not found among the selected user base."];
-            return back()->withNotify($notify);
-        }
-
-
-        $imageUrl = null;
-
-        if ($request->via == 'push' && $request->hasFile('image')) {
-            if (session()->has("SEND_NOTIFICATION")) {
-                $request->merge(['image' => session()->get('SEND_NOTIFICATION')['image']]);
-            }
-            if ($request->hasFile("image")) {
-                $imageUrl = fileUploader($request->image, getFilePath('push'));
-            }
-        }
-
-        $users = (clone $userQuery)->skip($request->start - 1)->limit($request->batch)->get();
+        // Offset from the admin's own start: the old code restarted from
+        // "sent + 1" after the first batch, ignoring it.
+        $offset = ($run['start'] - 1) + $run['total_sent'];
+        $take   = min($run['batch'], $run['total_user'] - $run['total_sent']);
+        $users  = $this->audienceQuery($run)->skip($offset)->limit($take)->get();
 
         foreach ($users as $user) {
             notify($user, 'DEFAULT', [
-                'subject' => $request->subject,
-                'message' => $request->message,
-            ], [$request->via], pushImage: $imageUrl);
+                'subject' => $run['subject'],
+                'message' => $run['message'],
+            ], [$run['via']], pushImage: $run['image']);
         }
 
-        return $this->sessionForNotification($totalUserCount, $request);
+        $run['total_sent'] += $take;
+        $done = $users->isEmpty() || $run['total_sent'] >= $run['total_user'];
+
+        if ($done) {
+            session()->forget('SEND_NOTIFICATION');
+            $message = ucfirst($run['via']) . ' notifications were sent successfully';
+        } else {
+            session()->put('SEND_NOTIFICATION', $run);
+            $message = $run['total_sent'] . ' ' . $run['via'] . ' notifications were sent successfully';
+        }
+
+        return to_route('admin.users.notification.all')->withNotify([['success', $message]]);
     }
 
-
-    private function sessionForNotification($totalUserCount, $request)
+    /** Members of a run's audience, oldest first; the scope name is checked against the list. */
+    private function audienceQuery(array $run)
     {
-        if (session()->has('SEND_NOTIFICATION')) {
-            $sessionData                = session("SEND_NOTIFICATION");
-            $sessionData['total_sent'] += $sessionData['batch'];
-        } else {
-            $sessionData               = $request->except('_token');
-            $sessionData['total_sent'] = $request->batch;
-            $sessionData['total_user'] = $totalUserCount;
+        $scope = $this->audience($run['being_sent_to']) ?? 'selectedUsers';
+        if ($scope === 'topDepositedUsers') {
+            // Biggest depositors first. The old query sorted by join date first
+            // (oldest()), so it took the oldest depositors, not the top ones.
+            // The scope's take(N) is replaced by skip()/limit(); the total is capped at N instead.
+            return User::active()->topDepositedUsers()->reorder('deposits_sum_amount', 'desc')->orderBy('users.id');
         }
 
-        $sessionData['start'] = $sessionData['total_sent'] + 1;
-
-        if ($sessionData['total_sent'] >= $totalUserCount) {
-            session()->forget("SEND_NOTIFICATION");
-            $message = ucfirst($request->via) . " notifications were sent successfully";
-            $url     = route("admin.users.notification.all");
-        } else {
-            session()->put('SEND_NOTIFICATION', $sessionData);
-            $message = $sessionData['total_sent'] . " " . $sessionData['via'] . "  notifications were sent successfully";
-            $url     = route("admin.users.notification.all") . "?email_sent=yes";
-        }
-        $notify[] = ['success', $message];
-        return redirect($url)->withNotify($notify);
+        return User::oldest()->active()->$scope();
     }
 
+    /** How many members a run will reach, from its start position (and at most the top N). */
+    private function audienceCount(array $run): int
+    {
+        request()->merge(['user' => $run['user'], 'number_of_top_deposited_user' => $run['number_of_top_deposited_user'], 'number_of_days' => $run['number_of_days']]);
+        $scope = $this->audience($run['being_sent_to']) ?? 'selectedUsers';
+        $count = $scope === 'topDepositedUsers'
+            ? min(User::active()->hasDepositedUsers()->count(), (int) $run['number_of_top_deposited_user'])
+            : User::active()->$scope()->count();
+
+        return max(0, $count - ($run['start'] - 1));
+    }
+
+    /** Active members in one audience, for the form's hint (JSON). */
     public function countBySegment($methodName)
     {
-        return User::active()->$methodName()->count();
+        $scope = $this->audience($methodName);
+        if (!$scope || in_array($scope, ['selectedUsers', 'topDepositedUsers', 'notLoginUsers'], true)) {
+            return response()->json(['count' => null]);
+        }
+
+        return response()->json(['count' => User::active()->$scope()->count()]);
     }
 
-
-
+    /** Member picker for "Selected Users" (JSON): only what the picker shows. */
     public function list()
     {
         $query = User::active();
@@ -1228,10 +1288,14 @@ class ManageUsersController extends Controller
             });
         }
         $users = $query->orderBy('id', 'desc')->paginate(getPaginate());
+
         return response()->json([
             'success' => true,
-            'users'   => $users,
-            'more'    => $users->hasMorePages()
+            // The whole User models were sent before (mobile, address, bank details…).
+            'users'   => ['data' => $users->getCollection()->map(fn (User $u) => [
+                'id' => $u->id, 'username' => (string) $u->username, 'email' => (string) $u->email, 'fullname' => (string) $u->fullname,
+            ])->values()],
+            'more'    => $users->hasMorePages(),
         ]);
     }
 
@@ -1241,40 +1305,37 @@ class ManageUsersController extends Controller
         return app(ReportController::class)->notificationPage(request(), User::findOrFail($id));
     }
  
-     public function tree($username)
+    /** Old URL (/admin/users/tree/{username}): the same page as otherTree(). */
+    public function tree($username)
     {
-
-        $user = User::where('username', $username)->first();
-
-        if ($user) { 
-            $tree      = showMatrixTree($user->id);
-            $pageTitle = "Tree of " . $user->fullname;
-            return view('admin.users.tree', compact('tree', 'pageTitle'));
-        }
-
-        $notify[] = ['error', 'Tree Not Found!!'];
-        return redirect()->route('admin.dashboard')->withNotify($notify);
+        return to_route('admin.users.other.tree', $username);
     }
-  
+
+    /** A member's binary tree (Pages/Admin/Users/Tree.tsx), searchable by username. */
     public function otherTree(Request $request, $username = null)
-    {  
-        //dd($request);
-        if ($request->username) {
-            $user = User::where('username', $request->username)->first();
-        } else {
-            $user = User::where('username', $username)->first();
-        }
-        if ($user) {
-           
-            $pageTitle = "Tree of " . $user->fullname;
-            $tree      = showMatrixTree($user->id);
-            //dd($tree);
-            return view('admin.users.tree', compact('tree', 'pageTitle'));
+    {
+        $name = (string) ($request->username ?: $username);
+        $user = $name !== '' && $name !== 'search' ? User::where('username', $name)->first() : null;
+
+        if (!$user) {
+            $notify[] = ['error', $name !== '' && $name !== 'search' ? 'No member with the username "' . $name . '".' : 'Enter a username to see a tree.'];
+            return $request->header('referer') ? back()->withNotify($notify) : to_route('admin.users.all')->withNotify($notify);
         }
 
-        $notify[] = ['error', 'Tree Not Found !'];
-        return redirect()->route('admin.dashboard')->withNotify($notify);
+        $tree   = showMatrixTree($user->id);
+        $parent = parentInMatrix($user->id, 1);
+        $title  = 'Tree of ' . $user->fullname;
+
+        return Inertia::render('Admin/Users/Tree', [
+            'title'  => $title,
+            'owner'  => AdminPresenter::user($user),
+            'parent' => $parent ? ['username' => (string) $parent->username, 'url' => route('admin.users.other.tree', $parent->username)] : null,
+            'nodes'  => TreePresenter::nodes($tree, slots: false, admin: true),
+            'images' => TreePresenter::images(),
+            'urls'   => ['tree' => route('admin.users.other.tree')],
+        ])->withViewData(['pageTitle' => $title]);
     }
+
     public function userRef($id)
     {
         $user = User::findOrFail($id);

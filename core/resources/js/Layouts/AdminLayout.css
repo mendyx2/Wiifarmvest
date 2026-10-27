@@ -118,3 +118,48 @@
     object-fit: cover;
     border-radius: 6px;
 }
+
+/* Components/Admin/ChannelPicker.tsx: the cards are buttons now. */
+button.notification-via {
+    background: #fff;
+    font: inherit;
+    text-align: center;
+}
+
+/* Components/Admin/RichTextEditor.tsx (replaces nicEdit) */
+.admin-rte__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid #ced4da;
+    border-bottom: 0;
+    border-radius: 5px 5px 0 0;
+    background: #f8f9fa;
+}
+
+.admin-rte__btn {
+    border: 0;
+    background: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    color: #34495e;
+}
+
+.admin-rte__btn:hover,
+.admin-rte__btn:focus-visible {
+    background: #e9ecef;
+}
+
+.admin-rte__box {
+    height: auto;
+    border-radius: 0 0 5px 5px;
+    overflow: auto;
+}
+
+.admin-rte__box:focus {
+    outline: none;
+    box-shadow: none;
+    border-color: #4634ff;
+}
