@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104). Next: 7e-3 savings and loans · 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105). Next: 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -4751,6 +4751,125 @@ full; other admins see the first 20 characters.
   - Refunded badges and the details dialog; Escape closes it;
   - no sideways scroll at phone width.
 - **Regression:** 31 browser suites, 1001 checks, all pass. `route:cache`
+  and `view:cache` succeed; the route-name scan shows only the 21 known
+  `ipn.` references.
+
+### Step 105: Savings and loans in React (7e-3)
+
+This finishes 7e.
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Savings/Settings.tsx` | `admin.savings.settings` | `savings/settings.blade.php` |
+| `Savings/Index.tsx`, `Savings/Show.tsx` | `admin.savings.index`, `admin.savings.show` | `savings/index.blade.php`, `savings/show.blade.php` |
+| `Savings/Cycles.tsx` | `admin.savings.cycles` | `savings/cycles.blade.php`, `savings/_cycle_form.blade.php` |
+| `Pages/Admin/Loans/Index.tsx` | `admin.loans.index`, `admin.loans.pending` | `loans/index.blade.php`, `loans/pending.blade.php` |
+| `Loans/Show.tsx` | `admin.loans.show` | `loans/show.blade.php` |
+| `Loans/Products.tsx` | `admin.loans.products` | `loans/products.blade.php`, `loans/_product_form.blade.php` |
+
+`Components/Admin/LoanReject.tsx` is the "Reject Loan Application"
+dialog, used by the loan list and the loan page.
+
+**Duplicates removed:**
+
+- **Pending Loans and All Loans** were two pages over the same loans with
+  the same Approve / Reject. Pending Loans is now All Loans with the
+  status fixed to pending. It shows the columns a decision needs: total
+  repayable, savings at application, purpose. The sidebar link and URL
+  are unchanged.
+- The add and edit dialogs for loan products, farm cycles and savings
+  settings each included the same Blade form twice. The two copies had
+  the same element ids, so clicking a label in the edit dialog ticked
+  the box in the hidden "new" dialog. Each form is now one React
+  component.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Farm cycle Pay Out paid nobody.** The controller marked the cycle `payout_processed` and then queued the payout job. The job skips a cycle that is already marked, so no member was credited, and the cycle stayed "closed", showing "Paid out" with the button gone. | The job alone marks the cycle, under its lock, when it pays. A second click or a second job still finds it done. Migration `2026_10_27_000001_reopen_unpaid_farm_cycles` clears the flag on cycles left in that state ("closed" + flag set can only be one of them), so Pay Out shows again; the actual yield entered is kept. **After deploying, run the migration and press Pay Out on any such cycle.** |
+| **A saving could be paid twice.** The maturity runs (`ProcessPayment` for target/fixed savings, the farm cycle job) pay a saving and set it "matured". "Transfer to Money Box" was offered for anything not "closed", so a matured saving could be transferred again: balance plus interest a second time. | Transfer only for an **active** saving whose date has passed, checked in the controller and again in `ProcessSavingsTransfer`. |
+| Transfer answered JSON to a jQuery call and reloaded the page after 2.5 seconds. | A normal Inertia POST with a toast. |
+| Savings settings were sorted with MySQL's `FIELD()`, and the summaries used `"active"` in double quotes, which strict SQL reads as a column name. | `CASE` ordering and single-quoted strings: the same on any database. |
+| Maximum amounts (savings settings, loan products) could be below the minimum; a fixed setting could be saved without a duration; Pay Out accepted a yield of 0 (the form's own check was skipped by Enter). | All refused, with the message under the field. |
+| Editing a loan product replaced its `created_by` with the editor. | Kept; set only when the product is created. |
+| Enable / disable of a loan product was a blind toggle. | `state=enable|disable`; a repeat says "already". |
+| A cycle that had been paid out but not yet marked matured could still be edited (yield, dates). | Refused once paid out. |
+| Closing a cycle read, checked, then saved. | One `UPDATE … WHERE status = 'open'`. |
+| Weekly loans showed as months ("4 months", "4m") in the lists. | "4 weeks" / "4w". |
+| List filters (`type`, `status`) passed any value through. | Only known values; search also matches the reference. |
+
+**For the owner to decide:**
+
+- A farm saving also has a maturity date. The `ProcessPayment` job
+  pays any active saving whose date has passed (balance + interest
+  earned, which is 0 for farm savings until the cycle pays). If it runs
+  before the admin presses Pay Out, those members get their principal
+  back with no yield, and the cycle then finds nobody left to pay.
+  Should `ProcessPayment` skip farm savings and leave them to the cycle?
+- The maturity run does not reduce `savings_wallet`; the admin transfer
+  and the farm payout reduce it by the principal. Which is right?
+
+Nothing was changed for either.
+
+**Deleted:** `admin/savings/*` (5 views), `admin/loans/*` (5 views).
+
+**Verification:**
+
+- **Server checks** (`p7e3_check.php`):
+  - **Settings:**
+    - type order;
+    - fixed without a duration, max below min and a duplicate are
+      refused;
+    - add and edit (switched off).
+  - **Savings:**
+    - every filter; bogus ignored; search by reference and member;
+    - the detail page for active-due, matured and not-yet-due savings;
+    - transfer:
+      - a matured saving is refused;
+      - a not-due saving is refused;
+      - a due saving is paid once (+₦8,400), and a second try is refused;
+      - the job alone also refuses a matured saving.
+  - **Cycles:**
+    - list counts;
+    - a bad yield range is refused;
+    - create; close twice;
+    - Pay Out:
+      - before maturity, refused;
+      - with a yield of 0, refused;
+      - at 18%: both members credited principal + 18% for the period,
+        two payout transactions, cycle "matured";
+      - again, refused;
+    - edit after payout is refused;
+    - transferring a cycle-paid saving is refused;
+    - the migration reopens only the stuck cycle.
+  - **Loans:**
+    - every list and filter; the pending page ignores `?status=`;
+    - weekly tenure labels;
+    - approve:
+      - refused without KYC;
+      - pays once, and a second approve is refused;
+    - reject:
+      - needs a reason;
+      - an active loan is refused.
+  - **Products:**
+    - max below min and a bad tenure are refused;
+    - create normalises tenures;
+    - an edit keeps `created_by`;
+    - disable twice; a toggle without a state is refused.
+  - **Sidebar:** the detail pages light their list's entry.
+- **Browser checks** (`e2e/phase7e3.mjs`, 44 checks):
+  - every dialog and its POST: settings add and edit, transfer, close,
+    pay out, cycle create and edit, approve, reject, product edit and
+    disable;
+  - the duration field appearing for "fixed";
+  - Pay Out disabled until a yield is entered;
+  - the pending page's columns and no status filter;
+  - weekly labels;
+  - no sideways scroll at phone width on all ten pages.
+- **Regression:** 32 browser suites, 1045 checks, all pass. `route:cache`
   and `view:cache` succeed; the route-name scan shows only the 21 known
   `ipn.` references.
 

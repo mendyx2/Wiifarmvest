@@ -7,18 +7,70 @@ use App\Models\LoanProduct;
 use App\Models\Transaction;
 use App\Constants\Status;
 use Illuminate\Http\Request;
+use App\Support\AdminPresenter;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
+use Inertia\Inertia;
 
+/**
+ * Savings & Loans → loan side (Pages/Admin/Loans/*): the loan products, one
+ * list of loans (Pending Applications is that list with the status set),
+ * and one loan with Approve & Disburse / Reject.
+ */
 class AdminLoanController extends Controller
 {
+    private const STATUSES = ['pending', 'active', 'at_risk', 'defaulted', 'cleared', 'rejected'];
+
     /* ── Loan Products (CRUD) ─────────────────────────── */
 
     public function products()
     {
         $pageTitle = 'Loan Products';
-        $products  = LoanProduct::latest()->paginate(getPaginate());
-        return view('admin.loans.products', compact('pageTitle', 'products'));
+        $products  = LoanProduct::latest()->paginate(getPaginate())->withQueryString()
+            ->through(fn (LoanProduct $p) => [
+                'id'          => $p->id,
+                'name'        => (string) $p->name,
+                'description' => (string) $p->description,
+                'rate'        => (float) $p->interest_rate . '% p.a.',
+                'min'         => showAmount($p->min_loan_amount),
+                'max'         => $p->max_loan_amount ? showAmount($p->max_loan_amount) : null,
+                'multiple'    => (float) $p->savings_multiple . '×',
+                'minSavings'  => showAmount($p->min_savings_threshold),
+                'tenures'     => array_map(fn ($t) => $this->tenureChip((string) $t), (array) $p->tenure_options),
+                'autoApprove' => (bool) $p->auto_approve,
+                'active'      => (bool) $p->is_active,
+                'form'        => [
+                    'name'                  => (string) $p->name,
+                    'description'           => (string) $p->description,
+                    'min_membership_days'   => (string) (int) $p->min_membership_days,
+                    'min_savings_threshold' => (string) (float) $p->min_savings_threshold,
+                    'savings_multiple'      => (string) (float) $p->savings_multiple,
+                    'max_loan_amount'       => $p->max_loan_amount ? (string) (float) $p->max_loan_amount : '',
+                    'min_loan_amount'       => (string) (float) $p->min_loan_amount,
+                    'interest_rate'         => (string) (float) $p->interest_rate,
+                    'tenure_options'        => implode(',', (array) $p->tenure_options),
+                    'auto_approve'          => (bool) $p->auto_approve,
+                    'is_active'             => (bool) $p->is_active,
+                ],
+            ]);
+
+        return Inertia::render('Admin/Loans/Products', [
+            'products' => $products,
+            'currency' => gs('cur_sym'),
+            'urls'     => [
+                'store'  => route('admin.loans.products.store'),
+                'update' => route('admin.loans.products.store', ':id'),
+                'toggle' => route('admin.loans.products.toggle', ':id'),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
+    }
+
+    /** "6m" → {label: "6mo", weeks: false}; "2w" → {label: "2wk", weeks: true} */
+    private function tenureChip(string $tenure): array
+    {
+        preg_match('/^(\d+)(w|m)?$/', strtolower(trim($tenure)), $m);
+        $weeks = ($m[2] ?? 'm') === 'w';
+        return ['label' => ($m[1] ?? $tenure) . ($weeks ? 'wk' : 'mo'), 'weeks' => $weeks];
     }
 
     public function storeProduct(Request $request, $id = 0)
@@ -29,7 +81,7 @@ class AdminLoanController extends Controller
             'min_membership_days'  => 'required|integer|min:0',
             'min_savings_threshold'=> 'required|numeric|min:0',
             'savings_multiple'     => 'required|numeric|min:1|max:20',
-            'max_loan_amount'      => 'nullable|numeric|min:0',
+            'max_loan_amount'      => 'nullable|numeric|gte:min_loan_amount',
             'min_loan_amount'      => 'required|numeric|min:0',
             'interest_rate'        => 'required|numeric|min:0|max:100',
             'tenure_options'       => ['required', 'string', function ($attr, $val, $fail) {
@@ -65,20 +117,33 @@ class AdminLoanController extends Controller
         $product->tenure_options        = $tenureOptions;
         $product->auto_approve          = $request->boolean('auto_approve');
         $product->is_active             = $request->boolean('is_active', true);
-        $product->created_by            = auth('admin')->id();
+        // Who created it: an edit used to overwrite this with the editor
+        if (!$product->exists) {
+            $product->created_by = auth('admin')->id();
+        }
         $product->save();
 
         $notify[] = ['success', 'Loan product ' . ($id ? 'updated' : 'created') . ' successfully.'];
         return back()->withNotify($notify);
     }
 
-    public function toggleProduct($id)
+    /** Enable / disable, by the state the admin saw (a repeat says "already"). */
+    public function toggleProduct(Request $request, $id)
     {
+        $request->validate(['state' => 'required|in:enable,disable']);
+
         $product = LoanProduct::findOrFail($id);
-        $product->is_active = !$product->is_active;
+        $active  = $request->state === 'enable';
+
+        if ((bool) $product->is_active === $active) {
+            $notify[] = ['info', 'Loan product is already ' . ($active ? 'enabled' : 'disabled') . '.'];
+            return back()->withNotify($notify);
+        }
+
+        $product->is_active = $active;
         $product->save();
 
-        $notify[] = ['success', 'Loan product ' . ($product->is_active ? 'enabled' : 'disabled') . '.'];
+        $notify[] = ['success', 'Loan product ' . ($active ? 'enabled' : 'disabled') . '.'];
         return back()->withNotify($notify);
     }
 
@@ -86,44 +151,155 @@ class AdminLoanController extends Controller
 
     public function index(Request $request)
     {
-        $pageTitle = 'All Loans';
-        $loans     = Loan::with(['user', 'loanProduct'])
-                        ->when($request->status, fn($q) => $q->where('status', $request->status))
-                        ->when($request->search, fn($q) => $q->whereHas('user', fn($u) =>
-                            $u->where('username', 'like', '%'.$request->search.'%')
-                              ->orWhere('email', 'like', '%'.$request->search.'%')
-                        ))
-                        ->latest()
-                        ->paginate(getPaginate());
-
-        $summary = Loan::selectRaw('
-            COUNT(*) as total,
-            SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending_count,
-            SUM(CASE WHEN status IN ("active","at_risk") THEN 1 ELSE 0 END) as active_count,
-            SUM(CASE WHEN status = "defaulted" THEN 1 ELSE 0 END) as defaulted_count,
-            SUM(original_amount) as total_disbursed,
-            SUM(outstanding) as total_outstanding
-        ')->first();
-
-        return view('admin.loans.index', compact('pageTitle', 'loans', 'summary'));
+        return $this->listPage($request, 'All Loans');
     }
 
+    /** Pending Loan Applications: the loan list with the status set to pending. */
     public function pending(Request $request)
     {
-        $pageTitle = 'Pending Loan Applications';
-        $loans     = Loan::with(['user', 'loanProduct'])
-                        ->where('status', 'pending')
-                        ->latest()
-                        ->paginate(getPaginate());
+        return $this->listPage($request, 'Pending Loan Applications', 'pending');
+    }
 
-        return view('admin.loans.pending', compact('pageTitle', 'loans'));
+    private function listPage(Request $request, string $pageTitle, string $preset = '')
+    {
+        // The pending page is always pending; All Loans takes ?status=
+        $status = $preset ?: (in_array($request->status, self::STATUSES, true) ? $request->status : '');
+        $search = trim((string) $request->search);
+
+        $loans = Loan::with(['user:id,firstname,lastname,username,email', 'loanProduct:id,name'])
+            ->when($status, fn ($q) => $q->where('status', $status))
+            ->when($search !== '', fn ($q) => $q->where(fn ($q) => $q
+                ->where('reference', 'like', "%{$search}%")
+                ->orWhereHas('user', fn ($u) => $u
+                    ->where('username', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%"))))
+            ->latest()
+            ->paginate(getPaginate())
+            ->withQueryString()
+            ->through(fn (Loan $loan) => [
+                'id'          => $loan->id,
+                'user'        => AdminPresenter::user($loan->user),
+                'email'       => (string) $loan->user?->email,
+                'reference'   => (string) $loan->reference,
+                'product'     => (string) ($loan->loanProduct->name ?? '—'),
+                'amount'      => showAmount($loan->original_amount),
+                'outstanding' => showAmount($loan->outstanding),
+                'owing'       => $loan->outstanding > 0,
+                'repayable'   => showAmount($loan->total_repayable),
+                'savings'     => showAmount($loan->savings_balance_at_application),
+                'purpose'     => (string) $loan->purpose,
+                'rate'        => (float) $loan->interest_rate . '%',
+                'tenure'      => $this->tenureLabel($loan),
+                'applied'     => $loan->created_at->format('M d, Y'),
+                'nextDue'     => $loan->next_due_date?->format('M d, Y'),
+                'status'      => $this->statusBadge($loan->status),
+                'pending'     => $loan->status === 'pending',
+                'url'         => route('admin.loans.show', $loan->id),
+            ]);
+
+        $summary = Loan::selectRaw("
+            COUNT(*) as total,
+            COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
+            COALESCE(SUM(original_amount), 0) as total_disbursed,
+            COALESCE(SUM(outstanding), 0) as total_outstanding
+        ")->first();
+
+        return Inertia::render('Admin/Loans/Index', [
+            'title'   => $pageTitle,
+            'loans'   => $loans,
+            'summary' => [
+                'total'       => (int) $summary->total,
+                'pending'     => (int) $summary->pending_count,
+                'disbursed'   => showAmount($summary->total_disbursed),
+                'outstanding' => showAmount($summary->total_outstanding),
+            ],
+            'filters' => ['search' => $search, 'status' => $status],
+            'fixed'   => $preset !== '',
+            'urls'    => [
+                'index'    => route('admin.loans.index'),
+                'pending'  => route('admin.loans.pending'),
+                'products' => route('admin.loans.products'),
+                'approve'  => route('admin.loans.approve', ':id'),
+                'reject'   => route('admin.loans.reject', ':id'),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
     public function show($id)
     {
         $pageTitle = 'Loan Detail';
         $loan      = Loan::with(['user', 'loanProduct', 'schedule', 'repayments'])->findOrFail($id);
-        return view('admin.loans.show', compact('pageTitle', 'loan'));
+        $unit      = $loan->tenure_unit === 'week' ? 'Week' : 'Month';
+
+        return Inertia::render('Admin/Loans/Show', [
+            'loan' => [
+                'id'          => $loan->id,
+                'reference'   => (string) $loan->reference,
+                'status'      => $this->statusBadge($loan->status),
+                'pending'     => $loan->status === 'pending',
+                'user'        => AdminPresenter::user($loan->user),
+                'product'     => (string) ($loan->loanProduct->name ?? '—'),
+                'amount'      => showAmount($loan->original_amount),
+                'rate'        => (float) $loan->interest_rate . '% p.a.',
+                'interest'    => showAmount($loan->total_interest),
+                'repayable'   => showAmount($loan->total_repayable),
+                'outstanding' => showAmount($loan->outstanding),
+                'owing'       => $loan->outstanding > 0,
+                'repaid'      => showAmount($loan->total_repaid),
+                'progress'    => $loan->total_repayable > 0 ? (int) round(min(100, $loan->total_repaid / $loan->total_repayable * 100)) : 0,
+                'tenure'      => $this->tenureLabel($loan, long: true),
+                'installmentLabel' => $unit . 'ly Installment',
+                'installment' => showAmount($loan->monthly_installment),
+                'nextDue'     => $loan->next_due_date?->format('M d, Y'),
+                'applied'     => $loan->created_at->format('M d, Y H:i'),
+                'approved'    => $loan->approved_at?->format('M d, Y H:i'),
+                'cleared'     => $loan->cleared_at?->format('M d, Y H:i'),
+                'savings'     => showAmount($loan->savings_balance_at_application),
+                'purpose'     => (string) $loan->purpose,
+                'rejection'   => (string) $loan->rejection_reason,
+            ],
+            'schedule' => $loan->schedule->map(fn ($i) => [
+                'id'        => $i->id,
+                'number'    => (int) $i->installment_number,
+                'due'       => $i->due_date?->format('M d, Y'),
+                'principal' => showAmount($i->principal),
+                'interest'  => showAmount($i->interest),
+                'total'     => showAmount($i->total),
+                'paid'      => showAmount($i->amount_paid),
+                'anyPaid'   => $i->amount_paid > 0,
+                'status'    => AdminPresenter::badge(ucfirst((string) $i->status), ['paid' => 'badge--success', 'partial' => 'badge--info', 'overdue' => 'badge--danger', 'defaulted' => 'badge--danger'][$i->status] ?? 'badge--dark'),
+            ]),
+            'repayments' => $loan->repayments->map(fn ($r) => [
+                'id'        => $r->id,
+                'date'      => $r->created_at->format('M d, Y'),
+                'reference' => (string) $r->reference,
+                'amount'    => showAmount($r->amount),
+                'source'    => AdminPresenter::badge(ucfirst((string) $r->source), $r->source === 'manual' ? 'badge--info' : 'badge--success'),
+                'after'     => showAmount($r->outstanding_after),
+            ]),
+            'urls' => [
+                'index'   => route('admin.loans.index'),
+                'approve' => route('admin.loans.approve', $loan->id),
+                'reject'  => route('admin.loans.reject', $loan->id),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
+    }
+
+    /** "6m" in lists, "6 months" on the loan; weekly loans used to show as months. */
+    private function tenureLabel(Loan $loan, bool $long = false): string
+    {
+        $n     = (int) $loan->tenure_months;
+        $weeks = $loan->tenure_unit === 'week';
+        if (!$long) {
+            return $n . ($weeks ? 'w' : 'm');
+        }
+        return $n . ' ' . ($weeks ? 'week' : 'month') . ($n === 1 ? '' : 's');
+    }
+
+    private function statusBadge(?string $status): array
+    {
+        $class = ['pending' => 'badge--warning', 'active' => 'badge--success', 'at_risk' => 'badge--warning', 'defaulted' => 'badge--danger', 'cleared' => 'badge--primary', 'rejected' => 'badge--danger'][$status] ?? 'badge--dark';
+        return AdminPresenter::badge(ucfirst(str_replace('_', ' ', (string) $status)), $class);
     }
 
     public function approve(Request $request, $id)

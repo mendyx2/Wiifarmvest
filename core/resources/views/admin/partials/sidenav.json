@@ -410,7 +410,7 @@
                 "keyword": ["All Savings","User Savings"],
                 "title": "All Savings",
                 "route_name": "admin.savings.index",
-                "menu_active": "admin.savings.index"
+                "menu_active": ["admin.savings.index", "admin.savings.show"]
             },
             {
                 "keyword": ["Farm Cycles","Farm","Cycles"],
@@ -428,7 +428,7 @@
                 "keyword": ["All Loans","Loan Management"],
                 "title": "All Loans",
                 "route_name": "admin.loans.index",
-                "menu_active": "admin.loans.index"
+                "menu_active": ["admin.loans.index", "admin.loans.show"]
             },
             {
                 "keyword": ["Loan Products","Loan Settings","Loan Configuration"],

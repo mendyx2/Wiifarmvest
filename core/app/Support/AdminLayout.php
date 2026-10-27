@@ -135,6 +135,15 @@ class AdminLayout
         'admin.users.generate.pin',
         'admin.users.used.pin',
         'admin.report.stage.twice',
+        // 7e-3: savings and loans
+        'admin.savings.settings',
+        'admin.savings.index',
+        'admin.savings.show',
+        'admin.savings.cycles',
+        'admin.loans.index',
+        'admin.loans.pending',
+        'admin.loans.show',
+        'admin.loans.products',
     ];
 
     public static function for(Request $request): ?array

@@ -30,7 +30,8 @@ class ProcessSavingsTransfer implements ShouldQueue
         DB::transaction(function () {
             $saving = SavingsProduct::lockForUpdate()->find($this->saving->id);
 
-            if (!$saving || $saving->status === 'closed') {
+            // Only an active saving: "matured" means a maturity run already paid it
+            if (!$saving || $saving->status !== 'active') {
                 return;
             }
 
