@@ -1,0 +1,11 @@
+/* Stockist order page: product thumbnails and the progress steps. */
+.page-stockist-order .sko-thumb { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; border: 1px solid #e5e7eb; flex-shrink: 0; }
+.page-stockist-order .sko-thumb--empty { display: inline-block; background: #f3f4f6; }
+.page-stockist-order .sko-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.page-stockist-order .sko-steps li { display: flex; gap: 12px; align-items: flex-start; color: #9ca3af; }
+.page-stockist-order .sko-steps li.is-done { color: #111827; }
+.page-stockist-order .sko-steps strong { display: block; font-size: .9rem; }
+.page-stockist-order .sko-steps small { color: #6b7280; }
+.page-stockist-order .sko-steps__dot { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #f3f4f6; flex-shrink: 0; }
+.page-stockist-order .sko-steps li.is-done .sko-steps__dot { background: #dcfce7; color: #15803d; }
+.page-stockist-order .sko-steps li.is-current .sko-steps__dot { background: #4634ff; color: #fff; }

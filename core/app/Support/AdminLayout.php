@@ -84,6 +84,23 @@ class AdminLayout
         'admin.sales.show',
         'admin.repurchase-award.index',
         'admin.repurchase-award.qualified',
+        // 7d-2: stockists
+        'admin.stockist.dashboard',
+        'admin.stockist.index',
+        'admin.stockist.activeStockist',
+        'admin.stockist.inactiveStockist',
+        'admin.stockist.detail',
+        'admin.stockist.details',
+        'admin.stockist.wallet-page',
+        'admin.stockist.activation-page',
+        'admin.stockist.report',
+        'admin.stockist.report.show',
+        'admin.stockist.transfers.index',
+        'admin.stockist.transfers.show',
+        'admin.stockist-orders.index',
+        'admin.stockist-orders.show',
+        'admin.sorder.index',
+        'admin.supply.index',
     ];
 
     public static function for(Request $request): ?array

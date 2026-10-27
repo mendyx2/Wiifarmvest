@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d-1 shop ✅ (Step 100). Next: 7d-2 stockists, 7d-3 affiliate · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d-1 shop ✅ (Step 100) · 7d-2 stockists ✅ (Step 101). Next: 7d-3 affiliate · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -4397,6 +4397,111 @@ as before. Repurchase awards take `state=on|off` the same way.
   - the award toggle, edit, delete and credit, and the switched-off warning;
   - no sideways scroll at phone width on all nine pages.
 - **Regression:** 27 browser suites, 859 checks, all pass. `route:cache`
+  and `view:cache` succeed; the route-name scan shows only the 21 known
+  `ipn.` references.
+
+### Step 101: Manage Stockist in React (7d-2)
+
+**Pages (`Pages/Admin/Stockist/`):**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Dashboard.tsx` | `admin.stockist.dashboard` | `stockist/stockist-dashboard.blade.php` and the old list `stockist/index.blade.php` |
+| `Activate.tsx` | `admin.stockist.activation-page` | `stockist/stockist-activation.blade.php` |
+| `Details.tsx` | `admin.stockist.details` | `stockist/stockist-details.blade.php`, the old `stockist/detail.blade.php` and `stockist/stockist-wallet-topup.blade.php` |
+| `Transfers.tsx`, `TransferDetail.tsx` | `admin.stockist.transfers.*` | `stockist/transfers/{index,show}.blade.php` |
+| `Orders.tsx`, `OrderDetail.tsx` (+ `.css`) | `admin.stockist-orders.*` | `stockistorders/{index,show}.blade.php` |
+| `Report.tsx`, `ReportShow.tsx` | `admin.stockist.report`, `admin.stockist.report.show` | `stockist/report-{index,show}.blade.php` |
+
+`Components/Admin/StockistTopUp.tsx` is the top-up dialog.
+
+**Duplicates removed:**
+
+- **Stockist list.** The old "All / Active / Inactive Stockists" pages listed
+  the same stockists as the dashboard. They redirect there (with
+  `?status=active` / `inactive`), and the dashboard now has search, status,
+  store type and state filters.
+- **Stockist page.** The old `stockist/detail/{id}` redirects to the newer
+  details page. Its Activate / Deactivate action moved there.
+- **Wallet top-up** was its own page; it is now a dialog on the stockist
+  page and on the dashboard's "Top up" button. The old URL opens the page
+  with the dialog.
+- **"Stockist Order Request" and "Supplies"** belonged to the stockist
+  ordering system that came before Stockist Orders, and nothing creates
+  their records any more. They are removed from the sidebar, their URLs
+  redirect to Stockist Orders, and `SorderController` / `SupplyController`
+  are deleted.
+- **Dead code:** `stockistorders/show1.blade.php`, and
+  `StockistController::store()` (an older "promote to stockist" with no
+  link to it).
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Supplies changed member orders:** its Ship/Cancel action looked up the **member `orders` table** by the supply row's id, refunded the main balance and restocked products. | The page and the action are gone. |
+| **Activation page XSS:** the found member's name was written into the page as raw HTML, so a member could put script in their own name. | React shows it as text. select2 no longer loads from an outside CDN. |
+| A GET route (`/admin/stockist/changeUserStockistStatus`) changed a stockist's status from a plain link. | Removed; the change is POST only. |
+| **Activation** did not check whether the member was already a stockist, and checked the balance with no lock, so a double click could charge twice and create two stockist records. It also allowed banned members. | The member row is locked and every check runs inside the transaction. A second stockist, a banned member or too little in the Money Box is refused under the field. |
+| **Stock order Approve / Ship / Deliver** checked the status before the transaction without a lock. Two clicks on Deliver both passed, so the stock was added to the stockist twice and the sponsor bonus paid twice. | One locked transition: the second click answers "cannot be delivered in its current status". |
+| The stock order controller added the member `auth` middleware to admin routes, and read the admin id before any middleware ran. | Removed; the admin id is read from the admin guard when it is needed. |
+| **Wallet top-up** did a read-then-write of the wallet, so a sale or rebate credited at the same moment could be lost. Zero was accepted, and "topped up by" was always empty (it read the member guard). | The row is locked, the amount must be above 0, and the admin is recorded. |
+| **Two "active" flags:** the old toggle set `status`, but the pages and the member stockist search read `is_active`. | Activate / Deactivate set both; a reason is required to deactivate. The status takes `state=activate|deactivate`, so a repeat answers "already". |
+| The admin dashboard's "Pending Orders" counted the retired requests and linked to **email-unverified users**. | "Pending Stock Orders" counts pending stock orders and opens that list filtered. "Active Stockists" counts both flags. |
+| Stock order filters ran on empty values: `?status=` or `?search=` with nothing in it emptied the list. | Only real values filter. Bad dates and unknown statuses are ignored on every list. |
+| Error toasts showed exception messages. | `report($e)` and a plain message. |
+| The list's Approve / Ship / Deliver buttons sent AJAX requests that expected JSON, but the server answered with a redirect. | Normal Inertia requests with a confirm step. |
+
+**For the owner to decide:**
+
+1. **Inactive stockists can still use their panel.** Being a stockist
+   only needs a stockist record (`User::isStockist()`). Deactivating hides
+   the stockist from the member search but does not stop them redeeming or
+   selling. If deactivated stockists should be locked out, it is a change
+   in `StockistMiddleware`; say so. It was not done here because older
+   stockist records may have `is_active` off without anyone meaning it.
+2. **Stockist setup bonus.** `StockistEnrollmentBonusService` pays
+   ₦240,000 (Mini) or ₦650,000 (Mega) up ten generations. Only the old,
+   unlinked `store()` called it; the activation form in use has never paid
+   it. The service is kept; turning it on is one line in
+   `activateStockist()`.
+
+**Verification:**
+
+- **Server checks** (`p7d2_check.php`):
+  - **Old URLs:** each redirects, and the GET status route answers 404.
+  - **Dashboard:** stats, rows and every filter (a bogus status is ignored).
+  - **Details:** numbers, tabs, direction filter, the `?topup` flag.
+  - **Status:** deactivate (reason required, repeat, both flags off),
+    activate, and a stockist with only one flag set.
+  - **Top-up:** 0 refused; ₦2,500 with the ledger before/after and the
+    admin id.
+  - **Activation:** the four search answers; refused for too little money,
+    an existing stockist and a banned member; ₦600 taken from the Money Box
+    into the new stockist wallet; a double click refused (one record).
+  - **Transfers:** stats, filters (bad date ignored), completed and
+    cancelled detail.
+  - **Stock orders:** counts; empty filters no longer empty the list;
+    approve twice; ship; deliver twice (stock +1 once, one history row
+    with the admin); cancel twice (refund once).
+  - **Report:** channel totals, search, per-stockist totals, type and date
+    filters (bad values ignored).
+  - **Sidebar:** four entries, the right one marked active.
+- **Browser checks** (`e2e/phase7d2.mjs`, 51 checks):
+  - the dashboard filters, and "Top up" opening the dialog on the
+    stockist page;
+  - every details tab, with the tab kept in the address;
+  - top-up preview and POST; deactivate (reason required) and activate;
+  - activation search: errors, the name shown as text, fields prefilled,
+    the over-balance guard, the POST, no CDN script;
+  - transfer tabs, search and dates; the pending transfer's cancel with
+    confirm;
+  - stock orders: Approve from the list, filters, the detail steps, the
+    allowed actions and cancel;
+  - the report search, channel and date filters;
+  - the sidebar without the retired entries;
+  - no sideways scroll at phone width on all nine pages.
+- **Regression:** 28 browser suites, 910 checks, all pass. `route:cache`
   and `view:cache` succeed; the route-name scan shows only the 21 known
   `ipn.` references.
 

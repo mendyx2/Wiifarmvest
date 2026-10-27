@@ -249,7 +249,7 @@ class ManageUsersController extends Controller
             $widget('VISA wallet', $money($user->visa), 'la la-money', '8'),
         ];
         if ($user->stockist) {
-            $main[] = $widget('Stockist Balance', $money($user->stockist->wallet), 'las la-store', '6', 'admin.stockist.detail', [$user->stockist->id]);
+            $main[] = $widget('Stockist Balance', $money($user->stockist->wallet), 'las la-store', '6', 'admin.stockist.details', [$user->stockist->id]);
         }
         array_push($main,
             $widget('Referral Commission', $money($totalRef), 'la la-user', '17', 'admin.report.referral.commission', [$user->id]),

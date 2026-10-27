@@ -9,7 +9,6 @@ use App\Models\Admin;
 use App\Models\BvLog;
 use App\Models\MatrixStage;
 use App\Models\Order;
-use App\Models\Sorder;
 use App\Models\Stockist;
 use App\Models\Deposit;
 use App\Lib\CurlRequest;
@@ -66,8 +65,10 @@ class AdminController extends Controller
         $widget['total_pending_order']      = Order::InActive()->count();
 
 
-        $widget['active_stockist']          = Stockist::active()->count();
-        $widget['stockist_pending_order']   = Sorder::InActive()->count();
+        // Active by both flags, as the stockist pages count it.
+        $widget['active_stockist']          = Stockist::active()->where('is_active', true)->count();
+        // Stock orders from stockists waiting for approval (the old count read the retired "sorders" table).
+        $widget['stockist_pending_order']   = \App\Models\StockistOrder::where('status', 'pending')->count();
         
         // User Info
         $widget['total_users']             = User::count();

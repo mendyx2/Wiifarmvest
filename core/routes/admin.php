@@ -193,13 +193,11 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('/', 'allStockists')->name('index');
         Route::get('activeStockist', 'activeStockist')->name('activeStockist');
         Route::get('inactiveStockist', 'inactiveStockist')->name('inactiveStockist');
-        // Unnamed: the name belongs to the POST status/{id} route below (the one the stockist form uses).
-        Route::get('changeUserStockistStatus', 'changeUserStockistStatus');
-        
-        Route::get('detail/{id}', 'detail')->name('detail'); 
+        // Old pages: redirect to the dashboard / details page.
+        Route::get('detail/{id}', 'detail')->name('detail');
 
+        // POST only: a GET route here used to change the status from a plain link.
         Route::post('status/{id}', 'changeUserStockistStatus')->name('changeUserStockistStatus');
-        Route::post('store/{id}', 'store')->name('store');
 
         
    
@@ -209,7 +207,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
     
         // Stockist Activation
         Route::get('/stockist-activation', 'activationPage')->name('activation-page');
-        Route::post('/search-user', 'searchUser')->name('search-user');
+        Route::get('/search-user', 'searchUser')->name('search-user');
         Route::post('/activate-stockist', 'activateStockist')->name('activate');
         
         // Wallet Top-up
@@ -579,18 +577,10 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
     });
 
 
-    //Sorder
-    Route::controller('SorderController')->name('sorder.')->prefix('sorder')->group(function () {
-        Route::get('/{user_id?}', 'index')->name('index');
-        Route::post('status/{id}', 'status')->name('status');
-    });
-
-
-    //Supply
-    Route::controller('SupplyController')->name('supply.')->prefix('supply')->group(function () {
-        Route::get('/{user_id?}', 'index')->name('index');
-        Route::post('status/{id}', 'status')->name('status');
-    });
+    // Stockist Order Request (sorder) and Supplies: the stockist ordering system before Stockist Orders.
+    // Nothing creates these records any more, and "Supplies" acted on member orders by mistake (Step 101).
+    Route::get('sorder/{user_id?}', fn () => redirect()->route('admin.stockist-orders.index'))->name('sorder.index');
+    Route::get('supply/{user_id?}', fn () => redirect()->route('admin.stockist-orders.index'))->name('supply.index');
 
     // Savings Management
     Route::middleware('admin.role:super-admin')->controller('AdminSavingsController')->prefix('savings')->name('savings.')->group(function () {

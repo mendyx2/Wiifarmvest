@@ -161,15 +161,15 @@
     <div class="row gy-4">
         <div class="col-xxl-3 col-sm-6">
             <x-widget value="{{ $widget['total_stockist'] }}" title="Total Stockists" style="6"
-                link="{{ route('admin.stockist.index') }}" icon="las la-users" bg="primary" outline=false />
+                link="{{ route('admin.stockist.dashboard') }}" icon="las la-users" bg="primary" outline=false />
         </div>
         <div class="col-xxl-3 col-sm-6">
             <x-widget value="{{ $widget['active_stockist'] }}" title="Active Stockists" style="6"
-                link="{{ route('admin.stockist.activeStockist') }}" icon="las la-user-check" bg="success" outline=false />
+                link="{{ route('admin.stockist.dashboard', ['status' => 'active']) }}" icon="las la-user-check" bg="success" outline=false />
         </div>
         <div class="col-xxl-3 col-sm-6">
-            <x-widget value="{{ $widget['stockist_pending_order'] }}" title="Pending Orders" style="6"
-                link="{{ route('admin.users.email.unverified') }}" icon="lar la-times-circle" bg="danger" outline=false />
+            <x-widget value="{{ $widget['stockist_pending_order'] }}" title="Pending Stock Orders" style="6"
+                link="{{ route('admin.stockist-orders.index', ['status' => 'pending']) }}" icon="lar la-times-circle" bg="danger" outline=false />
         </div>
     </div>
 

@@ -189,17 +189,17 @@
         "menu_active": "admin.stockist*",
         "submenu": [
             {
-                "keyword": [ "Stockist","Item", "Inventory"],
+                "keyword": [ "Stockist","Item", "Inventory", "All Stockists", "Active Stockists", "Activate Stockist", "Stockist wallet"],
                 "title": "Dashboard",
                 "icon": "lab la-product-hunt",
                 "route_name": "admin.stockist.dashboard",
-                "menu_active": "admin.stockist.dashboard"
+                "menu_active": ["admin.stockist.dashboard", "admin.stockist.activation-page", "admin.stockist.details"]
             },
             {
-                "keyword": ["Stockist Orders","Recharge","Flexi load","Stockist Orders","Inactive stockist"],
+                "keyword": ["Stockist Orders","Stockist Order Request","Supplies","Stock purchase"],
                 "title": "Stockist Orders",
                 "route_name": "admin.stockist-orders.index",
-                "menu_active": "admin.stockist-orders.index"
+                "menu_active": "admin.stockist-orders.*"
             },
             {
                 "keyword": ["Redemption Report", "Stockist Sales", "Inventory Report", "Financial Report", "Accounting"],
@@ -214,24 +214,7 @@
                 "route_name": "admin.stockist.transfers.index",
                 "menu_active": "admin.stockist.transfers*",
                 "counter": "pendingStockTransfersCount"
-            },
-
-            
-           
-            {
-                "keyword": ["Stockist Orders"],
-                "title": "Stockist Order Request",
-                "route_name": "admin.sorder.index",
-                "menu_active": "admin.sorder.index"
-            },
-            {
-                "keyword": ["Stockist Supplies"],
-                "title": "Supplies",
-                "route_name": "admin.supply.index",
-                "menu_active": "admin.supply.index"
             }
-
-
         ]
     },
     "shop": {
