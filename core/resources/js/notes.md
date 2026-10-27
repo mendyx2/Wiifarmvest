@@ -3985,6 +3985,78 @@ other money pages in 7e.
   and `view:cache` succeed, and the route-name scan finds only the 21 known
   `ipn.` references.
 
+### Step 97: Manage Users lists, stages, sponsor history and KYC review in React (7c-1)
+
+**Plan for 7c (users).** `ManageUsersController` has 43 actions and the
+member page (`users/detail.blade.php`) is 1,555 lines, so 7c is done in
+three parts:
+
+1. **7c-1:** the lists and the small member pages.
+2. **7c-2:** the member page and its edit actions.
+3. **7c-3:** sending notifications and the trees.
+
+**Pages** (`Pages/Admin/Users/`):
+
+| Page | Routes |
+|---|---|
+| `List.tsx` | The 12 segment lists (`admin.users.all`, `active`, `banned`, `email.verified`, `email.unverified`, `mobile.verified`, `mobile.unverified`, `kyc.unverified`, `kyc.pending`, `with.balance`, `paid`, `free`) and `admin.users.referral` ("Referred By …"). One builder: `ManageUsersController::listPage()`. |
+| `Stages.tsx` | `admin.users.stages` (super-admins). One tab per stage, with counts. Its CSS moved to `Stages.css`, scoped under `.page-user-stages`. |
+| `SponsorHistory.tsx` | `admin.users.sponsor.history` |
+| `KycDetail.tsx` | `admin.users.kyc.details`, with Approve (confirm) and Reject (reason). The ID card opens full screen in the shared `Lightbox`. |
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| The lists had two search boxes for the same `?search=` (one in the card, one in the title row). | One filter card: search + status. |
+| The Sponsor cell printed a lone "@" for members with no sponsor (`'@'.@$user->refBy->username ?? 'N/A'` never reaches `?? 'N/A'`). | "N/A". |
+| The sponsor was loaded with one query per row. | Loaded with the list (`with('refBy:id,username')`). |
+| The lists lost their filters on page 2. | Kept (`withQueryString()`). |
+| `?status=` with any other value than 1 was taken as "banned". | Only 1 or 0 filter; anything else shows both. |
+| **KYC approve and reject worked on any member, pending or not.** A stale tab could approve a member whose documents had just been rejected, or reject one already verified. | Only a pending submission can be approved or rejected; otherwise "This KYC submission is no longer pending." |
+| The rejection reason had no length limit. | 1,000 characters. |
+| An unknown `?stage=` showed an empty page titled "Stage Members". | Falls back to the first stage. |
+
+**Dead code removed:** `StockistController::changeUserStockistStatusddd()`. No
+route points to it, and it called a method that does not exist.
+
+**Deleted:**
+
+- `users/list.blade.php`, `users/stages.blade.php`;
+- `users/sponsor_history.blade.php` and its `partials/sponsor_cell.blade.php`;
+- `users/kyc_detail.blade.php`.
+
+**Not moved yet:** the member's pin pages (`admin.users.generate.pin`,
+`used.pin`). They render the pin list, which moves with the pins in 7e.
+
+**Verification:**
+
+- **Server checks** (`p7c1_check.php`):
+  - **Lists:** eight segments with their counts; status filter; search +
+    status; a made-up status shows all; the KYC Data link only on KYC
+    Pending.
+  - **Referred By:** shows the right members.
+  - **Stages:** counts per tab; stage + search; an unknown stage falls back.
+  - **Sponsor history:** the current change is marked; a deleted previous
+    sponsor shows "Deleted user".
+  - **KYC page:** answers (text escaped, checkboxes joined, files with
+    view/download, empty answers hidden), identity, guarantor.
+  - **Reject:** without a reason → refused; with one → saved.
+  - **Stale actions:** approving the rejected member → refused; approving
+    when pending → done; rejecting the now verified member → refused.
+- **Browser checks** (`e2e/phase7c1.mjs`, 32 checks):
+  - **Lists:** one search box; "N/A" / "@demo" sponsors; the filters sent;
+    Details is a full load to the Blade member page; KYC Data opens a new
+    tab.
+  - **Stages:** tabs and counts; the scoped CSS applies; search keeps the
+    stage; the empty state.
+  - **Sponsor history:** the history table.
+  - **KYC:** answers shown as text; the ID card full screen; Reject needs
+    a reason; Approve confirms first; a rejected submission shows its
+    reason and no buttons.
+  - **Phone width:** no sideways scroll on any of the six pages.
+- **Regression:** 25 browser suites, 731 checks, all pass.
+
 ## Part 4: Working on the front end
 
 ### Run locally

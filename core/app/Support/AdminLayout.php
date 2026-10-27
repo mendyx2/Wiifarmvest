@@ -50,6 +50,23 @@ class AdminLayout
         'admin.report.financial',
         'admin.pv-logs.index',
         'admin.system.action.log',
+        // 7c: users
+        'admin.users.all',
+        'admin.users.active',
+        'admin.users.banned',
+        'admin.users.email.verified',
+        'admin.users.email.unverified',
+        'admin.users.mobile.verified',
+        'admin.users.mobile.unverified',
+        'admin.users.kyc.unverified',
+        'admin.users.kyc.pending',
+        'admin.users.with.balance',
+        'admin.users.paid',
+        'admin.users.free',
+        'admin.users.stages',
+        'admin.users.kyc.details',
+        'admin.users.sponsor.history',
+        'admin.users.referral',
     ];
 
     public static function for(Request $request): ?array

@@ -23,15 +23,15 @@ use App\Services\AdminNoticeService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use App\Support\AdminPresenter;
+use Inertia\Inertia;
 
 class ManageUsersController extends Controller
 {
 
     public function allUsers()
     {
-        $pageTitle = 'All Users';
-        $users     = $this->userData();
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('All Users', null);
     }
     
     public function passwordUpdate(Request $request, $id)
@@ -71,153 +71,168 @@ class ManageUsersController extends Controller
 
     public function activeUsers()
     {
-        $pageTitle = 'Active Users';
-        $users     = $this->userData('active');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Active Users', 'active');
     }
 
     public function bannedUsers()
     {
-        $pageTitle = 'Banned Users';
-        $users     = $this->userData('banned');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Banned Users', 'banned');
     }
 
     public function emailUnverifiedUsers()
     {
-        $pageTitle = 'Email Unverified Users';
-        $users     = $this->userData('emailUnverified');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Email Unverified Users', 'emailUnverified');
     }
 
     public function kycUnverifiedUsers()
     {
-        $pageTitle = 'KYC Unverified Users';
-        $users     = $this->userData('kycUnverified');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('KYC Unverified Users', 'kycUnverified');
     }
 
     public function kycPendingUsers()
     {
-        $pageTitle = 'KYC Pending Users';
-        $users     = $this->userData('kycPending');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('KYC Pending Users', 'kycPending');
     }
 
     public function emailVerifiedUsers()
     {
-        $pageTitle = 'Email Verified Users';
-        $users     = $this->userData('emailVerified');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Email Verified Users', 'emailVerified');
     }
 
 
     public function mobileUnverifiedUsers()
     {
-        $pageTitle = 'Mobile Unverified Users';
-        $users     = $this->userData('mobileUnverified');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Mobile Unverified Users', 'mobileUnverified');
     }
 
 
     public function mobileVerifiedUsers()
     {
-        $pageTitle = 'Mobile Verified Users';
-        $users     = $this->userData('mobileVerified');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Mobile Verified Users', 'mobileVerified');
     }
 
 
     public function usersWithBalance()
     {
-        $pageTitle = 'Users with Balance';
-        $users     = $this->userData('withBalance');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Users with Balance', 'withBalance');
     }
 
     public function paidUsers()
     {
-        $pageTitle = 'Paid Users';
-        $users     = $this->userData('paidUser');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Paid Users', 'paidUser');
     }
 
     public function freeUsers()
     {
-        $pageTitle = 'Free Users';
-        $users     = $this->userData('freeUser');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return $this->listPage('Free Users', 'freeUser');
     }
 
+    /** Users by matrix stage (super-admins), Pages/Admin/Users/Stages.tsx. */
     public function stages(Request $request)
     {
-        $pageTitle = 'User Stages';
-
         $stages = MatrixStage::orderBy('level')->get();
-       
 
-        // Default to first stage
-        $activeStageId = (int) $request->get('stage', optional($stages->first())->id);
+        // Default to the first stage; an unknown ?stage= falls back to it too.
+        $activeStage   = $stages->firstWhere('id', (int) $request->get('stage')) ?? $stages->first();
+        $activeStageId = (int) optional($activeStage)->id;
 
-
-        $activeStage   = $stages->firstWhere('id', $activeStageId);
-
-        
-        // Simple count per stage — one fast aggregate query
+        // One aggregate query for every tab's count.
         $stageCounts = DB::table('matrices')
-                        ->selectRaw('stage_id, COUNT(DISTINCT user_id) as total')
-                        ->groupBy('stage_id')
-                        ->pluck('total', 'stage_id');
+            ->selectRaw('stage_id, COUNT(DISTINCT user_id) as total')
+            ->groupBy('stage_id')
+            ->pluck('total', 'stage_id');
 
-        // JOIN is far faster than whereHas for large tables
+        // A join is far faster than whereHas on large tables.
         $query = User::join('matrices', 'users.id', '=', 'matrices.user_id')
-                     ->where('matrices.stage_id', $activeStageId)
-                     ->select('users.*')
-                     ->distinct();
+            ->where('matrices.stage_id', $activeStageId)
+            ->select('users.*')
+            ->distinct();
 
         if ($request->filled('search')) {
             $term = '%' . $request->search . '%';
             $query->where(function ($q) use ($term) {
                 $q->where('users.username', 'like', $term)
-                  ->orWhere('users.email',   'like', $term)
-                  ->orWhere('users.mobile',  'like', $term);
+                  ->orWhere('users.email', 'like', $term)
+                  ->orWhere('users.mobile', 'like', $term);
             });
         }
- 
-        $users = $query->latest('users.created_at')->paginate(getPaginate());
 
-        $stageNames = $stages->pluck('name', 'id');
+        $users = $query->latest('users.created_at')->paginate(getPaginate())->withQueryString();
+        $first = $users->firstItem() ?? 0;
+        $rows  = $users->through(function (User $user) use (&$first) {
+            return [
+                'id'       => $user->id,
+                'number'   => $first++,
+                'fullname' => $user->fullname ?: '—',
+                'username' => (string) $user->username,
+                'mobile'   => $user->mobile ?: '—',
+                'email'    => (string) $user->email,
+                'joined'   => showDateTime($user->created_at),
+                'url'      => route('admin.users.detail', $user->id),
+            ];
+        });
 
-        return view('admin.users.stages', compact(
-            'pageTitle', 'stages', 'users', 'activeStage', 'activeStageId', 'stageCounts', 'stageNames'
-        ));
+        return Inertia::render('Admin/Users/Stages', [
+            'stages' => $stages->map(fn ($stage) => [
+                'id'    => $stage->id,
+                'name'  => (string) $stage->name,
+                'count' => (int) ($stageCounts[$stage->id] ?? 0),
+            ])->values(),
+            'active' => $activeStage ? ['id' => $activeStageId, 'name' => (string) $activeStage->name] : null,
+            'users'  => $rows,
+            'search' => (string) $request->query('search', ''),
+        ])->withViewData(['pageTitle' => 'User Stages']);
     }
 
-    protected function userData($scope = null)
+    /**
+     * Manage Users lists (Pages/Admin/Users/List.tsx): one page for every
+     * segment. The Blade page had two search boxes for the same ?search=;
+     * there is one now, with the status filter next to it.
+     */
+    protected function listPage(string $title, ?string $scope, ?User $referrer = null)
     {
-        if ($scope) {
-            $users = User::$scope();
-        } else {
-            $users = User::query();
+        // $scope is always one of the fixed segment names above, never request input.
+        $users = $scope ? User::$scope() : User::query();
+        if ($referrer) {
+            $users->where('ref_by', $referrer->id);
         }
-        
-        // Apply text search
+
         $users = $users->searchable(['username', 'email', 'firstname', 'lastname']);
-        
-        // Apply advanced filters
         $users = $this->applyAdvancedFilters($users);
-        
-        return $users->orderBy('id', 'desc')->paginate(getPaginate());
+
+        $kycLinks = request()->routeIs('admin.users.kyc.pending');
+
+        $users = $users->with('refBy:id,username')->orderBy('id', 'desc')->paginate(getPaginate())->withQueryString()
+            ->through(fn (User $user) => [
+                'id'      => $user->id,
+                'user'    => AdminPresenter::user($user),
+                'email'   => (string) $user->email,
+                'mobile'  => (string) $user->mobileNumber,
+                // The old cell printed "@" even when there was no sponsor.
+                'sponsor' => $user->refBy?->username,
+                'joined'  => AdminPresenter::when($user->created_at),
+                'balance' => showAmount($user->balance),
+                'kycUrl'  => $kycLinks ? route('admin.users.kyc.details', $user->id) : null,
+            ]);
+
+        return Inertia::render('Admin/Users/List', [
+            'title'   => $title,
+            'users'   => $users,
+            'filters' => [
+                'search' => (string) request()->query('search', ''),
+                'status' => (string) request()->query('status', ''),
+            ],
+        ])->withViewData(['pageTitle' => $title]);
     }
-    
+
     protected function applyAdvancedFilters($query)
     {
-        // Filter by status
-        if (request()->has('status') && request('status') !== '') {
-            $status = request('status') == 1 ? Status::USER_ACTIVE : Status::USER_BAN;
-            $query->where('status', $status);
+        // ?status=1 active, ?status=0 banned; anything else (or nothing) shows both.
+        $status = (string) request()->query('status', '');
+        if ($status === '1' || $status === '0') {
+            $query->where('status', $status === '1' ? Status::USER_ACTIVE : Status::USER_BAN);
         }
-        
+
         return $query;
     }
 
@@ -251,14 +266,36 @@ class ManageUsersController extends Controller
 
     public function sponsorHistory($id)
     {
-        $user      = User::with('refBy')->findOrFail($id);
-        $pageTitle = 'Sponsor History - ' . $user->username;
-        $logs      = $user->sponsorChangeLogs()
+        $user = User::with('refBy')->findOrFail($id);
+        $logs = $user->sponsorChangeLogs()
             ->with(['previousSponsor:id,firstname,lastname,username', 'newSponsor:id,firstname,lastname,username', 'admin:id,name,username'])
             ->latest('id')
             ->paginate(getPaginate());
 
-        return view('admin.users.sponsor_history', compact('pageTitle', 'user', 'logs'));
+        $first = $logs->firstItem() ?? 0;
+        $rows  = $logs->through(function ($log) use (&$first, $logs, $user) {
+            $isFirst = $first === 1;
+
+            return [
+                'id'       => $log->id,
+                'number'   => $first++,
+                'when'     => AdminPresenter::when($log->created_at),
+                'previous' => AdminPresenter::user($log->previousSponsor),
+                'new'      => AdminPresenter::user($log->newSponsor),
+                // The newest change is the one in force, if it still matches the member's sponsor.
+                'current'  => $isFirst && (int) $log->new_sponsor_id === (int) $user->ref_by,
+                'admin'    => $log->admin ? ['name' => (string) $log->admin->name, 'username' => (string) $log->admin->username] : null,
+            ];
+        });
+
+        $title = 'Sponsor History - ' . $user->username;
+
+        return Inertia::render('Admin/Users/SponsorHistory', [
+            'title'   => $title,
+            'member'  => AdminPresenter::user($user),
+            'sponsor' => AdminPresenter::user($user->refBy),
+            'logs'    => $rows,
+        ])->withViewData(['pageTitle' => $title]);
     }
 
     /**
@@ -406,12 +443,59 @@ class ManageUsersController extends Controller
     }
 
 
+    /** One member's KYC submission (Pages/Admin/Users/KycDetail.tsx), with approve / reject. */
     public function kycDetails($id)
     {
-        $pageTitle = 'KYC Details';
-        $user      = User::findOrFail($id);
-        return view('admin.users.kyc_detail', compact('pageTitle', 'user'));
+        $user = User::findOrFail($id);
+
+        $file = function (string $path, string $name) {
+            $hash = encrypt($path);
+            $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+            return [
+                'view'     => route('admin.view.attachment', $hash),
+                'download' => route('admin.download.attachment', $hash),
+                'image'    => in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true),
+            ];
+        };
+
+        $fields = collect((array) ($user->kyc_data ?? []))
+            ->filter(fn ($f) => !empty($f->value))
+            ->map(fn ($f) => [
+                'name'  => __((string) $f->name),
+                'type'  => (string) $f->type,
+                'value' => $f->type === 'checkbox' ? implode(', ', (array) $f->value) : ($f->type === 'file' ? null : __((string) $f->value)),
+                'file'  => $f->type === 'file' ? $file(getFilePath('verify') . '/' . $f->value, (string) $f->value) : null,
+            ])->values();
+
+        $guarantor = \App\Models\GuarantorRequest::where('user_id', $user->id)->with('guarantor')->latest()->first();
+
+        return Inertia::render('Admin/Users/KycDetail', [
+            'member'   => AdminPresenter::user($user),
+            'hasData'  => (bool) $user->kyc_data,
+            'fields'   => $fields,
+            'identity' => [
+                'nin'      => $user->nin ?: null,
+                'cardType' => $user->id_card_type ? ucwords(str_replace('_', ' ', $user->id_card_type)) : null,
+                'card'     => $user->id_card_image ? $file(getFilePath('verify') . '/id_cards/' . $user->id_card_image, (string) $user->id_card_image) : null,
+            ],
+            'guarantor' => $guarantor ? [
+                'name'      => $guarantor->guarantor ? trim($guarantor->guarantor->firstname . ' ' . $guarantor->guarantor->lastname) : null,
+                'username'  => $guarantor->guarantor?->username,
+                'status'    => AdminPresenter::badge(ucfirst((string) $guarantor->status), match ($guarantor->status) {
+                    'pending' => 'badge--warning', 'accepted' => 'badge--success', 'declined' => 'badge--danger', default => 'badge--dark',
+                }),
+                'responded' => $guarantor->responded_at?->format('d M Y, g:i A'),
+            ] : null,
+            'pending'         => (int) $user->kv === Status::KYC_PENDING,
+            'rejectionReason' => (int) $user->kv === Status::KYC_UNVERIFIED ? ($user->kyc_rejection_reason ?: null) : null,
+            'urls'            => [
+                'approve' => route('admin.users.kyc.approve', $user->id),
+                'reject'  => route('admin.users.kyc.reject', $user->id),
+            ],
+        ])->withViewData(['pageTitle' => 'KYC Details']);
     }
+
      public function usedPin($id)
     {
         $user = User::findOrFail($id);
@@ -421,9 +505,18 @@ class ManageUsersController extends Controller
         return view('admin.pin.index', compact('pageTitle', 'emptyMessage', 'pins'));
     }
 
+    /**
+     * Only a submission that is waiting can be approved or rejected. These
+     * used to work on any member, so a stale tab could approve a member whose
+     * documents had been rejected, or reject an already verified one.
+     */
     public function kycApprove($id)
     {
-        $user     = User::findOrFail($id);
+        $user = User::findOrFail($id);
+        if ((int) $user->kv !== Status::KYC_PENDING) {
+            return back()->withNotify([['error', 'This KYC submission is no longer pending.']]);
+        }
+
         $user->kv = Status::KYC_VERIFIED;
         $user->save();
 
@@ -436,9 +529,13 @@ class ManageUsersController extends Controller
     public function kycReject(Request $request, $id)
     {
         $request->validate([
-            'reason' => 'required'
+            'reason' => 'required|string|max:1000',
         ]);
-        $user                       = User::findOrFail($id);
+        $user = User::findOrFail($id);
+        if ((int) $user->kv !== Status::KYC_PENDING) {
+            return back()->withNotify([['error', 'This KYC submission is no longer pending.']]);
+        }
+
         $user->kv                   = Status::KYC_UNVERIFIED;
         $user->kyc_rejection_reason = $request->reason;
         $user->save();
@@ -1162,10 +1259,9 @@ class ManageUsersController extends Controller
     }
     public function userRef($id)
     {
-        $user      = User::findOrFail($id);
-        $pageTitle = 'Referred By ' . $user->username;
-        $users     = User::searchable(['username', 'email'])->where('ref_by', $id)->latest()->paginate(getPaginate());
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        $user = User::findOrFail($id);
+
+        return $this->listPage('Referred By ' . $user->username, null, $user);
     }
 
 

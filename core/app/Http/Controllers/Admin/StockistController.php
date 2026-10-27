@@ -131,12 +131,6 @@ class StockistController extends Controller
     	return view('admin.stockist.index', compact('pageTitle', 'stockists'));
     }
 
-    public function changeUserStockistStatusddd()
-    {
-        $pageTitle = 'Banned Users';
-        $users = $this->userData('banned');
-        return view('admin.users.list', compact('pageTitle', 'users'));
-    }
 
 
     public function changeUserStockistStatus(Request $request,$id)

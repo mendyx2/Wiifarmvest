@@ -102,3 +102,19 @@
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+/* Pages/Admin/Users/KycDetail.tsx: the ID card thumbnail (was inline styles). */
+.kyc-thumb {
+    padding: 0;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: none;
+    cursor: zoom-in;
+}
+
+.kyc-thumb img {
+    height: 48px;
+    width: 72px;
+    object-fit: cover;
+    border-radius: 6px;
+}
