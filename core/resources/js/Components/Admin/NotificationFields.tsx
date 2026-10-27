@@ -1,4 +1,5 @@
 import { useTrans } from '@/lib/i18n';
+import { FieldError as Error } from './Form';
 import ChannelPicker, { type Channel } from './ChannelPicker';
 import RichTextEditor from './RichTextEditor';
 
@@ -75,8 +76,4 @@ export default function NotificationFields({ channels, data, errors, onChange }:
             <Error message={errors.via} />
         </>
     );
-}
-
-export function Error({ message }: { message?: string }) {
-    return message ? <small className="text--danger d-block mt-1">{message}</small> : null;
 }

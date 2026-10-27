@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99). Next: 7d shop, stockists, affiliate · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d-1 shop ✅ (Step 100). Next: 7d-2 stockists, 7d-3 affiliate · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -4270,6 +4270,133 @@ in the Blade admin layout for the pages that are still Blade.
     first; Stop Sending posts `cancel`.
   - **Phone width:** no sideways scroll on all three pages.
 - **Regression:** 26 browser suites, 794 checks, all pass. `route:cache`
+  and `view:cache` succeed; the route-name scan shows only the 21 known
+  `ipn.` references.
+
+### Step 100: The admin Shop pages in React (7d-1)
+
+**Plan for 7d.** The shop, stockist and affiliate admin is about 7,000
+lines of Blade, so it goes in three parts:
+
+1. **7d-1:** the Shop group: products, categories, states, orders, repurchase awards.
+2. **7d-2:** Manage Stockist.
+3. **7d-3:** Affiliate Program, Affiliate Audit, ad materials, welcome packs.
+
+**Pages (`Pages/Admin/Shop/`):**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Products.tsx` | `admin.product.index` | `product/index.blade.php` |
+| `ProductForm.tsx` | `admin.product.create`, `admin.product.edit` | `product/create.blade.php`, `product/edit.blade.php`, `product/partials/state_price_row.blade.php` |
+| `Categories.tsx` | `admin.category.index` | `category/index.blade.php` |
+| `States.tsx` | `admin.state.index` | `state/index.blade.php` |
+| `Orders.tsx` | `admin.order.index` | `orders.blade.php` and `sales/index.blade.php` |
+| `OrderDetail.tsx` (+ `.css`) | `admin.order.show` (new) | `sales/show.blade.php` |
+| `RepurchaseAwards.tsx` | `admin.repurchase-award.index` | `repurchase-award/index.blade.php` |
+| `RepurchaseQualified.tsx` | `admin.repurchase-award.qualified` | `repurchase-award/qualified.blade.php` |
+
+**New shared pieces (`Components/Admin/`):**
+
+- `Form.tsx`:
+  - `FieldError` and `DialogHeader`. Three pages had their own copies; the
+    member page, the profile page and the notification fields now use these.
+  - `ConfirmButton`: asks "Are you sure?" and then sends the POST or DELETE.
+    It replaces the Blade `confirmationBtn` and the `onsubmit="return confirm()"` forms.
+  - `withId(url, id)`: fills in the `:id` placeholder in a route URL.
+- `Drawer.tsx`: the slide-in form panel used by States and Repurchase
+  Awards. It closes on Escape and handles focus.
+- `ProductForm` has its own tag box (meta keywords, replacing select2) and
+  gallery picker (replacing the jQuery image-uploader plugin).
+
+**Duplicates removed:**
+
+- **Two order pages.** "Manage Sales" and "Manage Order" both listed the
+  same `orders` table. One showed collection at stockists; the other showed
+  ship/cancel. They are now one **Orders & Sales** page:
+  - search by invoice, TRX or member;
+  - filter by status and by how much was collected;
+  - today's figures at the top.
+  - The order page has both the collection history and Ship / Cancel.
+  - `/admin/sales` and `/admin/sales/{id}` redirect to it, and
+    `AdminSalesController` is deleted.
+- **Two product forms.** Create Product and Edit Product were near-copies;
+  they are now one page.
+- **The sidebar** has one "Orders & Sales" entry instead of two.
+- **The dashboard's** Pending / Cancelled order tiles now open the list
+  already filtered.
+
+**Toggles say what they mean.** `GlobalStatus::changeStatus()` takes
+`state=enable|disable`. Repeating it answers "already on/off" and changes
+nothing. Without `state` it still flips, so the remaining Blade pages work
+as before. Repurchase awards take `state=on|off` the same way.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Repurchase award double payment:** the "already credited" check ran before the transaction. Its `lockForUpdate()` was outside any transaction, so it locked nothing, and a double click could pay an award twice. | The checks and the payment run in one transaction with the member row locked. The second click answers "already credited". |
+| A switched-off award could still be paid. | Refused until it is activated again. The Credit buttons are hidden. |
+| Deleting an award that was already paid left its payment records pointing at nothing. | Refused: switch it off instead. Unpaid awards can still be deleted. |
+| **Order refunds:** cancelling two orders of one member at the same moment could overwrite one refund with the other (the member row was not locked). | The member row is locked. A repeat cancel from a stale tab answers "no longer pending". |
+| The order list showed `orders.total_amount`, which is empty (₦0) for cart orders. | The invoice total, as the refund already used. |
+| "Manage Sales" only ever showed its first 10 orders: the page links were only drawn after a search. | One paginated list. |
+| **Product gallery on edit:** uploads were checked under `galleryImages.*`, a name nothing sends, so any file was accepted. | `gallery.*`: PNG/JPG only, 3 MB each, at most 10. |
+| A replaced thumbnail stayed on disk. | The old file is removed. |
+| The `old` gallery ids could name another product's image. | Only this product's images are touched. |
+| A maximum order quantity below the minimum was accepted, so the product could not be ordered. | Refused. |
+| An affiliate bonus could be over 100%, or have a type but no value. | Refused with a plain message. |
+| A failed gallery upload on Create answered with raw JSON. | The product is saved and the page says which part failed. |
+| The product and its state prices were saved separately. | Saved together in one transaction. |
+| Stock quantity had to be above 0, so a sold-out product could not be saved. | 0 is allowed; the list shows "Out". |
+| **Deleting a state** said it "also removes associated product prices" but left them behind. It also left stockists and orders pointing at a missing state. | Its prices are deleted with it. A state that stockists or orders use cannot be deleted; the button is disabled and the server refuses. |
+| Two states, or two categories, could share a name. A state code could hold spaces or symbols. | Names are unique; codes are letters and numbers only. |
+| Order item names were put into the details dialog as raw HTML. | React escapes them. |
+
+**Stays as it was (noted):**
+
+- Order status 1 means both "Shipped" (set by the admin) and "Collected"
+  (set when a stockist hands over everything). The page shows "Collected"
+  when the invoice is fully redeemed and "Shipped" otherwise.
+
+**Deleted:**
+
+- `admin/product/{index,create,edit}.blade.php` and `product/partials/state_price_row.blade.php`;
+- `admin/category/index.blade.php`, `admin/state/index.blade.php`, `admin/orders.blade.php`;
+- `admin/sales/{index,show}.blade.php`, `admin/repurchase-award/{index,qualified}.blade.php`;
+- `AdminSalesController`.
+
+**Verification:**
+
+- **Server checks** (`p7d1_check.php`):
+  - **Categories:** duplicate name; add; disable; disable again; the old
+    flip without `state`.
+  - **States:** bad code; add; same name; delete a used state (refused); delete
+    an unused one, which also removes its prices.
+  - **Products:** list and form props; seven failed creates (no thumbnail,
+    max < min, 150%, type without value, same state twice, a non-image in
+    the gallery); a full create (state prices, specs, keywords, gallery);
+    an update that keeps one image, adds one, replaces the thumbnail and
+    sets quantity 0; another product's image left alone; feature twice;
+    a state price added.
+  - **Orders:** totals from invoices; every filter; one member's orders;
+    detail; cancelling a partly collected order (refused); a refund of the
+    invoice total, once; the `/admin/sales` redirects.
+  - **Repurchase awards:** off → credit refused; on and on again; credit
+    once, double click refused (one credit, one transaction, one payout,
+    one ACB job); below the PV (refused); a paid award cannot be deleted;
+    add and delete an unpaid award.
+  - **Sidebar:** one "Orders & Sales", marked active on the order page.
+- **Browser checks** (`e2e/phase7d1.mjs`, 65 checks):
+  - every dialog, drawer and confirm sends the right request and fields
+    (the multipart product form included);
+  - errors show in place;
+  - picked states are not offered twice;
+  - tags and the gallery (wrong file types are skipped with a note);
+  - saved state prices can be edited and removed;
+  - the order filters and Ship / Cancel;
+  - the award toggle, edit, delete and credit, and the switched-off warning;
+  - no sideways scroll at phone width on all nine pages.
+- **Regression:** 27 browser suites, 859 checks, all pass. `route:cache`
   and `view:cache` succeed; the route-name scan shows only the 21 known
   `ipn.` references.
 

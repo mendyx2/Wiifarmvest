@@ -266,10 +266,10 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::post('{ad}/delete', 'destroy')->name('delete');
     });
 
-    // Manage Sales
-    Route::controller(\App\Http\Controllers\Admin\AdminSalesController::class)->prefix('sales')->name('sales.')->group(function () {
-        Route::get('/',    'index')->name('index');
-        Route::get('{id}', 'show')->name('show');
+    // Manage Sales: merged into Orders (Step 100); the old URLs still work.
+    Route::prefix('sales')->name('sales.')->group(function () {
+        Route::get('/', fn (\Illuminate\Http\Request $request) => redirect()->route('admin.order.index', $request->only('search')))->name('index');
+        Route::get('{id}', fn (int $id) => redirect()->route('admin.order.show', $id))->name('show')->whereNumber('id');
     });
 
     // DEPOSIT SYSTEM
@@ -573,7 +573,8 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
     //Order
     Route::controller('OrderController')->name('order.')->prefix('order')->group(function () {
-        Route::get('/{user_id?}', 'index')->name('index');
+        Route::get('detail/{id}', 'show')->name('show')->whereNumber('id');
+        Route::get('/{user_id?}', 'index')->name('index')->whereNumber('user_id');
         Route::post('status/{id}', 'status')->name('status');
     });
 

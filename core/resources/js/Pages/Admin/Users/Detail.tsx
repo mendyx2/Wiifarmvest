@@ -7,6 +7,7 @@ import ConfirmDialog from '@/Components/ConfirmDialog';
 import Modal from '@/Components/Modal';
 import { useTrans } from '@/lib/i18n';
 import './Detail.css';
+import { FieldError, DialogHeader } from '@/Components/Admin/Form';
 
 type Member = {
     id: number;
@@ -313,10 +314,6 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
     );
 }
 
-function FieldError({ message }: { message?: string }) {
-    return message ? <small className="text--danger d-block mt-1">{message}</small> : null;
-}
-
 function ProfileCard({ member }: { member: Member }) {
     const t = useTrans();
     return (
@@ -562,20 +559,6 @@ function PasswordCard({ url }: { url: string }) {
                     </button>
                 </form>
             </div>
-        </div>
-    );
-}
-
-function DialogHeader({ id, title, onClose }: { id: string; title: ReactNode; onClose: () => void }) {
-    const t = useTrans();
-    return (
-        <div className="modal-header">
-            <h5 className="modal-title" id={id}>
-                {title}
-            </h5>
-            <button type="button" className="close" aria-label={t('Close')} onClick={onClose}>
-                <i className="las la-times" />
-            </button>
         </div>
     );
 }

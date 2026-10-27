@@ -253,16 +253,10 @@
                 "menu_active": "admin.category.index"
             },
             {
-                "keyword": ["Sales", "Manage Sales", "Invoices", "Redemptions", "Daily sales", "Sales report"],
-                "title": "Manage Sales",
-                "route_name": "admin.sales.index",
-                "menu_active": "admin.sales*"
-            },
-            {
-                "keyword": ["Order", "Purchase", "Buy", "Sell"],
-                "title": "Manage Order",
+                "keyword": ["Order", "Purchase", "Buy", "Sell", "Sales", "Manage Sales", "Invoices", "Redemptions", "Daily sales", "Sales report"],
+                "title": "Orders & Sales",
                 "route_name": "admin.order.index",
-                "menu_active": "admin.order.index"
+                "menu_active": ["admin.order*", "admin.sales*"]
             },
             {
                 "keyword": ["State", "Manage States", "States", "Region", "Territory"],

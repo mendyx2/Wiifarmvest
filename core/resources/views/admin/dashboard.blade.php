@@ -188,7 +188,7 @@
         </div>
         <div class="col-xxl-4 col-lg-4 col-md-6 col-sm-6">
             <x-widget value="{{ showAmount($widget['total_order_sales_pending']) }}" title="Pending Sales Value" style="6"
-                link="{{ route('admin.order.index') }}" icon="las la-hourglass-half" bg="10" outline="true" />
+                link="{{ route('admin.order.index', ['status' => 'pending']) }}" icon="las la-hourglass-half" bg="10" outline="true" />
         </div>
         <div class="col-xxl-4 col-lg-4 col-md-6 col-sm-6">
             <x-widget value="{{ $widget['total_order'] }}" title="Total Orders" style="7"
@@ -196,11 +196,11 @@
         </div>
         <div class="col-xxl-4 col-lg-4 col-md-6 col-sm-6">
             <x-widget value="{{ $widget['total_pending_order'] }}" title="Pending Orders" style="7"
-                link="{{ route('admin.order.index') }}" icon="las la-clock" bg="1" />
+                link="{{ route('admin.order.index', ['status' => 'pending']) }}" icon="las la-clock" bg="1" />
         </div>
         <div class="col-xxl-4 col-lg-4 col-md-6 col-sm-6">
             <x-widget value="{{ $widget['total_cancel_order'] }}" title="Cancelled Orders" style="7"
-                link="{{ route('admin.order.index') }}" icon="las la-times-circle" bg="2" />
+                link="{{ route('admin.order.index', ['status' => 'cancelled']) }}" icon="las la-times-circle" bg="2" />
         </div>
     </div>
 

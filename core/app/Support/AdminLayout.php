@@ -72,6 +72,18 @@ class AdminLayout
         'admin.users.notification.all',
         'admin.users.other.tree',
         'admin.users.single.tree',
+        // 7d-1: shop
+        'admin.product.index',
+        'admin.product.create',
+        'admin.product.edit',
+        'admin.category.index',
+        'admin.state.index',
+        'admin.order.index',
+        'admin.order.show',
+        'admin.sales.index',
+        'admin.sales.show',
+        'admin.repurchase-award.index',
+        'admin.repurchase-award.qualified',
     ];
 
     public static function for(Request $request): ?array

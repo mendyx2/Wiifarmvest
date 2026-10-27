@@ -1,0 +1,261 @@
+/* Moved from resources/views/admin/sales/show.blade.php (@push('style')),
+   scoped under .page-order-detail so it only applies to this page. */
+
+.page-order-detail {
+    /* ── Sale detail page styles ── */
+    
+    /* Hero status badge */
+    .status-hero-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 8px 18px;
+        border-radius: 30px;
+        font-weight: 600;
+        font-size: .88rem;
+        letter-spacing: .02em;
+    }
+
+    .status-hero-badge.badge--success  { background: #d1f5e0; color: #0f5132; border: 1px solid #a3e6c0; }
+
+    .status-hero-badge.badge--warning  { background: #fff3cd; color: #664d03; border: 1px solid #ffe69c; }
+
+    .status-hero-badge.badge--danger   { background: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+
+    /* Meta info cards */
+    .meta-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        background: #fff;
+        border: 1px solid #e8eaf0;
+        border-radius: 12px;
+        padding: 16px 18px;
+        height: 100%;
+        box-shadow: 0 1px 4px rgba(0,0,0,.04);
+        transition: box-shadow .2s ease, transform .2s ease;
+    }
+
+    .meta-card:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,.08);
+        transform: translateY(-2px);
+    }
+
+    .meta-icon {
+        width: 46px;
+        height: 46px;
+        min-width: 46px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 1.4rem;
+    }
+
+    .meta-label {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: #888;
+        margin-bottom: 2px;
+    }
+
+    .meta-value {
+        font-size: .95rem;
+        font-weight: 700;
+        color: #222;
+        margin-bottom: 0;
+        word-break: break-all;
+    }
+
+    .meta-sub {
+        font-size: .78rem;
+        color: #999;
+        margin-bottom: 0;
+    }
+
+    .inv-code-sm {
+        font-size: .78rem;
+        font-family: monospace;
+        letter-spacing: .04em;
+    }
+
+    .amount-hero { color: #1b6b3a; font-size: 1.05rem; }
+
+    /* Product thumbnail */
+    .product-thumb {
+        width: 46px;
+        height: 46px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid #e8eaf0;
+    }
+
+    .product-thumb-placeholder {
+        width: 46px;
+        height: 46px;
+        background: #f3f4f9;
+        border-radius: 8px;
+        border: 1px solid #e8eaf0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ccc;
+        font-size: 1.2rem;
+    }
+
+    /* Qty badges */
+    .qty-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 28px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 6px;
+        font-size: .78rem;
+        font-weight: 700;
+        background: #e9ecef;
+        color: #495057;
+    }
+
+    .qty-badge.redeemed { background: #d1f5e0; color: #0f5132; }
+
+    .qty-badge.none     { background: #f8d7da; color: #842029; }
+
+    /* Item status badge */
+    .item-status-badge {
+        font-size: .74rem;
+        padding: 3px 10px;
+        border-radius: 20px;
+    }
+
+    /* Order total footer row */
+    .order-total-row {
+        background: #f8f9fa;
+        border-top: 2px solid #e8eaf0;
+    }
+
+    .total-amount-cell {
+        font-size: 1rem;
+        color: #1b6b3a;
+    }
+
+    /* Redemption block */
+    .redemption-block {
+        padding: 20px 24px;
+    }
+
+    .redemption-header {
+        margin-bottom: 16px;
+    }
+
+    .stockist-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .stockist-avatar {
+        width: 42px;
+        height: 42px;
+        min-width: 42px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 1.2rem;
+    }
+
+    .stockist-name {
+        font-weight: 700;
+        font-size: .95rem;
+        color: #222;
+    }
+
+    .stockist-sub {
+        font-size: .78rem;
+        color: #999;
+    }
+
+    .redemption-notes {
+        font-size: .82rem;
+        color: #666;
+        background: #fffbe6;
+        border-left: 3px solid #fadb14;
+        padding: 6px 12px;
+        border-radius: 0 6px 6px 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .redemption-items {
+        padding-top: 4px;
+    }
+
+    /* Redeemed item card */
+    .ritem-card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #f8f9fc;
+        border: 1px solid #e8eaf0;
+        border-radius: 10px;
+        padding: 10px 12px;
+        transition: box-shadow .15s ease;
+    }
+
+    .ritem-card:hover {
+        box-shadow: 0 3px 10px rgba(0,0,0,.07);
+    }
+
+    .ritem-img {
+        width: 40px;
+        height: 40px;
+        object-fit: cover;
+        border-radius: 7px;
+        border: 1px solid #dde;
+        flex-shrink: 0;
+    }
+
+    .ritem-img-placeholder {
+        width: 40px;
+        height: 40px;
+        border-radius: 7px;
+        background: #e9ecef;
+        border: 1px solid #dde;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #bbb;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+
+    .ritem-name {
+        font-size: .83rem;
+        font-weight: 600;
+        color: #333;
+        line-height: 1.3;
+    }
+
+    .ritem-qty {
+        font-size: .78rem;
+        color: #666;
+    }
+
+    /* Empty state */
+    .empty-state { color: #bbb; }
+
+    .empty-state i { font-size: 3rem; display: block; }
+
+    /* Responsive tweaks */
+    @media (max-width: 575px) {
+        .meta-card { padding: 12px 14px; }
+        .redemption-block { padding: 14px 16px; }
+        th, td { font-size: .78rem; }
+    }
+}

@@ -19,6 +19,11 @@ class RepurchaseAward extends Model
         return $query->where('status', true)->orderBy('required_pv');
     }
 
+    public function credits()
+    {
+        return $this->hasMany(RepurchaseAwardCredit::class);
+    }
+
     public function qualifiedUsers()
     {
         return RepurchasePv::where('total_pv', '>=', $this->required_pv)

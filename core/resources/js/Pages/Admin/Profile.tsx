@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from 'react';
 import ImageUploader from '@/Components/Admin/ImageUploader';
 import PageHeader from '@/Components/Admin/PageHeader';
 import { useTrans } from '@/lib/i18n';
+import { FieldError } from '@/Components/Admin/Form';
 
 type Props = {
     admin: { name: string; username: string; email: string; image: string };
@@ -155,6 +156,3 @@ function Info({ label, children }: { label: string; children: ReactNode }) {
     );
 }
 
-function FieldError({ message }: { message?: string }) {
-    return message ? <small className="text--danger d-block mt-1">{message}</small> : null;
-}
