@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d-1 shop ✅ (Step 100) · 7d-2 stockists ✅ (Step 101). Next: 7d-3 affiliate · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102). Next: · 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -4502,6 +4502,92 @@ as before. Repurchase awards take `state=on|off` the same way.
   - the sidebar without the retired entries;
   - no sideways scroll at phone width on all nine pages.
 - **Regression:** 28 browser suites, 910 checks, all pass. `route:cache`
+  and `view:cache` succeed; the route-name scan shows only the 21 known
+  `ipn.` references.
+
+### Step 102: Affiliate Program, ad materials and welcome packs in React (7d-3)
+
+This finishes 7d.
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Affiliate/Dashboard.tsx` | `admin.affiliate.dashboard` | `affiliate/dashboard.blade.php` |
+| `Affiliate/Orders.tsx`, `Affiliate/OrderDetail.tsx` | `admin.affiliate.orders`, `admin.affiliate.order.show` | `affiliate/orders.blade.php`, `affiliate/order_show.blade.php` |
+| `Affiliate/Affiliates.tsx` | `admin.affiliate.affiliates` | `affiliate/affiliates.blade.php` |
+| `Affiliate/Audit.tsx` | `admin.affiliate.audit` | `affiliate/funnel.blade.php` and `affiliate/audit.blade.php` |
+| `Affiliate/Settings.tsx` | `admin.affiliate.settings` | `affiliate/settings.blade.php` |
+| `Pages/Admin/Ads/Index.tsx`, `Ads/Form.tsx` | `admin.ads.index`, `admin.ads.create`, `admin.ads.edit` | `ads/index.blade.php`, `ads/form.blade.php` |
+| `Pages/Admin/WelcomePack/Index.tsx` (+ `.css`) | `admin.welcome-pack.index` | `welcome-pack/index.blade.php` |
+
+The ad form keeps everything the jQuery version did:
+
+- drag and drop;
+- the size check before uploading;
+- a cover taken from a frame of the clip;
+- the live link preview;
+- character counts.
+
+It also shows the upload percentage.
+
+`BoxWidget` takes `inertia` for a box that links to a React page.
+
+**Duplicates removed:**
+
+- **Funnel Report and Financial Audit** were two pages with the same date
+  form over the same orders. They are one page, "Funnel & Financial
+  Audit". `/admin/affiliate/funnel` redirects to it with the same dates,
+  and the sidebar's Audit group has one entry.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| Funnel and audit dates went straight to `$request->date()`, so a bad date gave a server error. | Only real calendar dates are used (`2026-13-45` no longer rolls into 2027); anything else falls back to the last 30 days. From and to are swapped if reversed. |
+| Active Affiliates used `HAVING` without `GROUP BY`, which strict MySQL refuses. | `whereHas` on orders or clicks. Search by name added; the order count links to that affiliate's orders. |
+| Order filters passed any value through. | Only known statuses, payment methods and states; search by code, buyer or affiliate. |
+| Settings allowed both payment methods off (the shop could take no orders) and a pickup fee above 100%. | Both refused, with a message under the field. |
+| Ads: Pause / Go live was a blind toggle. | `state=live|paused`; a repeat answers "already". Pause and delete ask first. |
+| An ad picture that failed to process was logged with `\Log::error` and its message. | `report($e)`. |
+| Welcome packs: an unknown `tab` showed everything without saying so. | Pending, Redeemed or All, explicitly. Search also matches the code; member names link to their page. |
+
+**Checked, not a bug:** an ad upload is checked by its real content (a
+PHP file named `.jpg` is refused), not by its name.
+
+**Deleted:**
+
+- `admin/affiliate/{dashboard,orders,order_show,affiliates,funnel,audit,settings}.blade.php`;
+- `admin/ads/{index,form}.blade.php`;
+- `admin/welcome-pack/index.blade.php`.
+
+**Verification:**
+
+- **Server checks** (`p7d3_check.php`):
+  - **Affiliate dashboard:** numbers.
+  - **Orders:** every filter (bogus ignored); the detail page with its
+    stockist link.
+  - **Affiliates:** list and search.
+  - **Funnel:** the old URL redirects.
+  - **Audit:** a wide period, a bad date, an impossible date, reversed dates.
+  - **Settings:** both payments off and 150% refused; a fixed ₦150 accepted.
+  - **Ads:** counts, channels and promoters; the form props; store
+    without a file; a disguised PHP file refused; a picture stored; update
+    keeping the file; pause twice; go live; delete (files removed).
+  - **Welcome packs:** every tab, search by code and name, member filter.
+  - **Sidebar:** the single Audit entry marked active.
+- **Browser checks** (`e2e/phase7d3.mjs`, 37 checks):
+  - the dashboard box opens filtered orders as an Inertia visit;
+  - order filters; order and affiliate links;
+  - the audit dates;
+  - settings: both-off guard, percentage max, the POST;
+  - ad tabs, pause and delete with confirm;
+  - the new-ad preview and counters, the size guard, the multipart POST;
+  - editing a clip (cover field, is_active off);
+  - welcome pack tabs, search and the scoped CSS;
+  - the sidebar;
+  - no sideways scroll at phone width on all ten pages.
+- **Regression:** 29 browser suites, 947 checks, all pass. `route:cache`
   and `view:cache` succeed; the route-name scan shows only the 21 known
   `ipn.` references.
 

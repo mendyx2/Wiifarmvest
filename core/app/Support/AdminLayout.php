@@ -101,6 +101,18 @@ class AdminLayout
         'admin.stockist-orders.show',
         'admin.sorder.index',
         'admin.supply.index',
+        // 7d-3: affiliate, ads, welcome pack
+        'admin.affiliate.dashboard',
+        'admin.affiliate.orders',
+        'admin.affiliate.order.show',
+        'admin.affiliate.affiliates',
+        'admin.affiliate.funnel',
+        'admin.affiliate.audit',
+        'admin.affiliate.settings',
+        'admin.ads.index',
+        'admin.ads.create',
+        'admin.ads.edit',
+        'admin.welcome-pack.index',
     ];
 
     public static function for(Request $request): ?array

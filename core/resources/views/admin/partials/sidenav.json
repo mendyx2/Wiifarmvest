@@ -670,21 +670,17 @@
                 "keyword": [
                     "Affiliate",
                     "Funnel",
-                    "Analytics"
-                ],
-                "title": "Funnel Report",
-                "route_name": "admin.affiliate.funnel",
-                "menu_active": "admin.affiliate.funnel"
-            },
-            {
-                "keyword": [
-                    "Affiliate",
+                    "Analytics",
                     "Audit",
-                    "Financial"
+                    "Revenue",
+                    "Financial Audit"
                 ],
-                "title": "Financial Audit",
+                "title": "Funnel & Financial Audit",
                 "route_name": "admin.affiliate.audit",
-                "menu_active": "admin.affiliate.audit"
+                "menu_active": [
+                    "admin.affiliate.funnel",
+                    "admin.affiliate.audit"
+                ]
             }
         ]
     },

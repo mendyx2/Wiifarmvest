@@ -1,7 +1,9 @@
+import { Link } from '@inertiajs/react';
+
 /**
  * <x-widget style="6">: a coloured box with an icon, a caption, a value and
- * an optional note. With a link the whole box opens it (a normal page load:
- * the linked admin pages may still be Blade).
+ * an optional note. With a link the whole box opens it: a normal page load,
+ * or an Inertia visit with `inertia` when the linked page is React.
  */
 export default function BoxWidget({
     title,
@@ -11,6 +13,7 @@ export default function BoxWidget({
     note,
     link,
     outline = false,
+    inertia = false,
 }: {
     title: string;
     value: string;
@@ -19,6 +22,7 @@ export default function BoxWidget({
     note?: string | null;
     link?: string | null;
     outline?: boolean;
+    inertia?: boolean;
 }) {
     const box = (
         <div className={`widget-seven bg--${bg} ${outline ? 'outline' : ''}`}>
@@ -41,5 +45,6 @@ export default function BoxWidget({
             )}
         </div>
     );
-    return link ? <a href={link}>{box}</a> : box;
+    if (!link) return box;
+    return inertia ? <Link href={link}>{box}</Link> : <a href={link}>{box}</a>;
 }
