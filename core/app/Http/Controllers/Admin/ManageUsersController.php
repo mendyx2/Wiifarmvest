@@ -561,14 +561,7 @@ class ManageUsersController extends Controller
             ];
         };
 
-        $fields = collect((array) ($user->kyc_data ?? []))
-            ->filter(fn ($f) => !empty($f->value))
-            ->map(fn ($f) => [
-                'name'  => __((string) $f->name),
-                'type'  => (string) $f->type,
-                'value' => $f->type === 'checkbox' ? implode(', ', (array) $f->value) : ($f->type === 'file' ? null : __((string) $f->value)),
-                'file'  => $f->type === 'file' ? $file(getFilePath('verify') . '/' . $f->value, (string) $f->value) : null,
-            ])->values();
+        $fields = AdminPresenter::formFields($user->kyc_data, skipEmpty: true);
 
         $guarantor = \App\Models\GuarantorRequest::where('user_id', $user->id)->with('guarantor')->latest()->first();
 

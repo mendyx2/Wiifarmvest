@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102). Next: 7e deposits, withdrawals, pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103). Next: 7e pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -4588,6 +4588,79 @@ PHP file named `.jpg` is refused), not by its name.
   - the sidebar;
   - no sideways scroll at phone width on all ten pages.
 - **Regression:** 29 browser suites, 947 checks, all pass. `route:cache`
+  and `view:cache` succeed; the route-name scan shows only the 21 known
+  `ipn.` references.
+
+### Step 103: Deposits and withdrawals in React (7e-1)
+
+This starts 7e, the money pages.
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Money/Deposits.tsx` | `admin.deposit.{list,pending,approved,successful,rejected,initiated}` | `deposit/log.blade.php`, `deposit/widget.blade.php` |
+| `Money/DepositDetail.tsx` | `admin.deposit.details` | `deposit/detail.blade.php`, `deposit/gateway_data.blade.php` |
+| `Money/Withdrawals.tsx` | `admin.withdraw.data.{pending,approved,rejected,all}` | `withdraw/withdrawals.blade.php`, `withdraw/widget.blade.php` |
+| `Money/WithdrawalDetail.tsx` | `admin.withdraw.data.details` | `withdraw/detail.blade.php` |
+
+Each list is one page for every status the sidebar links to. The "All"
+page has summary boxes, one per status, that open that status's list.
+Clicking a gateway name filters by it. The pending withdrawals list keeps
+its checkboxes with Approve Selected and Reject Selected.
+
+**Shared pieces:**
+
+- `Components/Admin/FormAnswers.tsx` shows what a member typed into a
+  form built with the form builder: text, a checkbox list, or a file with
+  View and Download.
+- `AdminPresenter::formFields()` turns those stored answers into rows for
+  it. The KYC review page (Step 97) now uses it too instead of its own
+  copy.
+- `AdminPresenter::flatten()` turns an automatic gateway's reply (nested
+  JSON) into "key → value" rows.
+
+**Duplicates removed:**
+
+- `admin.withdraw.data.index_w` (`/admin/withdraw/withdrawals`) rendered
+  a view that did not exist, so it always failed. Removed; the four lists
+  above cover it.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| Rejecting a deposit read it, checked "pending", then saved. An approval landing in between was credited and then marked "rejected". | Reject changes the status only if it is still pending at that moment (one `UPDATE … WHERE status = pending`). Approve already used `userDataUpdate()`, which claims the deposit the same way, so a deposit is credited once. |
+| Rejecting a withdrawal refunded `balance += amount` with no lock. A double click or two admins refunded twice. | The request is claimed first; only the one that wins refunds, through `WalletService::credit()` (locks the member row, writes the transaction with the right post balance). |
+| `POST /admin/withdraw/update-status` set any status on any ids, with no refund and no message to the member. | Removed. Bulk actions go through `bulk-action`, which refunds and notifies. |
+| Bulk action stopped with a 404 at the first request already processed, leaving the rest half done. | Each request is processed on its own; the message says how many were done and how many skipped. At most 200 at a time. |
+| An unknown `?method=` on the deposit list answered 404. | It shows no rows. |
+| Withdrawal approve and reject took an empty note. | A note (up to 255 characters) is required, as the forms always asked (deposit reject already required one). |
+
+**Kept for 7f:** withdraw methods (`withdraw/{index,create,edit}.blade.php`)
+use the form builder, so they move with the gateways and settings.
+
+**Deleted:**
+
+- `admin/deposit/{log,detail,widget,gateway_data}.blade.php`;
+- `admin/withdraw/{withdrawals,detail,widget}.blade.php`.
+
+**Verification:**
+
+- **Server checks** (`p7e1_check.php`):
+  - every list, with search, date, method and member filters (an unknown
+    method gives no rows);
+  - a manual deposit's answers and an automatic deposit's gateway reply;
+  - approving a deposit twice credits once; reject after approve is
+    refused;
+  - rejecting a withdrawal twice refunds once, with one transaction;
+  - bulk approve and reject skip processed and missing ids;
+  - `update-status` and `/withdrawals` answer 404.
+- **Browser checks** (`e2e/phase7e1.mjs`, 28 checks): summary boxes as
+  Inertia visits, filters, approve and reject dialogs and their POSTs,
+  bulk selection, the withdrawal's bank details and payable amount, and no
+  sideways scroll at phone width on all seven pages.
+- **Regression:** 30 browser suites, 975 checks, all pass. `route:cache`
   and `view:cache` succeed; the route-name scan shows only the 21 known
   `ipn.` references.
 

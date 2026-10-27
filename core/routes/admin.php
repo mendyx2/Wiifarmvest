@@ -296,9 +296,8 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
             Route::get('details/{id}', 'details')->name('details');
             Route::post('approve', 'approve')->name('approve');
             Route::post('reject', 'reject')->name('reject');
-            //select section
-             Route::get('/withdrawals',  'index_w')->name('index_w');
-            Route::post('update-status', 'updateStatus')->name('update-status');
+            // Bulk approve / reject from the list. "update-status" (any status, no refund)
+            // and the "withdrawals" page (its view did not exist) were removed in Step 103.
             Route::post('bulk-action', 'bulkAction')->name('bulk-action');
         });
 

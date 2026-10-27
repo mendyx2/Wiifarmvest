@@ -113,6 +113,19 @@ class AdminLayout
         'admin.ads.create',
         'admin.ads.edit',
         'admin.welcome-pack.index',
+        // 7e-1: deposits and withdrawals
+        'admin.deposit.list',
+        'admin.deposit.pending',
+        'admin.deposit.rejected',
+        'admin.deposit.approved',
+        'admin.deposit.successful',
+        'admin.deposit.initiated',
+        'admin.deposit.details',
+        'admin.withdraw.data.pending',
+        'admin.withdraw.data.approved',
+        'admin.withdraw.data.rejected',
+        'admin.withdraw.data.all',
+        'admin.withdraw.data.details',
     ];
 
     public static function for(Request $request): ?array

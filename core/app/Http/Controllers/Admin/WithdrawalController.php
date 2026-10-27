@@ -4,284 +4,249 @@ namespace App\Http\Controllers\Admin;
 
 use App\Constants\Status;
 use App\Http\Controllers\Controller;
-use App\Models\Transaction;
 use App\Models\Withdrawal;
+use App\Models\WithdrawMethod;
+use App\Services\WalletService;
+use App\Support\AdminPresenter;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
+/**
+ * Withdrawals: one list for every status (Pages/Admin/Money/Withdrawals.tsx)
+ * with bulk approve / reject, and one request (WithdrawalDetail.tsx).
+ *
+ * Approving or rejecting first claims the request: its status changes only
+ * if it is still pending at that moment. Only then is the member notified
+ * or refunded, so a double click, two admins, or a bulk action overlapping a
+ * single one can no longer refund the same request twice.
+ */
 class WithdrawalController extends Controller
 {
-    private $details; // Declare the member variable
-    private $types;
-    private $notifys = [];
+    private const LISTS = [
+        'pending'  => 'Pending Withdrawals',
+        'approved' => 'Approved Withdrawals',
+        'rejected' => 'Rejected Withdrawals',
+    ];
 
     public function pending($userId = null)
     {
-
-        $pageTitle = 'Pending Withdrawals';
-        $withdrawals = $this->withdrawalData('pending',userId:$userId);
-        return view('admin.withdraw.withdrawals', compact('pageTitle', 'withdrawals'));
+        return $this->listPage('pending', $userId);
     }
 
     public function approved($userId = null)
     {
-        $pageTitle = 'Approved Withdrawals';
-        $withdrawals = $this->withdrawalData('approved',userId:$userId);
-        return view('admin.withdraw.withdrawals', compact('pageTitle', 'withdrawals'));
+        return $this->listPage('approved', $userId);
     }
 
     public function rejected($userId = null)
     {
-        $pageTitle = 'Rejected Withdrawals';
-        $withdrawals = $this->withdrawalData('rejected',userId:$userId);
-        return view('admin.withdraw.withdrawals', compact('pageTitle', 'withdrawals'));
+        return $this->listPage('rejected', $userId);
     }
 
     public function all($userId = null)
     {
-        $pageTitle = 'All Withdrawals';
-        $withdrawalData = $this->withdrawalData($scope = null, $summary = true,userId:$userId);
-        $withdrawals = $withdrawalData['data'];
-        $summary = $withdrawalData['summary'];
-        $successful = $summary['successful'];
-        $pending = $summary['pending'];
-        $rejected = $summary['rejected'];
-
-
-        return view('admin.withdraw.withdrawals', compact('pageTitle', 'withdrawals','successful','pending','rejected'));
+        return $this->listPage(null, $userId);
     }
 
-    protected function withdrawalData($scope = null, $summary = false,$userId = null){
-        if ($scope) {
-            $withdrawals = Withdrawal::$scope();
-        }else{
-            $withdrawals = Withdrawal::where('status','!=',Status::PAYMENT_INITIATE);
-        }
+    /** $scope is one of the fixed LISTS keys above, never request input. */
+    private function listPage(?string $scope, $userId)
+    {
+        $pageTitle = $scope ? self::LISTS[$scope] : 'All Withdrawals';
+        $request   = request();
+        $methodId  = (int) $request->query('method');
 
-        if ($userId) {
-            $withdrawals = $withdrawals->where('user_id',$userId);
-        }
+        $query = ($scope ? Withdrawal::$scope() : Withdrawal::where('status', '!=', Status::PAYMENT_INITIATE))
+            ->when($userId, fn ($q) => $q->where('user_id', (int) $userId))
+            ->when($methodId, fn ($q) => $q->where('method_id', $methodId))
+            ->searchable(['trx', 'user:username'])
+            ->dateFilter();
 
-        $withdrawals = $withdrawals->searchable(['trx','user:username'])->dateFilter();
- 
-        $request = request();
-        if ($request->method) {
-            $withdrawals = $withdrawals->where('method_id',$request->method);
-        }
-        if (!$summary) {
-            return $withdrawals->with(['user','method'])->orderBy('id','desc')->paginate(getPaginate());
-        }else{ 
+        $summary = $scope ? null : [
+            'successful' => showAmount((clone $query)->where('status', Status::PAYMENT_SUCCESS)->sum('amount')),
+            'pending'    => showAmount((clone $query)->where('status', Status::PAYMENT_PENDING)->sum('amount')),
+            'rejected'   => showAmount((clone $query)->where('status', Status::PAYMENT_REJECT)->sum('amount')),
+        ];
 
-            $successful = clone $withdrawals;
-            $pending = clone $withdrawals;
-            $rejected = clone $withdrawals;
+        $withdrawals = $query->with(['user:id,firstname,lastname,username,balance', 'method:id,name'])
+            ->orderByDesc('id')
+            ->paginate(getPaginate())
+            ->withQueryString()
+            ->through(fn (Withdrawal $w) => [
+                'id'       => $w->id,
+                'trx'      => (string) $w->trx,
+                'method'   => ['id' => $w->method_id, 'name' => (string) __($w->method?->name ?? 'Unknown')],
+                'user'     => AdminPresenter::user($w->user),
+                'balance'  => showAmount($w->user?->balance ?? 0),
+                'when'     => AdminPresenter::when($w->created_at),
+                'amount'   => showAmount($w->amount),
+                'charge'   => showAmount($w->charge),
+                'net'      => showAmount($w->amount - $w->charge),
+                'rate'     => showAmount($w->rate, currencyFormat: false) . ' ' . $w->currency,
+                'final'    => showAmount($w->final_amount, currencyFormat: false) . ' ' . $w->currency,
+                'status'   => $this->badge($w->status),
+                'pending'  => (int) $w->status === Status::PAYMENT_PENDING,
+                'url'      => route('admin.withdraw.data.details', $w->id),
+            ]);
 
-            $successfulSummary = $successful->where('status',Status::PAYMENT_SUCCESS)->sum('amount');
-            $pendingSummary = $pending->where('status',Status::PAYMENT_PENDING)->sum('amount');
-            $rejectedSummary = $rejected->where('status',Status::PAYMENT_REJECT)->sum('amount');
+        return Inertia::render('Admin/Money/Withdrawals', [
+            'title'       => $pageTitle,
+            'withdrawals' => $withdrawals,
+            'summary'     => $summary,
+            'methods'     => WithdrawMethod::orderBy('name')->get(['id', 'name'])->map(fn ($m) => ['id' => $m->id, 'name' => (string) $m->name]),
+            'filters'     => ['search' => (string) $request->query('search', ''), 'date' => AdminPresenter::dateRange($request->query('date')), 'method' => $methodId ? (string) $methodId : ''],
+            'urls'        => [
+                'bulk'     => route('admin.withdraw.data.bulk-action'),
+                'approved' => route('admin.withdraw.data.approved', ['user_id' => $userId]),
+                'pending'  => route('admin.withdraw.data.pending', ['user_id' => $userId]),
+                'rejected' => route('admin.withdraw.data.rejected', ['user_id' => $userId]),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
+    }
 
-
-            return [
-                'data'=> $withdrawals->with(['user','method'])->orderBy('id','desc')->paginate(getPaginate()),
-                'summary'=>[
-                    'successful'=>$successfulSummary,
-                    'pending'=>$pendingSummary,
-                    'rejected'=>$rejectedSummary,
-                ]
-            ];
-        }
+    private function badge($status): array
+    {
+        return match ((int) $status) {
+            Status::PAYMENT_PENDING => AdminPresenter::badge('Pending', 'badge--warning'),
+            Status::PAYMENT_SUCCESS => AdminPresenter::badge('Approved', 'badge--success'),
+            Status::PAYMENT_REJECT  => AdminPresenter::badge('Rejected', 'badge--danger'),
+            default                 => AdminPresenter::badge('Initiated', 'badge--dark'),
+        };
     }
 
     public function details($id)
     {
-        $withdrawal = Withdrawal::where('id',$id)->where('status', '!=', Status::PAYMENT_INITIATE)->with(['user','method'])->firstOrFail();
-        $pageTitle = $withdrawal->user->username.' Withdraw Requested ' . showAmount($withdrawal->amount);
+        $withdrawal = Withdrawal::where('id', $id)->where('status', '!=', Status::PAYMENT_INITIATE)->with(['user', 'method'])->firstOrFail();
+        $user       = $withdrawal->user;
+        $pageTitle  = ($user?->username ?? 'Member') . ' Withdraw Requested ' . showAmount($withdrawal->amount);
 
-        $details = $withdrawal->withdraw_information ? json_encode($withdrawal->withdraw_information) : null;
-             
-        return view('admin.withdraw.detail', compact('pageTitle', 'withdrawal','details'));
+        return Inertia::render('Admin/Money/WithdrawalDetail', [
+            'title'      => $pageTitle,
+            'withdrawal' => [
+                'id'       => $withdrawal->id,
+                'method'   => (string) __($withdrawal->method?->name ?? 'Unknown'),
+                'date'     => showDateTime($withdrawal->created_at),
+                'trx'      => (string) $withdrawal->trx,
+                'user'     => AdminPresenter::user($user),
+                'amount'   => showAmount($withdrawal->amount),
+                'charge'   => showAmount($withdrawal->charge),
+                'net'      => showAmount($withdrawal->after_charge),
+                'rate'     => '1 ' . gs('cur_text') . ' = ' . showAmount($withdrawal->rate, currencyFormat: false) . ' ' . $withdrawal->currency,
+                'payable'  => showAmount($withdrawal->final_amount, currencyFormat: false) . ' ' . $withdrawal->currency,
+                'status'   => $this->badge($withdrawal->status),
+                'feedback' => $withdrawal->admin_feedback,
+                'pending'  => (int) $withdrawal->status === Status::PAYMENT_PENDING,
+            ],
+            'bank'   => $user ? ['bank' => (string) $user->bname, 'name' => (string) $user->aname, 'number' => (string) $user->ano, 'balance' => showAmount($user->balance)] : null,
+            'fields' => AdminPresenter::formFields($withdrawal->withdraw_information),
+            'urls'   => ['approve' => route('admin.withdraw.data.approve'), 'reject' => route('admin.withdraw.data.reject')],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
     public function approve(Request $request)
     {
-        $request->validate(['id' => 'required|integer']);
-        $withdraw = Withdrawal::where('id',$request->id)->where('status',Status::PAYMENT_PENDING)->with('user')->firstOrFail();
-        $withdraw->status = Status::PAYMENT_SUCCESS;
-        $withdraw->admin_feedback = $request->details;
-        $withdraw->save();
+        $request->validate(['id' => 'required|integer', 'details' => 'required|string|max:255']);
 
-        notify($withdraw->user, 'WITHDRAW_APPROVE', [
-            'method_name' => $withdraw->method->name,
-            'method_currency' => $withdraw->currency,
-            'method_amount' => showAmount($withdraw->final_amount,currencyFormat:false),
-            'amount' => showAmount($withdraw->amount,currencyFormat:false),
-            'charge' => showAmount($withdraw->charge,currencyFormat:false),
-            'rate' => showAmount($withdraw->rate,currencyFormat:false),
-            'trx' => $withdraw->trx,
-            'admin_details' => $request->details
-        ]);
+        if (!$this->approveOne((int) $request->id, $request->details)) {
+            $notify[] = ['error', 'This withdrawal has already been processed'];
+            return back()->withNotify($notify);
+        }
 
         $notify[] = ['success', 'Withdrawal approved successfully'];
         return to_route('admin.withdraw.data.pending')->withNotify($notify);
     }
 
-
     public function reject(Request $request)
     {
-        $request->validate(['id' => 'required|integer']);
-        $withdraw = Withdrawal::where('id',$request->id)->where('status',Status::PAYMENT_PENDING)->with('user')->firstOrFail();
+        $request->validate(['id' => 'required|integer', 'details' => 'required|string|max:255']);
 
-        $withdraw->status = Status::PAYMENT_REJECT;
-        $withdraw->admin_feedback = $request->details;
-        $withdraw->save();
-
-        $user = $withdraw->user;
-        $user->balance += $withdraw->amount;
-        $user->save();
-
-        $transaction = new Transaction();
-        $transaction->user_id = $withdraw->user_id;
-        $transaction->amount = $withdraw->amount;
-        $transaction->post_balance = $user->balance;
-        $transaction->charge = 0;
-        $transaction->trx_type = '+';
-        $transaction->remark = 'withdraw_reject';
-        $transaction->details = 'Refunded for withdrawal rejection';
-        $transaction->trx = $withdraw->trx;
-        $transaction->save();
-
-        notify($user, 'WITHDRAW_REJECT', [
-            'method_name' => $withdraw->method->name,
-            'method_currency' => $withdraw->currency,
-            'method_amount' => showAmount($withdraw->final_amount,currencyFormat:false),
-            'amount' => showAmount($withdraw->amount,currencyFormat:false),
-            'charge' => showAmount($withdraw->charge,currencyFormat:false),
-            'rate' => showAmount($withdraw->rate,currencyFormat:false),
-            'trx' => $withdraw->trx,
-            'post_balance' => showAmount($user->balance,currencyFormat:false),
-            'admin_details' => $request->details
-        ]);
+        if (!$this->rejectOne((int) $request->id, $request->details)) {
+            $notify[] = ['error', 'This withdrawal has already been processed'];
+            return back()->withNotify($notify);
+        }
 
         $notify[] = ['success', 'Withdrawal rejected successfully'];
         return to_route('admin.withdraw.data.pending')->withNotify($notify);
     }
 
-     public function index_w(){
-        $pageTitle = 'Withdrawals';
-        $withdrawals = Withdrawal::with('user')
-            ->latest()
-            ->paginate(20);  
-
-        return view('admin.withdraw.index_w', compact('withdrawals', 'pageTitle'));
-    }
-
-     public function updateStatus(Request $request){
+    /**
+     * Approve or reject many pending requests. Each one is claimed on its
+     * own: one that was already processed is skipped and counted, where the
+     * old loop stopped with a 404 halfway through, leaving the rest undone.
+     */
+    public function bulkAction(Request $request)
+    {
         $request->validate([
-            'withdrawal_ids' => 'required|array',
-            'withdrawal_ids.*' => 'exists:withdrawals,id',
-            'status' => 'required|in:1,2,3'
+            'withdrawal_ids'   => 'required|array|max:200',
+            'withdrawal_ids.*' => 'integer',
+            'action'           => 'required|in:approve,cancel',
+            'details'          => 'nullable|string|max:255',
         ]);
 
-        Withdrawal::whereIn('id', $request->withdrawal_ids)
-            ->update(['status' => $request->status]);
+        $approve = $request->action === 'approve';
+        $note    = $request->details ?: ($approve ? 'Bulk approval' : 'Bulk rejection');
+        $done    = 0;
+        foreach (array_unique(array_map('intval', $request->withdrawal_ids)) as $id) {
+            $done += (int) ($approve ? $this->approveOne($id, $note) : $this->rejectOne($id, $note));
+        }
+        $skipped = count(array_unique($request->withdrawal_ids)) - $done;
 
-        return redirect()->back()->with('success', 'Withdrawal status updated successfully!');
+        $notify[] = ['success', ($approve ? 'Approved ' : 'Rejected ') . $done . ' withdrawal(s)' . ($skipped ? "; {$skipped} already processed and skipped" : '') . '.'];
+        return back()->withNotify($notify);
     }
 
-    public function bulkAction(Request $request){
-        $request->validate([
-            'withdrawal_ids' => 'required|array',
-            'withdrawal_ids.*' => 'exists:withdrawals,id',
-            'action' => 'required|in:approve,cancel,delete'
+    private function approveOne(int $id, string $details): bool
+    {
+        $claimed = Withdrawal::whereKey($id)->where('status', Status::PAYMENT_PENDING)
+            ->update(['status' => Status::PAYMENT_SUCCESS, 'admin_feedback' => $details]);
+        if (!$claimed) {
+            return false;
+        }
+
+        $withdraw = Withdrawal::with('user', 'method')->find($id);
+        notify($withdraw->user, 'WITHDRAW_APPROVE', $this->shortCodes($withdraw) + ['admin_details' => $details]);
+
+        return true;
+    }
+
+    /** Claim, refund the amount to the Money Box (locked, via WalletService), then notify. */
+    private function rejectOne(int $id, string $details): bool
+    {
+        $withdraw = DB::transaction(function () use ($id, $details) {
+            $claimed = Withdrawal::whereKey($id)->where('status', Status::PAYMENT_PENDING)
+                ->update(['status' => Status::PAYMENT_REJECT, 'admin_feedback' => $details]);
+            if (!$claimed) {
+                return null;
+            }
+
+            $withdraw = Withdrawal::with('user', 'method')->find($id);
+            app(WalletService::class)->credit($withdraw->user, (float) $withdraw->amount, 'withdraw_reject', 'Refunded for withdrawal rejection', $withdraw->trx);
+
+            return $withdraw;
+        });
+        if (!$withdraw) {
+            return false;
+        }
+
+        $withdraw->user->refresh();
+        notify($withdraw->user, 'WITHDRAW_REJECT', $this->shortCodes($withdraw) + [
+            'post_balance'  => showAmount($withdraw->user->balance, currencyFormat: false),
+            'admin_details' => $details,
         ]);
 
-        //dd($request);
-        if ($request->action == 'approve') {    
-            $this->approve_b($request->withdrawal_ids);
-            $notify[] = ['success', 'Withdrawal approved successfully'];
-            return to_route('admin.withdraw.data.pending')->withNotify($notify);
-                
-        }elseif ($request->action == 'cancel') {
-            $this->reject_b($request->withdrawal_ids);
-            $notify[] = ['success', 'Withdrawal rejected successfully'];
-            return to_route('admin.withdraw.data.pending')->withNotify($notify);
-        }else{
-            $notify[] = ['error', 'Something is Wrong contact Developer. Error:SYS101'];
-                return to_route('admin.withdraw.data.pending')->withNotify($notify);
-        }
+        return true;
     }
 
-    protected function reject_b(Array $withdrawal_ids){
-
-        $details ='Bulk Approval';
-        foreach ($withdrawal_ids as $id) {
-           
-            $withdraw = Withdrawal::where('id',$id)->where('status',Status::PAYMENT_PENDING)->with('user')->firstOrFail();
-            if ($withdraw) {
-                $details = 'bulk reject from admin';
-
-                $withdraw->status = Status::PAYMENT_REJECT;
-                $withdraw->admin_feedback = $details;
-                $withdraw->save();
-
-                $user = $withdraw->user;
-                $user->balance += $withdraw->amount;
-                $user->save();
-
-                $transaction = new Transaction();
-                $transaction->user_id = $withdraw->user_id;
-                $transaction->amount = $withdraw->amount;
-                $transaction->post_balance = $user->balance;
-                $transaction->charge = 0;
-                $transaction->trx_type = '+';
-                $transaction->remark = 'withdraw_reject';
-                $transaction->details = 'Refunded for withdrawal rejection';
-                $transaction->trx = $withdraw->trx;
-                $transaction->save();
-
-                notify($user, 'WITHDRAW_REJECT', [
-                    'method_name' => $withdraw->method->name,
-                    'method_currency' => $withdraw->currency,
-                    'method_amount' => showAmount($withdraw->final_amount,currencyFormat:false),
-                    'amount' => showAmount($withdraw->amount,currencyFormat:false),
-                    'charge' => showAmount($withdraw->charge,currencyFormat:false),
-                    'rate' => showAmount($withdraw->rate,currencyFormat:false),
-                    'trx' => $withdraw->trx,
-                    'post_balance' => showAmount($user->balance,currencyFormat:false),
-                    'admin_details' => $details
-                ]);
-
-                
-            }
-        }
+    private function shortCodes(Withdrawal $w): array
+    {
+        return [
+            'method_name'     => $w->method?->name,
+            'method_currency' => $w->currency,
+            'method_amount'   => showAmount($w->final_amount, currencyFormat: false),
+            'amount'          => showAmount($w->amount, currencyFormat: false),
+            'charge'          => showAmount($w->charge, currencyFormat: false),
+            'rate'            => showAmount($w->rate, currencyFormat: false),
+            'trx'             => $w->trx,
+        ];
     }
-
-    protected function approve_b(Array $withdrawal_ids){
-
-        //dd($withdrawal_ids);
-        $details ='Bulk Approval';
-        foreach ($withdrawal_ids as $id) {
-           
-            $withdraw = Withdrawal::where('id',$id)->where('status',Status::PAYMENT_PENDING)->with('user')->firstOrFail();
-            if ($withdraw) {
-                $withdraw->status = Status::PAYMENT_SUCCESS;
-                $withdraw->admin_feedback = $details;
-                $withdraw->save();
-
-                notify($withdraw->user, 'WITHDRAW_APPROVE', [
-                    'method_name' => $withdraw->method->name,
-                    'method_currency' => $withdraw->currency,
-                    'method_amount' => showAmount($withdraw->final_amount,currencyFormat:false),
-                    'amount' => showAmount($withdraw->amount,currencyFormat:false),
-                    'charge' => showAmount($withdraw->charge,currencyFormat:false),
-                    'rate' => showAmount($withdraw->rate,currencyFormat:false),
-                    'trx' => $withdraw->trx,
-                    'admin_details' => $details
-                ]);
-
-               
-            }
-        }
-
-    }
-
 }

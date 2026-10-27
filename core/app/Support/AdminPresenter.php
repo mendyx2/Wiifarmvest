@@ -78,4 +78,56 @@ class AdminPresenter
 
         return ['from' => $from, 'to' => $to];
     }
+
+    /**
+     * Answers to a form built with the admin form builder (KYC, manual
+     * deposit gateways, withdraw methods): label, type, the text value and,
+     * for a file, its view / download links.
+     *
+     * @return list<array{name: string, type: string, value: ?string, file: ?array}>
+     */
+    public static function formFields($data, bool $skipEmpty = false): array
+    {
+        $file = function (string $name) {
+            $hash = encrypt(getFilePath('verify') . '/' . $name);
+            $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+            return [
+                'view'     => route('admin.view.attachment', $hash),
+                'download' => route('admin.download.attachment', $hash),
+                'image'    => in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true),
+            ];
+        };
+
+        return collect(is_string($data) ? (array) json_decode($data) : (array) ($data ?? []))
+            ->map(fn ($f) => (object) $f)
+            ->filter(fn ($f) => !$skipEmpty || !empty($f->value))
+            ->map(fn ($f) => [
+                'name'  => __((string) ($f->name ?? '')),
+                'type'  => (string) ($f->type ?? 'text'),
+                'value' => ($f->type ?? '') === 'checkbox' ? implode(', ', (array) ($f->value ?? [])) : (($f->type ?? '') === 'file' ? null : __((string) ($f->value ?? ''))),
+                'file'  => ($f->type ?? '') === 'file' && !empty($f->value) ? $file((string) $f->value) : null,
+            ])->values()->all();
+    }
+
+    /**
+     * A payment gateway's reply as label / value rows, nested keys indented
+     * by depth (admin/deposit/gateway_data.blade.php did this recursively).
+     *
+     * @return list<array{label: string, value: ?string, depth: int}>
+     */
+    public static function flatten($data, int $depth = 0): array
+    {
+        $rows = [];
+        foreach ((array) (is_string($data) ? json_decode($data, true) : json_decode(json_encode($data), true)) as $key => $value) {
+            if (is_array($value)) {
+                $rows[] = ['label' => keyToTitle((string) $key), 'value' => null, 'depth' => $depth];
+                array_push($rows, ...self::flatten($value, $depth + 1));
+            } else {
+                $rows[] = ['label' => keyToTitle((string) $key), 'value' => is_bool($value) ? ($value ? 'true' : 'false') : (string) $value, 'depth' => $depth];
+            }
+        }
+
+        return $rows;
+    }
 }

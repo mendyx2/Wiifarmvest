@@ -566,7 +566,7 @@
                 ],
                 "title": "All Deposits",
                 "route_name": "admin.deposit.list",
-                "menu_active": "admin.deposit.list",
+                "menu_active": ["admin.deposit.list", "admin.deposit.details"],
                 "params": {
                     "user_id": ""
                 }
@@ -636,7 +636,7 @@
                 ],
                 "title": "All Withdrawals",
                 "route_name": "admin.withdraw.data.all",
-                "menu_active": "admin.withdraw.data.all",
+                "menu_active": ["admin.withdraw.data.all", "admin.withdraw.data.details"],
                 "params": {
                     "user_id": ""
                 }
