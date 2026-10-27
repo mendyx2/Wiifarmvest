@@ -126,6 +126,15 @@ class AdminLayout
         'admin.withdraw.data.rejected',
         'admin.withdraw.data.all',
         'admin.withdraw.data.details',
+        // 7e-2: pins and the Stage Twice report
+        'admin.pin.index',
+        'admin.pin.used',
+        'admin.pin.unused',
+        'admin.pin.generate',
+        'admin.pin.user',
+        'admin.users.generate.pin',
+        'admin.users.used.pin',
+        'admin.report.stage.twice',
     ];
 
     public static function for(Request $request): ?array

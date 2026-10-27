@@ -133,19 +133,19 @@
                 icon="las la-key" value="{{ $widget['total_pins'] }}" bg="warning" />
         </div>
         <div class="col-xxl-3 col-md-4 col-sm-6">
-            <x-widget style="6" link="{{ route('admin.pin.index') }}" title="User Generated Pins"
+            <x-widget style="6" link="{{ route('admin.pin.user') }}" title="User Generated Pins"
                 icon="las la-key" value="{{ $widget['total_pins_user'] }}" bg="warning" />
         </div>
         <div class="col-xxl-3 col-md-4 col-sm-6">
-            <x-widget style="6" link="{{ route('admin.pin.index') }}" title="Admin Pins"
+            <x-widget style="6" link="{{ route('admin.pin.generate') }}" title="Admin Pins"
                 icon="las la-key" value="{{ $widget['total_pins_admin'] }}" bg="warning" />
         </div>
         <div class="col-xxl-3 col-md-4 col-sm-6">
-            <x-widget style="6" link="{{ route('admin.pin.used') }}" title="Used Pins (Admin)"
+            <x-widget style="6" link="{{ route('admin.pin.used', ['source' => 'admin']) }}" title="Used Pins (Admin)"
                 icon="las la-key" value="{{ $widget['total_admin_used_pins'] }}" bg="success" />
         </div>
         <div class="col-xxl-3 col-md-4 col-sm-6">
-            <x-widget style="6" link="{{ route('admin.pin.used') }}" title="Used Pins (User)"
+            <x-widget style="6" link="{{ route('admin.pin.used', ['source' => 'user']) }}" title="Used Pins (User)"
                 icon="las la-key" value="{{ $widget['total_user_used_pins'] }}" bg="success" />
         </div>
     </div>

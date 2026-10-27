@@ -111,7 +111,7 @@ class EpinController extends Controller
                 $pin->user_id = 0;
                 $pin->status  = Status::NO;
                 $pin->amount  = $amount;
-                $pin->pin     = $this->newPinCode();
+                $pin->pin     = Pin::newCode();
                 $pin->details = 'Created via ' . $user->username;
                 $pin->save();
 
@@ -145,18 +145,5 @@ class EpinController extends Controller
     private function charge(float $amount): float
     {
         return (int) gs('epin_status') === 1 ? $amount / 100 * (float) gs('epin_charge') : 0.0;
-    }
-
-    /**
-     * A pin is money: anyone holding the code can activate an account with it.
-     * random_int() is unpredictable; the old rand() was not.
-     */
-    private function newPinCode(): string
-    {
-        do {
-            $code = implode('-', array_map(fn () => (string) random_int(10000000, 99999999), range(1, 4)));
-        } while (Pin::where('pin', $code)->exists());
-
-        return $code;
     }
 }

@@ -15,6 +15,7 @@ use App\Services\FinancialReportService;
 use Illuminate\Support\Facades\DB;
 use App\Constants\Status;
 use App\Support\AdminPresenter;
+use App\Http\Middleware\AdminAccessMiddleware;
 use Inertia\Inertia;
 
 class ReportController extends Controller
@@ -346,102 +347,106 @@ class ReportController extends Controller
         ];
     }
 
+    /**
+     * Double Stage-Out Bonus (Pages/Admin/Reports/StageTwice.tsx): members
+     * paid a stage's step-out bonus more than once, with a one-time deduction
+     * per member and stage.
+     */
     public function stageTwice(Request $request)
     {
         $pageTitle = 'Double Stage-Out Bonus';
-        $stage     = (int) ($request->stage ?? 1);
-        $stage     = in_array($stage, [1, 2, 3]) ? $stage : 1;
-        $search    = $request->search;
+        $stage     = $this->stageTwiceStage($request);
+        $search    = trim((string) $request->search);
 
-        $details = 'Step out Bonus gotten from completing stage:' . $stage;
+        [$query, $countPerUser, $userIds] = $this->stageTwiceQuery($stage, $search);
 
-        $duplicateUserIds = Transaction::select('user_id')
-            ->where('remark', 'stageOut_commission')
-            ->where('details', $details)
-            ->groupBy('user_id')
-            ->havingRaw('COUNT(*) >= 2')
-            ->pluck('user_id');
-
-        $query = Transaction::with('user')
-            ->where('remark', 'stageOut_commission')
-            ->where('details', $details)
-            ->whereIn('user_id', $duplicateUserIds);
-
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('trx', 'LIKE', "%{$search}%")
-                  ->orWhereHas('user', fn ($u) => $u->where('username', 'LIKE', "%{$search}%")
-                      ->orWhere('firstname', 'LIKE', "%{$search}%")
-                      ->orWhere('lastname', 'LIKE', "%{$search}%"));
-            });
-        }
-
-        $transactions = $query->latest()->paginate(getPaginate())->appends($request->query());
-
-        $countPerUser = Transaction::select('user_id', DB::raw('COUNT(*) as total'))
-            ->where('remark', 'stageOut_commission')
-            ->where('details', $details)
-            ->whereIn('user_id', $duplicateUserIds)
-            ->groupBy('user_id')
-            ->pluck('total', 'user_id');
-
-        // Full refund records keyed by user_id for O(1) lookup + detail display
-        $refundedMap = Refund::with('admin')
+        $refunds = Refund::with('admin')
             ->where('stage_id', $stage)
-            ->whereIn('user_id', $duplicateUserIds)
+            ->whereIn('user_id', $userIds)
             ->get()
             ->keyBy('user_id');
 
-        return view('admin.reports.stage_twice', compact(
-            'pageTitle', 'transactions', 'stage', 'countPerUser', 'search', 'refundedMap'
-        ));
+        $rows = $query->with('user:id,firstname,lastname,username')
+            ->latest()
+            ->paginate(getPaginate())
+            ->withQueryString()
+            ->through(function (Transaction $trx) use ($countPerUser, $refunds) {
+                $refund = $refunds[$trx->user_id] ?? null;
+
+                return [
+                    'id'          => $trx->id,
+                    'trx'         => (string) $trx->trx,
+                    'user'        => AdminPresenter::user($trx->user),
+                    'times'       => (int) ($countPerUser[$trx->user_id] ?? 1),
+                    'when'        => AdminPresenter::when($trx->created_at),
+                    'amount'      => showAmount($trx->amount),
+                    'postBalance' => showAmount($trx->post_balance),
+                    'refund'      => $refund ? [
+                        'originalTrx'   => (string) $refund->original_trx,
+                        'refundTrx'     => (string) $refund->refund_trx,
+                        'amount'        => showAmount($refund->amount),
+                        'balanceBefore' => showAmount($refund->balance_before),
+                        'balanceAfter'  => showAmount($refund->balance_after),
+                        'admin'         => $refund->admin?->name ?? $refund->admin?->username ?? 'System',
+                        'date'          => showDateTime($refund->created_at),
+                        'note'          => (string) $refund->note,
+                    ] : null,
+                ];
+            });
+
+        $admin = auth('admin')->user();
+
+        return Inertia::render('Admin/Reports/StageTwice', [
+            'stage'  => $stage,
+            'rows'   => $rows,
+            'search' => $search,
+            'urls'   => [
+                'download' => route('admin.report.stage.twice.download'),
+                'refund'   => AdminAccessMiddleware::allows($admin, 'admin.report.stage.twice.refund', 'POST')
+                    ? route('admin.report.stage.twice.refund', ':id') : null,
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
+    /**
+     * Take one step-out bonus back from a member who was paid it more than
+     * once for a stage: a new deduction transaction (the original stays) and a
+     * Refund record. At most one per member and stage; the balance may go
+     * negative.
+     */
     public function stageTwiceRefund(Request $request, $id)
     {
         $trx = Transaction::findOrFail($id);
 
-        if ($trx->remark !== 'stageOut_commission') {
+        // The stage comes from the bonus's own description
+        if ($trx->remark !== 'stageOut_commission' || !preg_match('/stage:(\d+)$/', (string) $trx->details, $m)) {
             $notify[] = ['error', 'Only stage-out commission transactions can be refunded.'];
-            return back()->withNotify($notify);
-        }
-
-        // Derive stage from the transaction details
-        if (!preg_match('/stage:(\d+)$/', $trx->details, $m)) {
-            $notify[] = ['error', 'Could not determine stage from transaction details.'];
             return back()->withNotify($notify);
         }
         $stageId = (int) $m[1];
 
-        // Pre-flight: ensure the user account still exists (may have been hard-deleted)
-        if (!User::where('id', $trx->user_id)->exists()) {
-            $notify[] = ['error', 'This user account no longer exists and cannot be refunded.'];
-            return back()->withNotify($notify);
-        }
-
-        // Pre-flight check (fast path, before acquiring locks)
-        if (Refund::where('user_id', $trx->user_id)->where('stage_id', $stageId)->exists()) {
-            $notify[] = ['error', 'A refund has already been issued for this user on Stage ' . $stageId . '.'];
+        // Only a member who really was paid this stage's bonus twice. The old
+        // check took any stage-out bonus, so a member paid once could be
+        // charged back by posting that transaction's id.
+        $times = Transaction::where('user_id', $trx->user_id)
+            ->where('remark', 'stageOut_commission')
+            ->where('details', $trx->details)
+            ->count();
+        if ($times < 2) {
+            $notify[] = ['error', 'This member received the Stage ' . $stageId . ' bonus only once; there is nothing to refund.'];
             return back()->withNotify($notify);
         }
 
         try {
             DB::transaction(function () use ($trx, $stageId) {
-                // Lock the user row to prevent concurrent balance updates
+                // Lock the member: serialises refunds and balance changes for them
                 $user = User::where('id', $trx->user_id)->lockForUpdate()->first();
-
-                // Guard: user could be deleted between the pre-flight check and the lock
                 if (!$user) {
                     throw new \RuntimeException('user_deleted');
                 }
 
-                // Re-check inside the lock — guards against race conditions
-                $existingRefund = Refund::where('user_id', $user->id)
-                    ->where('stage_id', $stageId)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($existingRefund) {
+                // Checked inside the lock, so two clicks cannot both refund
+                if (Refund::where('user_id', $user->id)->where('stage_id', $stageId)->exists()) {
                     throw new \RuntimeException('already_refunded');
                 }
 
@@ -451,7 +456,6 @@ class ReportController extends Controller
 
                 $refundTrx = getTrx();
 
-                // Deduction transaction — original is untouched
                 $deduction               = new Transaction();
                 $deduction->user_id      = $user->id;
                 $deduction->amount       = $trx->amount;
@@ -463,7 +467,6 @@ class ReportController extends Controller
                 $deduction->details      = 'Refund of duplicate Step out Bonus (Stage ' . $stageId . ') — Original TRX: ' . $trx->trx;
                 $deduction->save();
 
-                // Refund audit record
                 $refund                 = new Refund();
                 $refund->user_id        = $user->id;
                 $refund->stage_id       = $stageId;
@@ -477,99 +480,101 @@ class ReportController extends Controller
                 $refund->save();
             });
         } catch (\RuntimeException $e) {
-            switch ($e->getMessage()) {
-                case 'user_deleted':
-                    $notify[] = ['error', 'This user account no longer exists and cannot be refunded.'];
-                    return back()->withNotify($notify);
-                case 'already_refunded':
-                    $notify[] = ['error', 'A refund has already been issued for this user on Stage ' . $stageId . '.'];
-                    return back()->withNotify($notify);
-                default:
-                    throw $e;
-            }
+            $message = match ($e->getMessage()) {
+                'user_deleted'     => 'This user account no longer exists and cannot be refunded.',
+                'already_refunded' => 'A refund has already been issued for this user on Stage ' . $stageId . '.',
+                default            => throw $e,
+            };
+            return back()->withNotify([['error', $message]]);
         }
 
         $notify[] = ['success', 'Refund applied. Amount deducted from user balance and recorded.'];
         return back()->withNotify($notify);
     }
 
+    /** The ticked rows (or the whole filtered list) as a CSV file. */
     public function stageTwiceDownload(Request $request)
     {
-        $stage   = (int) ($request->stage ?? 1);
-        $stage   = in_array($stage, [1, 2, 3]) ? $stage : 1;
-        $search  = $request->search;
-        $rawIds  = array_filter(array_map('intval', explode(',', $request->ids ?? '')));
+        $request->validate(['ids' => 'nullable|string|max:5000']);
 
-        $details = 'Step out Bonus gotten from completing stage:' . $stage;
+        $stage  = $this->stageTwiceStage($request);
+        $search = trim((string) $request->search);
+        $ids    = array_filter(array_map('intval', explode(',', (string) $request->ids)));
 
-        $duplicateUserIds = Transaction::select('user_id')
-            ->where('remark', 'stageOut_commission')
-            ->where('details', $details)
-            ->groupBy('user_id')
-            ->havingRaw('COUNT(*) >= 2')
-            ->pluck('user_id');
+        [$query, $countPerUser] = $this->stageTwiceQuery($stage, $search);
 
-        $query = Transaction::with('user')
-            ->where('remark', 'stageOut_commission')
-            ->where('details', $details)
-            ->whereIn('user_id', $duplicateUserIds);
+        $transactions = $query->when($ids, fn ($q) => $q->whereIn('id', $ids))->with('user')->latest()->get();
+        $refunded     = Refund::where('stage_id', $stage)->pluck('user_id')->flip();
+        $filename     = 'double-stageout-stage-' . $stage . '-' . now()->format('Ymd_His') . '.csv';
 
-        // Scope to only the rows the admin checked
-        if (!empty($rawIds)) {
-            $query->whereIn('id', $rawIds);
-        }
-
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('trx', 'LIKE', "%{$search}%")
-                  ->orWhereHas('user', fn ($u) => $u->where('username', 'LIKE', "%{$search}%")
-                      ->orWhere('firstname', 'LIKE', "%{$search}%")
-                      ->orWhere('lastname', 'LIKE', "%{$search}%"));
-            });
-        }
-
-        $allTransactions = $query->latest()->get();
-
-        $countPerUser = Transaction::select('user_id', DB::raw('COUNT(*) as total'))
-            ->where('remark', 'stageOut_commission')
-            ->where('details', $details)
-            ->whereIn('user_id', $duplicateUserIds)
-            ->groupBy('user_id')
-            ->pluck('total', 'user_id');
-
-        $refundedUserIds = Refund::where('stage_id', $stage)
-            ->pluck('user_id')
-            ->mapWithKeys(fn ($id) => [$id => true])
-            ->toArray();
-
-        $filename = 'double-stageout-stage-' . $stage . '-' . now()->format('Ymd_His') . '.csv';
-
-        return response()->streamDownload(function () use ($allTransactions, $stage, $countPerUser, $refundedUserIds) {
+        return response()->streamDownload(function () use ($transactions, $stage, $countPerUser, $refunded) {
             $out = fopen('php://output', 'w');
 
-            // UTF-8 BOM — makes Excel auto-detect encoding correctly
+            // UTF-8 BOM, so Excel detects the encoding
             fwrite($out, "\xEF\xBB\xBF");
-
             fputcsv($out, ['#', 'Full Name', 'Username', 'TRX', 'Times Received', 'Date & Time', 'Amount', 'Post Balance', 'Stage', 'Refund Status']);
 
-            foreach ($allTransactions as $i => $trx) {
+            foreach ($transactions as $i => $trx) {
                 fputcsv($out, [
                     $i + 1,
-                    $trx->user?->fullname,
-                    $trx->user?->username,
+                    self::csvText($trx->user?->fullname),
+                    self::csvText($trx->user?->username),
                     $trx->trx,
                     ($countPerUser[$trx->user_id] ?? 1) . 'x',
                     $trx->created_at->format('Y-m-d H:i:s'),
                     $trx->amount,
                     $trx->post_balance,
                     $stage,
-                    array_key_exists($trx->user_id, $refundedUserIds) ? 'Refunded' : 'Pending',
+                    isset($refunded[$trx->user_id]) ? 'Refunded' : 'Pending',
                 ]);
             }
 
             fclose($out);
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-        ]);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    private function stageTwiceStage(Request $request): int
+    {
+        $stage = (int) $request->stage;
+        return in_array($stage, [1, 2, 3], true) ? $stage : 1;
+    }
+
+    /**
+     * The stage's bonus transactions of members paid it at least twice,
+     * filtered by search; with how many times each member was paid, and
+     * their ids.
+     *
+     * @return array{0: \Illuminate\Database\Eloquent\Builder, 1: \Illuminate\Support\Collection, 2: \Illuminate\Support\Collection}
+     */
+    private function stageTwiceQuery(int $stage, string $search): array
+    {
+        $details = 'Step out Bonus gotten from completing stage:' . $stage;
+
+        $countPerUser = Transaction::select('user_id', DB::raw('COUNT(*) as total'))
+            ->where('remark', 'stageOut_commission')
+            ->where('details', $details)
+            ->groupBy('user_id')
+            ->havingRaw('COUNT(*) >= 2')
+            ->pluck('total', 'user_id');
+        $userIds = $countPerUser->keys();
+
+        $query = Transaction::where('remark', 'stageOut_commission')
+            ->where('details', $details)
+            ->whereIn('user_id', $userIds)
+            ->when($search !== '', fn ($q) => $q->where(fn ($q) => $q
+                ->where('trx', 'like', "%{$search}%")
+                ->orWhereHas('user', fn ($u) => $u
+                    ->where('username', 'like', "%{$search}%")
+                    ->orWhere('firstname', 'like', "%{$search}%")
+                    ->orWhere('lastname', 'like', "%{$search}%"))));
+
+        return [$query, $countPerUser, $userIds];
+    }
+
+    /** A name in a CSV cell: one starting with = + - @ would run as a formula in Excel. */
+    private static function csvText(?string $value): string
+    {
+        $value = (string) $value;
+        return $value !== '' && str_contains("=+-@\t\r", $value[0]) ? "'" . $value : $value;
     }
 }

@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103). Next: 7e pins, savings and loans, Stage Twice (money) · 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104). Next: 7e-3 savings and loans · 7f settings, frontend, system · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -4661,6 +4661,96 @@ use the form builder, so they move with the gateways and settings.
   bulk selection, the withdrawal's bank details and payable amount, and no
   sideways scroll at phone width on all seven pages.
 - **Regression:** 30 browser suites, 975 checks, all pass. `route:cache`
+  and `view:cache` succeed; the route-name scan shows only the 21 known
+  `ipn.` references.
+
+### Step 104: Pins and the Stage Twice report in React (7e-2)
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Pins/Index.tsx` | `admin.pin.{index,used,unused,generate,user}`, `admin.users.generate.pin`, `admin.users.used.pin` | `pin/index.blade.php` |
+| `Pages/Admin/Reports/StageTwice.tsx` (+ `.css`) | `admin.report.stage.twice` | `reports/stage_twice.blade.php` |
+
+**Duplicates removed:**
+
+- **Seven pin pages, one table.** All Pins, Used, Unused, Admin Pins, User
+  Pins, and a member's "pins bought" and "pins used" each had their own
+  controller method rendering the same Blade view. They are now presets
+  of one page:
+  - the sidebar links keep their URLs and open the page with a filter
+    set (Used Pins = `status=used`, Admin Pins = `source=admin`, ...);
+  - two dropdowns change the status (used / unused) and who created the
+    pin (admin / members), and they combine: `/admin/pin/used?source=admin`.
+  - The two member pages moved from `ManageUsersController` to
+    `PinController::generatedBy()` / `usedBy()`. Their route names stay
+    under `admin.users.*`, so an admin with "view users" can still open
+    them (codes masked, as before), while the pin pages stay super-admin
+    only.
+- The dashboard's pin boxes all opened All Pins or All Used Pins. Each
+  now opens its own list (User Generated, Admin, Used by admin pins, Used
+  by member pins).
+- `reports/stage_twice_excel.blade.php` was not used by anything (the CSV
+  is written by the controller). Deleted.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| Admin pins were made with `rand()`, which is predictable. A pin is money: whoever holds the code can activate an account with it. | `Pin::newCode()`: `random_int()`, checked unique. The member's "Generate pin" (Step 82) uses the same helper. |
+| "Create Pins" had no upper limit: one request for 1,000,000 pins would run until the server gave up, leaving a partial batch. | 1–500 per request, created in one transaction. |
+| Stage Twice "Refund" checked only that the transaction was a stage-out bonus. Posting the id of a member paid **once** deducted their only bonus. | The member must have been paid that stage's bonus at least twice. |
+| The CSV put names as they are. A name starting with `=` (for example `=HYPERLINK(...)`) ran as a formula when the file was opened in Excel. | Such cells start with `'`, so Excel shows them as text. |
+| The download took any number of ids. | Up to 5,000 characters of ids. A ticked id from another stage is ignored (it was before too). |
+
+**For the owner to decide:** Stage Twice allows one deduction per member
+and stage. A member paid the bonus **three** times (this happens: see
+the Stage 2 test data) can still only be charged back once, so one
+extra payment stays with them. Should the deduction cover every extra
+payment (count − 1)? Nothing was changed.
+
+**Kept as it was:** only the Owner and super-admin roles see pin codes in
+full; other admins see the first 20 characters.
+
+**Deleted:**
+
+- `admin/pin/index.blade.php`;
+- `admin/reports/stage_twice.blade.php`, `admin/reports/stage_twice_excel.blade.php`;
+- `ManageUsersController::generatePin()`, `usedPin()`.
+
+**Verification:**
+
+- **Server checks** (`p7e2_check.php`):
+  - **Pins:** every preset; status and source together; bogus filters
+    ignored; search; a member's created and used pins; an unknown member.
+  - **Access:** an editor ("view users") sees masked codes and no Create
+    button, and may not open `/admin/pin`.
+  - **Create:** 0, 501 and amount 0 refused; 3 created, all well-formed
+    and unique.
+  - **Stage Twice:** stages 1–3; stage 9 falls back to 1; search.
+  - **Refund:**
+    - a member paid once is refused;
+    - a transaction that is not a bonus is refused;
+    - one deduction, and a second click on the member's other row is
+      refused;
+    - balance −4,000 with one deduction row and one Refund record;
+    - GET is refused.
+  - **CSV:** the ticked row with the formula guard; the whole stage; an
+    id from another stage.
+  - **Sidebar:** the right entry is active, as a React link.
+- **Browser checks** (`e2e/phase7e2.mjs`, 26 checks):
+  - the pin filters as Inertia visits; search;
+  - the create dialog: its POST and a server error under the field;
+  - the editor's view;
+  - stage tabs and search;
+  - the download: refused with nothing ticked, then a POST in a new tab
+    with the CSRF token and the ticked id;
+  - select all;
+  - the refund dialog (styled, scoped CSS) and its POST;
+  - Refunded badges and the details dialog; Escape closes it;
+  - no sideways scroll at phone width.
+- **Regression:** 31 browser suites, 1001 checks, all pass. `route:cache`
   and `view:cache` succeed; the route-name scan shows only the 21 known
   `ipn.` references.
 

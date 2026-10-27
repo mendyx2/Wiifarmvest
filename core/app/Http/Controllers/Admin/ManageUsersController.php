@@ -1,7 +1,6 @@
 <?php
 
 namespace App\Http\Controllers\Admin;
-use App\Models\Pin;
 use App\Models\User;
 use App\Models\Matrix;
 use App\Models\MatrixStage;
@@ -534,17 +533,6 @@ class ManageUsersController extends Controller
             }
     }
 
-    
-    public function generatePin($id)
-    {
-        $user = User::findOrFail($id);
-        $pageTitle = "Generate pin - ". $user->username;
-        $emptyMessage = "No data found";
-        $pins = Pin::where('generate_user_id', $user->id)->latest()->paginate(getPaginate());
-        return view('admin.pin.index', compact('pageTitle', 'emptyMessage', 'pins'));
-    }
-
-
     /** One member's KYC submission (Pages/Admin/Users/KycDetail.tsx), with approve / reject. */
     public function kycDetails($id)
     {
@@ -589,15 +577,6 @@ class ManageUsersController extends Controller
                 'reject'  => route('admin.users.kyc.reject', $user->id),
             ],
         ])->withViewData(['pageTitle' => 'KYC Details']);
-    }
-
-     public function usedPin($id)
-    {
-        $user = User::findOrFail($id);
-        $pageTitle = "Used pin - ". $user->username;
-        $emptyMessage = "No data found";
-        $pins = Pin::where('user_id', $user->id)->latest()->paginate(getPaginate());
-        return view('admin.pin.index', compact('pageTitle', 'emptyMessage', 'pins'));
     }
 
     /**
