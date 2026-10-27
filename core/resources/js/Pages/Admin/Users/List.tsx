@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { UserCell, WhenCell, type AdminUser, type When } from '@/Components/Admin/Cells';
 import DataTable from '@/Components/Admin/DataTable';
@@ -73,11 +73,10 @@ export default function UsersList({ title, users, filters }: Props) {
                         label: t('Action'),
                         cell: (r) => (
                             <div className="button--group">
-                                {/* The member page is still Blade: a normal link. */}
                                 {r.user && (
-                                    <a href={r.user.url} className="btn btn-sm btn-outline--primary">
+                                    <Link href={r.user.url} className="btn btn-sm btn-outline--primary">
                                         <i className="las la-desktop" /> {t('Details')}
-                                    </a>
+                                    </Link>
                                 )}
                                 {r.kycUrl && (
                                     <a href={r.kycUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline--dark">

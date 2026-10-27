@@ -67,6 +67,7 @@ class AdminLayout
         'admin.users.kyc.details',
         'admin.users.sponsor.history',
         'admin.users.referral',
+        'admin.users.detail',
     ];
 
     public static function for(Request $request): ?array

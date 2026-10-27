@@ -90,9 +90,9 @@ export default function Stages({ stages, active, users, search }: Props) {
                     {
                         label: t('Action'),
                         cell: (r) => (
-                            <a href={r.url} className="btn btn-sm btn-outline--primary">
+                            <Link href={r.url} className="btn btn-sm btn-outline--primary">
                                 <i className="las la-eye" /> {t('Details')}
-                            </a>
+                            </Link>
                         ),
                     },
                 ]}

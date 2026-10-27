@@ -4057,6 +4057,105 @@ route points to it, and it called a method that does not exist.
   - **Phone width:** no sideways scroll on any of the six pages.
 - **Regression:** 25 browser suites, 731 checks, all pass.
 
+### Step 98: The member page in React, and its actions made safe (7c-2)
+
+**Page: `Pages/Admin/Users/Detail.tsx`** (`admin.users.detail`). It replaces
+`users/detail.blade.php` (1,555 lines). Its CSS moved to `Detail.css`, scoped
+under `.page-user-detail`; the toolbar and Buy Shares styles were already in
+`app.css`.
+
+- **Tiles:** balances, bonuses and binary PV, using the new
+  `Components/Admin/LinkWidget.tsx` (`<x-widget style="7">`). A tile opens
+  React pages as Inertia visits and Blade pages with a normal load; the
+  server says which (`AdminLayout::isReact()`).
+- **Toolbar:**
+  - wallet adjustments;
+  - quick links;
+  - ban/unban, block/unblock withdrawals, Buy Shares.
+- **Cards:**
+  - profile, sponsor change, username change;
+  - the edit form;
+  - the password.
+- **Dialogs:** React `Modal`s instead of Bootstrap ones. Errors show inside
+  the dialog; it closes on success.
+
+**Who sees which button.** `ManageUsersController::detail()` sends a `can`
+map built with `AdminAccessMiddleware::allows()`, the same rule the routes
+enforce.
+
+- **Before:** the wallet buttons showed for an "Owner" role, whose clicks
+  then failed with 403.
+- **Example:** an admin with "view users" + "edit users" sees the edit form
+  and ban/block. They do not see the wallets, Buy Shares, Login as User or
+  the sponsor/username/password cards, which are super-admin only.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| The sponsor change, username change and member password update put the whole exception, stack trace included, into the toast (`'Error: ' . $e`). | `report($e)` and a plain message; the password update needs no try/catch. |
+| The edit form had the First Name and Last Name boxes twice. | Once. |
+| The account number and mobile were `type="number"` boxes. | Text boxes (numeric keypad): numbers like `0123…` keep their leading zero. |
+| `update()` looked up the country before validating it: a missing or unknown country gave a server error. | Validated first → "The selected country is invalid." The mobile-number clash shows under the Mobile box. |
+| Turning the KYC switch off deleted the member's documents without a word. | Same result, but the page asks first. |
+| **Sponsor change** trusted a "current sponsor" sent from a read-only box, refused with "Mission Impossible AD102" when they differed, and could never give a sponsor to a member without one. | The current sponsor is read from the member. A member with none can be given one (the log's previous sponsor is empty). Errors are plain sentences under the box. |
+| Username change had no format rules (spaces and symbols allowed). | The sign-up rules: at least 6 characters, letters/numbers/underscore, unique. |
+| **Wallet adjustments** (Money Box, VISA, Re-purchase) read and wrote the balance without a lock: two adjustments at the same moment overwrote each other. | Each runs in a transaction with the member's row locked. Rules unchanged: VISA and Re-purchase may not go below zero; the Money Box may (its check was switched off on purpose in the old code). |
+| Ban, block withdrawals and Ambassador were blind toggles: a second click from a stale tab undid the first. | The page sends what it means (`state=ban/unban`, `block/unblock`, `on/off`); a repeat answers "already banned" etc. and changes nothing. |
+| The Ambassador button used the browser's `confirm()`. | `ConfirmDialog`. |
+| **Buy Shares** checked the balance outside any lock: a double click could allocate twice on one check. | Locked; checked and charged in one transaction. Quantity is capped at 100,000 units. |
+
+**For the owner to decide: "Force allocate".**
+
+- **What the dialog says:** "skip balance deduction".
+- **What the code does:** it always deducts. The skip was commented out, so
+  a forced allocation takes the member's Money Box below zero by the
+  shortfall.
+- **What changed:** the behaviour is unchanged. The dialog now says "the
+  balance goes below zero by the shortfall".
+- **If the old meaning is wanted** (allocate without charging), it is a
+  one-line change in `buySharesForUser()`; say so.
+
+**Duplicates:** the commented-out second copy of the edit form is gone with
+the Blade file.
+
+**Deleted:** `admin/users/detail.blade.php`. `UserCell` and the list's
+Details button now open the member page as Inertia visits.
+
+**Verification:**
+
+- **Server checks** (`p7c2_check.php`):
+  - **Page:** tiles (React/Blade links marked), PV, form values (account
+    number with its leading zero), plans.
+  - **`can`:** super-admin vs the editor role.
+  - **Edit:** unknown or missing country → messages; mobile clash; save;
+    KYC off clears the documents.
+  - **Sponsor:** a member without one gets one; same / self / later-joiner /
+    unknown → messages.
+  - **Username:** bad format, too short, taken, ok.
+  - **Password:** mismatch, ok.
+  - **Wallets:** Money Box below zero; VISA and Re-purchase overdraws
+    refused; zero refused.
+  - **Toggles:** ban needs a reason; ban / repeat ban / unban / repeat;
+    block / repeat; Ambassador on / repeat.
+  - **Buy Shares:** refused without Force; with Force the balance goes from
+    100 to −2,900 and the investment is recorded; 0 units refused.
+- **Browser checks** (`e2e/phase7c2.mjs`, 37 checks):
+  - **Page:** tiles and links; the form (one first/last name, text account
+    number, switches, dial code follows the country); edit errors in place.
+  - **KYC switch:** turning it off asks first.
+  - **Sponsor, username, password:** sponsor and username errors show in
+    place; the password boxes are emptied.
+  - **Wallet dialog:** titles, required fields, errors stay, closes on
+    success.
+  - **Ban, block, Ambassador:** send their state.
+  - **Buy Shares:** totals, shortfall, Force (and its new label), the POST,
+    Force unticked when the balance is enough.
+  - **Editor role:** sees no super-admin buttons.
+  - **Phone width:** no sideways scroll.
+- **Regression:** 26 browser suites, 768 checks, all pass. Two older checks
+  now expect an Inertia visit to the member page instead of a full load.
+
 ## Part 4: Working on the front end
 
 ### Run locally

@@ -1,3 +1,4 @@
+import { Link } from '@inertiajs/react';
 import { useTrans } from '@/lib/i18n';
 import { visitWithQuery } from '@/lib/search';
 
@@ -29,8 +30,7 @@ export function UserCell({ user, searchUrl }: { user: AdminUser; searchUrl?: str
                         @{user.username}
                     </a>
                 ) : (
-                    // The member's admin page is still Blade: a normal link.
-                    <a href={user.url}>@{user.username}</a>
+                    <Link href={user.url}>@{user.username}</Link>
                 )}
             </span>
         </>

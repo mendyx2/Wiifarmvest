@@ -37,35 +37,15 @@ class ManageUsersController extends Controller
     public function passwordUpdate(Request $request, $id)
     {
         $request->validate([
-           
             'password' => 'required|min:6|confirmed',
         ]);
 
         $user = User::findOrFail($id);
+        $user->password = Hash::make($request->password);
+        $user->save();
 
-        // if (!Hash::check($request->old_password, $user->password)) {
-        //     $notify[] = ['error', 'Password doesn\'t match!!'];
-        //     return back()->withNotify($notify);
-        // }
-
-        
-
-        DB::beginTransaction();
-        try {
-
-            $user->password = Hash::make($request->password);
-            $user->save();
-            DB::commit();
-            $notify[] = ['success', 'Password  updated successfully'];
-
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            //throw $e;
-            $notify[] = ['error', 'Error: ' . $e];
-            $notify[] = ['error', 'Error code AD103'];
-        }
-
-        
+        // The old code put the whole exception (with its stack trace) into the toast.
+        $notify[] = ['success', 'Password updated successfully'];
         return back()->withNotify($notify);
     }
 
@@ -237,31 +217,162 @@ class ManageUsersController extends Controller
     }
 
 
+    /**
+     * The member page (Pages/Admin/Users/Detail.tsx): balances, quick links,
+     * account controls, and the edit forms. Each action button is shown only
+     * when AdminAccessMiddleware would let this admin use it (the Blade page
+     * showed the wallet buttons to "Owner" admins, who then got a 403).
+     */
     public function detail($id)
     {
-        $user      = User::findOrFail($id);
-        $total_ref = Transaction::where('user_id', $user->id)->where('remark', 'referral_commission')->sum('amount');
+        $user  = User::with(['refBy', 'project', 'stockist'])->findOrFail($id);
+        $admin = auth('admin')->user();
+        $can   = fn (string $route) => \App\Http\Middleware\AdminAccessMiddleware::allows($admin, $route, 'POST');
 
-        $total_stage_out = Transaction::where('user_id', $user->id)->where('remark', 'stageOut_commission')->sum('amount');
- 
-        
-
-        $pageTitle = 'User Detail - ' . $user->username;
-
+        $totalRef         = Transaction::where('user_id', $user->id)->where('remark', 'referral_commission')->sum('amount');
         $totalDeposit     = Deposit::where('user_id', $user->id)->successful()->sum('amount');
         $totalWithdrawals = Withdrawal::where('user_id', $user->id)->approved()->sum('amount');
         $totalTransaction = Transaction::where('user_id', $user->id)->count();
-        $countries        = json_decode(file_get_contents(resource_path('views/partials/country.json')));
-        $totalBvCut       = BvLog::where('user_id', $user->id)->where('trx_type', '-')->sum('amount');
-        $totalOrder       = Order::where('user_id', $user->id)->count();
-        $totalPinGenerate = Pin::where('generate_user_id',$user->id)->count();
-        $totalUsedPin = Pin::where('user_id',$user->id)->where('status', Status::ENABLE)->count();
-        
-        $plans = Plan::active()->orderBy('price')->get();
-        $userMatrix = \App\Models\Matrix::where('user_id', $user->id)->first();
-        $sponsorChangeCount = $user->sponsorChangeLogs()->count();
+        $userMatrix       = Matrix::where('user_id', $user->id)->first();
 
-        return view('admin.users.detail', compact('pageTitle', 'user', 'totalDeposit', 'totalWithdrawals', 'totalTransaction', 'totalPinGenerate', 'totalUsedPin', 'countries', 'totalBvCut', 'totalOrder', 'total_ref', 'total_stage_out', 'plans', 'userMatrix', 'sponsorChangeCount'));
+        // $route: the link's route name, so the page knows whether it opens a React page.
+        $widget = fn (string $title, string $value, string $icon, string $bg, ?string $route = null, array $params = []) => [
+            'title' => $title, 'value' => $value, 'icon' => $icon, 'bg' => $bg,
+            'link'  => $route ? route($route, $params) : null,
+            'react' => $route ? \App\Support\AdminLayout::isReact($route) : false,
+        ];
+        $money  = fn ($v) => showAmount((float) ($v ?? 0));
+
+        $main = [
+            $widget('Balance', $money($user->balance), 'las la-money-bill-wave-alt', 'indigo'),
+            $widget('VISA wallet', $money($user->visa), 'la la-money', '8'),
+        ];
+        if ($user->stockist) {
+            $main[] = $widget('Stockist Balance', $money($user->stockist->wallet), 'las la-store', '6', 'admin.stockist.detail', [$user->stockist->id]);
+        }
+        array_push($main,
+            $widget('Referral Commission', $money($totalRef), 'la la-user', '17', 'admin.report.referral.commission', [$user->id]),
+            $widget('Deposits', $money($totalDeposit), 'las la-wallet', '8', 'admin.deposit.list', [$user->id]),
+            $widget('Withdrawals', $money($totalWithdrawals), 'la la-bank', '6', 'admin.withdraw.data.all', [$user->id]),
+            $widget('Transactions', (string) $totalTransaction, 'las la-exchange-alt', '17', 'admin.report.transaction', [$user->id]),
+            $widget('Total Invest', $money($user->total_invest), 'la la-money', '17', 'admin.report.invest', [$user->id]),
+            $widget('Total Invest Commission', $money($user->total_binary_com), 'las la-coins', '6', 'admin.report.binary.commission', [$user->id]),
+        );
+
+        $wallets = [
+            $widget('Re-purchase wallet', $money($user->product_wallet), 'las la-shopping-bag', '9'),
+            $widget('Direct Bonus (Lifetime)', $money($user->direct_bonus), 'las la-hand-holding-usd', '2'),
+            $widget('Indirect Bonus (Lifetime)', $money($user->indirect_bonus), 'las la-network-wired', '8'),
+            $widget('Upgrade Bonus (Lifetime)', $money($user->upgrade_bonus), 'las la-arrow-up', '14'),
+            $widget('Unilevel Bonus (Lifetime)', $money($user->unilevel_bonus), 'las la-sitemap', '17'),
+            $widget('Matching Bonus (Lifetime)', $money($user->matching_bonus), 'las la-balance-scale', '6'),
+            $widget('Repurchase Award Wallet', $money($user->repurchase_award), 'las la-medal', '14'),
+            $widget('Key-In Bonus (Lifetime)', $money($user->key_in_bonus), 'las la-keyboard', '17'),
+            $widget('ACB Bonus (Achievers Celebrated)', $money($user->acb), 'las la-star', '2'),
+        ];
+
+        $pv = $userMatrix ? [
+            'position' => $userMatrix->position ? ucfirst((string) $userMatrix->position) : null,
+            'positionClass' => match ($userMatrix->position) { 'left' => 'primary', 'right' => 'danger', default => 'success' },
+            'widgets' => [
+                $widget('PV Left Ranking', number_format((float) $userMatrix->pv_left, 2), 'las la-arrow-alt-circle-left', '1'),
+                $widget('PV Right Ranking', number_format((float) $userMatrix->pv_right, 2), 'las la-arrow-alt-circle-right', '13'),
+                $widget('PV Left (Matched)', number_format((float) $userMatrix->pv_left_pairing, 2), 'las la-check-double', '4'),
+                $widget('PV Right (Matched)', number_format((float) $userMatrix->pv_right_pairing, 2), 'las la-check-double', '16'),
+            ],
+        ] : null;
+
+        $countries = collect((array) json_decode(file_get_contents(resource_path('views/partials/country.json'))))
+            ->map(fn ($c, $code) => ['code' => (string) $code, 'name' => __((string) $c->country), 'dial' => (string) $c->dial_code])->values();
+
+        $title = 'User Detail - ' . $user->username;
+
+        return Inertia::render('Admin/Users/Detail', [
+            'title'  => $title,
+            'member' => [
+                'id'          => $user->id,
+                'fullname'    => (string) $user->fullname,
+                'username'    => (string) $user->username,
+                'email'       => (string) $user->email,
+                'mobile'      => $user->dial_code . $user->mobile,
+                'trx'         => (string) $user->trx,
+                'state'       => (string) $user->state,
+                'address'     => (string) $user->address,
+                'joined'      => showDateTime($user->created_at),
+                'image'       => getImage(getFilePath('userProfile') . '/' . $user->image, null, true),
+                'project'     => $user->project ? ['title' => __($user->project->title), 'color' => (string) $user->project->color, 'icon' => (string) $user->project->icon] : null,
+                'sponsor'     => AdminPresenter::user($user->refBy),
+                'active'      => (int) $user->status === Status::USER_ACTIVE,
+                'banReason'   => $user->ban_reason,
+                'withdrawalBlocked' => (bool) $user->withdrawal_blocked,
+                'withdrawalBlockReason' => $user->withdrawal_block_reason,
+                'ambassador'  => (bool) $user->ambassador,
+                'hasKyc'      => (bool) $user->kyc_data,
+                'balance'     => (float) $user->balance,
+                'balanceLabel'       => showAmount($user->balance),
+                'productWalletLabel' => showAmount((float) $user->product_wallet),
+            ],
+            'widgets' => ['main' => $main, 'wallets' => $wallets, 'pv' => $pv],
+            'form'    => [
+                'firstname' => (string) $user->firstname,
+                'lastname'  => (string) $user->lastname,
+                'email'     => (string) $user->email,
+                'bname'     => (string) $user->bname,
+                'aname'     => (string) $user->aname,
+                'ano'       => (string) $user->ano,
+                'mobile'    => (string) $user->mobile,
+                'address'   => (string) $user->address,
+                'city'      => (string) $user->city,
+                'state'     => (string) $user->state,
+                'zip'       => (string) $user->zip,
+                'country'   => (string) $user->country_code,
+                'ev'        => (bool) $user->ev,
+                'sv'        => (bool) $user->sv,
+                'ts'        => (bool) $user->ts,
+                'kv'        => (int) $user->kv === Status::KYC_VERIFIED,
+            ],
+            'countries' => $countries,
+            'plans'     => Plan::active()->orderBy('price')->get()->map(fn (Plan $plan) => [
+                'id' => $plan->id, 'name' => (string) $plan->name, 'price' => (float) $plan->price, 'priceLabel' => showAmount($plan->price),
+            ])->values(),
+            'currency'           => (string) gs('cur_text'),
+            'sponsorChangeCount' => $user->sponsorChangeLogs()->count(),
+            'links' => [
+                'logins'         => route('admin.report.login.history', ['search' => $user->username]),
+                'notifications'  => route('admin.users.notification.log', $user->id),
+                'welcomePacks'   => route('admin.welcome-pack.index', ['user' => $user->username]),
+                'kyc'            => route('admin.users.kyc.details', $user->id),
+                'tree'           => route('admin.users.other.tree', $user->username),
+                'referrals'      => route('admin.users.referral', $user->id),
+                'sponsorHistory' => route('admin.users.sponsor.history', $user->id),
+                'loginAs'        => route('admin.users.login', $user->id),
+            ],
+            'urls' => [
+                'update'        => route('admin.users.update', $user->id),
+                'sponsor'       => route('admin.users.update_again', $user->id),
+                'username'      => route('admin.users.update_again1', $user->id),
+                'password'      => route('admin.users.update_password', $user->id),
+                'balance'       => route('admin.users.add.sub.balance', $user->id),
+                'visa'          => route('admin.users.add.sub.balance.visa', $user->id),
+                'productWallet' => route('admin.users.add.sub.balance.product.wallet', $user->id),
+                'status'        => route('admin.users.status', $user->id),
+                'withdrawal'    => route('admin.users.withdrawal.block', $user->id),
+                'ambassador'    => route('admin.users.ambassador.toggle', $user->id),
+                'buyShares'     => route('admin.users.buy.shares', $user->id),
+            ],
+            'can' => [
+                'edit'       => $can('admin.users.update'),
+                'sponsor'    => $can('admin.users.update_again'),
+                'username'   => $can('admin.users.update_again1'),
+                'password'   => $can('admin.users.update_password'),
+                'wallets'    => $can('admin.users.add.sub.balance'),
+                'status'     => $can('admin.users.status'),
+                'withdrawal' => $can('admin.users.withdrawal.block'),
+                'ambassador' => $can('admin.users.ambassador.toggle'),
+                'buyShares'  => $can('admin.users.buy.shares'),
+                'loginAs'    => \App\Http\Middleware\AdminAccessMiddleware::allows($admin, 'admin.users.login'),
+            ],
+        ])->withViewData(['pageTitle' => $title]);
     }
 
     public function sponsorHistory($id)
@@ -308,72 +419,62 @@ class ManageUsersController extends Controller
     {
         $request->validate([
             'plan_id'  => 'required|integer|exists:plans,id',
-            'quantity' => 'required|integer|min:1',
-            
+            'quantity' => 'required|integer|min:1|max:100000',
         ]);
 
-        $user     = User::findOrFail($id);
+        User::findOrFail($id);
         $plan     = Plan::active()->findOrFail($request->plan_id);
         $quantity = (int) $request->quantity;
         $total    = $plan->price * $quantity;
         $force    = $request->boolean('force', false);
 
-        if ($user->balance < $total && !$force) {
-            return response()->json([
-                'status'  => 'insufficient',
-                'message' => 'User balance (' . showAmount($user->balance) . ') is less than ' . showAmount($total) . '. Tick "Force allocate" to proceed anyway.',
-            ], 422);
-        }
+        try {
+            $user = DB::transaction(function () use ($id, $plan, $quantity, $total, $force) {
+                // Locked, so a double click cannot allocate (and charge) twice
+                // on the same balance check.
+                $user = User::lockForUpdate()->findOrFail($id);
 
-        DB::transaction(function () use ($user, $plan, $quantity, $total, $force) {
-            // Deduct balance only when sufficient; force-allocate skips deduction
-            /*
-            if ($user->balance >= $total) {
+                if ($user->balance < $total && !$force) {
+                    throw new \DomainException('User balance (' . showAmount($user->balance) . ') is less than ' . showAmount($total) . '. Tick "Force allocate" to proceed anyway.');
+                }
+
+                // "Force allocate" still deducts: the balance goes below zero by
+                // the shortfall. The old dialog said it skipped the deduction,
+                // but that branch was commented out in the code. Unchanged here;
+                // the dialog now says what really happens.
                 $user->balance -= $total;
                 $user->save();
-            }
-            */
-            
-            $user->balance -= $total;
-            $user->save();
 
-            $rinvest            = new Rinvestment();
-            $rinvest->plan_id   = $plan->id;
-            $rinvest->user_id   = $user->id;
-            $rinvest->unit_cost = $plan->price;
-            $rinvest->units     = $quantity;
-            $rinvest->five      = $total;
-            $rinvest->trx       = getTrx();
-            $rinvest->status    = 1;
-            $rinvest->save();
+                $rinvest            = new Rinvestment();
+                $rinvest->plan_id   = $plan->id;
+                $rinvest->user_id   = $user->id;
+                $rinvest->unit_cost = $plan->price;
+                $rinvest->units     = $quantity;
+                $rinvest->five      = $total;
+                $rinvest->trx       = getTrx();
+                $rinvest->status    = 1;
+                $rinvest->save();
 
+                $txn               = new Transaction();
+                $txn->user_id      = $user->id;
+                $txn->amount       = $total;
+                $txn->trx_type     = '-';
+                $txn->details      = 'Admin allocated ' . $quantity . ' unit(s) of ' . $plan->name . ' shares';
+                $txn->remark       = 'shares_purchase';
+                $txn->trx          = $rinvest->trx;
+                $txn->post_balance = $user->balance;
+                $txn->charge       = 0;
+                $txn->save();
 
-            $txn               = new Transaction();
-            $txn->user_id      = $user->id;
-            $txn->amount       = $total;
-            $txn->trx_type     = '-';
-            $txn->details      = 'Admin allocated ' . $quantity . ' unit(s) of ' . $plan->name . ' shares';
-            $txn->remark       = 'shares_purchase';
-            $txn->trx          = $rinvest->trx;
-            $txn->post_balance = $user->balance;
-            $txn->charge       = 0;
-            $txn->save();
+                $this->sharesUplinerCommision($user, $rinvest->trx, $total);
 
+                return $user;
+            });
+        } catch (\DomainException $e) {
+            return back()->withErrors(['quantity' => $e->getMessage()]);
+        }
 
-            $totalPayable = $plan->price * $quantity;
-
-            // the get the five percent to share to upliner.
-            $five_percentage = $totalPayable * 0.05;
-            $trx_no = $rinvest->trx;
-
-            $this->sharesUplinerCommision($user, $trx_no, $totalPayable);
-            
-        });
- 
-        return response()->json([
-            'status'  => 'success',
-            'message' => $quantity . ' unit(s) of ' . $plan->name . ' successfully allocated to ' . $user->username . '.',
-        ]);
+        return back()->withNotify([['success', $quantity . ' unit(s) of ' . $plan->name . ' successfully allocated to ' . $user->username . '.']]);
     }
 
     protected function sharesUplinerCommision(User $user, $trx_no, $totalPayable)
@@ -550,39 +651,40 @@ class ManageUsersController extends Controller
     
     public function update(Request $request, $id)
     {
-        //dd($request->email);
         $user         = User::findOrFail($id);
         $countryData  = json_decode(file_get_contents(resource_path('views/partials/country.json')));
-        $countryArray = (array)$countryData;
-        $countries    = implode(',', array_keys($countryArray));
+        $countries    = implode(',', array_keys((array) $countryData));
+
+        // Validated before the country is looked up: a missing or unknown
+        // country used to end in a server error instead of a message.
+        $request->validate([
+            'bname'     => 'nullable|string|max:40',
+            'aname'     => 'nullable|string|max:40',
+            'ano'       => 'nullable|string|max:40',
+            'firstname' => 'required|string|max:40',
+            'lastname'  => 'required|string|max:40',
+            'email'     => 'required|email|string|max:40',
+            'mobile'    => 'required|string|max:40',
+            'address'   => 'nullable|string|max:255',
+            'city'      => 'nullable|string|max:255',
+            'state'     => 'nullable|string|max:255',
+            'zip'       => 'nullable|string|max:40',
+            'country'   => 'required|in:' . $countries,
+        ]);
 
         $countryCode = $request->country;
         $country     = $countryData->$countryCode->country;
         $dialCode    = $countryData->$countryCode->dial_code;
 
-        $request->validate([
-            'bname'     => 'sometimes|string|max:40',
-            'aname'     => 'sometimes|string|max:40',
-            'ano'       => 'sometimes|max:40',
-            'firstname' => 'required|string|max:40',
-            'lastname'  => 'required|string|max:40',
-            'email'     => 'required|email|string|max:40',
-            'mobile'    => 'required|string|max:40',
-            'country'   => 'required|in:' . $countries,
-        ]);
-        // 'email'     => 'required|email|string|max:40|unique:users,email,' . $user->id,
-
         $exists = User::where('mobile', $request->mobile)->where('dial_code', $dialCode)->where('id', '!=', $user->id)->exists();
         if ($exists) {
-            $notify[] = ['error', 'The mobile number already exists.'];
-            return back()->withNotify($notify);
+            return back()->withErrors(['mobile' => 'The mobile number already exists.']);
         }
-        
 
         $user->mobile    = $request->mobile;
-        $user->bname = $request->bname;
-        $user->aname = $request->aname;
-        $user->ano = $request->ano;
+        $user->bname     = $request->bname;
+        $user->aname     = $request->aname;
+        $user->ano       = $request->ano;
         $user->firstname = $request->firstname;
         $user->lastname  = $request->lastname;
         $user->email     = $request->email;
@@ -591,23 +693,27 @@ class ManageUsersController extends Controller
         $user->city         = $request->city;
         $user->state        = $request->state;
         $user->zip          = $request->zip;
-        $user->country_name = @$country;
+        $user->country_name = $country;
         $user->dial_code    = $dialCode;
         $user->country_code = $countryCode;
 
-        $user->ev = $request->ev ? Status::VERIFIED : Status::UNVERIFIED;
-        $user->sv = $request->sv ? Status::VERIFIED : Status::UNVERIFIED;
-        $user->ts = $request->ts ? Status::ENABLE : Status::DISABLE;
-        if (!$request->kv) {
-            $user->kv = Status::KYC_UNVERIFIED;
-            if ($user->kyc_data) {
-                foreach ($user->kyc_data as $kycData) {
-                    if ($kycData->type == 'file') {
-                        fileManager()->removeFile(getFilePath('verify') . '/' . $kycData->value);
+        $user->ev = $request->boolean('ev') ? Status::VERIFIED : Status::UNVERIFIED;
+        $user->sv = $request->boolean('sv') ? Status::VERIFIED : Status::UNVERIFIED;
+        $user->ts = $request->boolean('ts') ? Status::ENABLE : Status::DISABLE;
+        if (!$request->boolean('kv')) {
+            // Turning KYC off deletes the submitted documents, as before; the
+            // page asks for confirmation first.
+            if ((int) $user->kv === Status::KYC_VERIFIED || $user->kyc_data) {
+                $user->kv = Status::KYC_UNVERIFIED;
+                if ($user->kyc_data) {
+                    foreach ($user->kyc_data as $kycData) {
+                        if ($kycData->type == 'file') {
+                            fileManager()->removeFile(getFilePath('verify') . '/' . $kycData->value);
+                        }
                     }
                 }
+                $user->kyc_data = null;
             }
-            $user->kyc_data = null;
         } else {
             $user->kv = Status::KYC_VERIFIED;
         }
@@ -616,169 +722,87 @@ class ManageUsersController extends Controller
         $notify[] = ['success', 'User details updated successfully'];
         return back()->withNotify($notify);
     }
-     
-    public function update_again(Request $request, $id){  
-        // $c = current 
-        //$n = new 
+
+    /**
+     * Change a member's sponsor. The current sponsor is read from the member
+     * record: the old form sent it from a read-only box and refused when the
+     * two differed ("Mission Impossible AD102"), and a member without a
+     * sponsor could never be given one.
+     */
+    public function update_again(Request $request, $id)
+    {
         $request->validate([
-            'csponsor' => 'required|string|max:40',
-            'nsponsor'  => 'required|string|max:40',
-        ]);
+            'nsponsor' => 'required|string|max:40',
+        ], [], ['nsponsor' => 'new sponsor']);
 
-        // check if new sponsor is in db
-        $n_s_user = User::where('username', $request->nsponsor)->first();
-       
-        // check if the new sponsor exist
-        if (!$n_s_user) {
-            $notify[] = ['error', 'The new sponsor does not exist.'];
-            return back()->withNotify($notify);
+        $newSponsor = User::where('username', $request->nsponsor)->first();
+        if (!$newSponsor) {
+            return back()->withErrors(['nsponsor' => 'The new sponsor does not exist.']);
         }
 
-            // check if current sponsor on form submit is in db
-        $c_s_user = User::where('username', $request->csponsor)->first();
-       
-            // check if current sponsor exist
-        if (!$c_s_user) {
-            $notify[] = ['error', 'The current sponsor does not exist.'];
-            return back()->withNotify($notify);
+        $user = User::findOrFail($id);
+        if ($user->id == $newSponsor->id) {
+            return back()->withErrors(['nsponsor' => 'A member cannot sponsor themselves.']);
+        }
+        if ((int) $user->ref_by === (int) $newSponsor->id) {
+            return back()->withErrors(['nsponsor' => 'The new sponsor is the same as the current sponsor.']);
+        }
+        if ($user->id < $newSponsor->id) {
+            return back()->withErrors(['nsponsor' => 'The new sponsor joined after this member, so cannot be their sponsor.']);
         }
 
-            /* check if current sponsor on form submit is 
-            the same with the one store on the user->refBy table. else there is tampering abort mission
-            */
-        $user = User::find($id);
-        // to check if the user exist.
-        if (!$user) {
-            $notify[] = ['error', 'Error AD101 exists.'];
-            return back()->withNotify($notify);
-        }
-        // To make sure you cannot sponsor yourself.
-        if ($user->id == $n_s_user->id){
-            $notify[] = ['error', 'You cannot sponsor yourself.'];
-            return back()->withNotify($notify);
-        }
+        $previousRefBy = $user->ref_by;
 
-        if ($c_s_user->id != $user->ref_by){
-            $notify[] = ['error', 'Mission Impossible AD102 exist.'];
-            return back()->withNotify($notify);
-        }
-
-        // No-op change would only pollute the sponsor history
-        if ($n_s_user->id == $c_s_user->id) {
-            $notify[] = ['error', 'The new sponsor is the same as the current sponsor.'];
-            return back()->withNotify($notify);
-        }
-
-        // Get the old trx number 
-        $trx = $user->trx;
-
-        //dd($user->id);
-         if ($user->id < $n_s_user->id ) {
-            $notify[] = ['error', 'The New sponsor you filled came after the user was registered. AD106'];
-            return back()->withNotify($notify);
-        }
-
-
-        DB::beginTransaction();
         try {
+            $changed = DB::transaction(function () use ($user, $newSponsor, $previousRefBy) {
+                // Lock and re-check, so a double submit cannot log the same change twice.
+                $locked = User::lockForUpdate()->find($user->id);
+                if ((int) $locked->ref_by !== (int) $previousRefBy) {
+                    return false;
+                }
 
-        // Lock the row and re-verify so a double submit can't log the same change twice
-        $user = User::lockForUpdate()->find($user->id);
-        if ($user->ref_by != $c_s_user->id) {
-            DB::rollBack();
-            $notify[] = ['error', 'Sponsor was changed by another request. Please reload and try again.'];
-            return back()->withNotify($notify);
-        }
+                $locked->ref_by = $newSponsor->id;
+                $locked->save();
 
-        // 1)Change the ref_by which is where the sponsor is stored.
-        $user->ref_by    = $n_s_user->id;
-        $user->save();
+                SponsorChangeLog::create([
+                    'user_id'             => $locked->id,
+                    'previous_sponsor_id' => User::whereKey($previousRefBy)->exists() ? $previousRefBy : null,
+                    'new_sponsor_id'      => $newSponsor->id,
+                    'admin_id'            => auth('admin')->id(),
+                ]);
 
-        // Keep an audit trail of every sponsor change
-        SponsorChangeLog::create([
-            'user_id'             => $user->id,
-            'previous_sponsor_id' => $c_s_user->id,
-            'new_sponsor_id'      => $n_s_user->id,
-            'admin_id'            => auth('admin')->id(),
-        ]);
-
-       
-
-        //2) retrieve the money from the current sponsor
-        $old_amout = $c_s_user->balance;
-        //$c_s_user->balance  -= 700;
-        $c_s_user->save();
-         //update transaction
-        $details = "you no longer sponsor ".$user->username;
-
-        //$this->referralComission_change_of_sponsor($c_s_user, $details, '-', $c_s_user->balance, $trx);
-
-        // 3) 
-        //$n_s_user->balance  += 700;
-        $n_s_user->save();
-
-        $details1 = "Referral bonus gotten from ".$user->username;
-
-        //$this->referralComission_change_of_sponsor($n_s_user, $details1, '+', $n_s_user->balance, $trx);
-
-         DB::commit();
-         $notify[] = ['success', 'Sponsors updated successfully'];
-
+                return true;
+            });
         } catch (\Throwable $e) {
-            DB::rollBack();
-            //throw $e;
-            $notify[] = ['error', 'Error: ' . $e];
+            report($e);
+            return back()->withNotify([['error', 'The sponsor could not be changed. Please try again.']]);
         }
 
-        
-        return back()->withNotify($notify);
+        if (!$changed) {
+            return back()->withNotify([['error', 'Sponsor was changed by another request. Please reload and try again.']]);
+        }
+
+        return back()->withNotify([['success', 'Sponsor updated successfully']]);
     }
-    
+
     // username change
-    public function update_again1(Request $request, $id){  
-       
+    /** Change a member's username: the same rules as sign-up. */
+    public function update_again1(Request $request, $id)
+    {
+        $user = User::findOrFail($id);
+
         $request->validate([
-            'username' => 'required|string',
-            'nusername'  => 'required|string|max:40',
-        ]);
+            'nusername' => ['required', 'string', 'min:6', 'max:40', 'regex:/^[A-Za-z0-9_]+$/', 'unique:users,username'],
+        ], [
+            'nusername.regex'  => 'Username can contain only letters, numbers and underscore.',
+            'nusername.unique' => 'That username is already taken.',
+        ], ['nusername' => 'new username']);
 
-        // check user
-        $user = User::find($id);
-        // check if new User is in db
-        $nuser = User::where('username', $request->nusername)->first();
-       
-        // check if the new sponsor exist
-        if (!$user) {
-            $notify[] = ['error', 'This error cannot be solve by you AD209.'];
-            return back()->withNotify($notify);
-        }
-
-        // check if the new sponsor exist
-        if ($nuser) {
-            $notify[] = ['error', 'The new Username exist.'];
-            return back()->withNotify($notify);
-        }
-
-        DB::beginTransaction();
-        try {
-        // 1)Change the username.
-        $user->username    = $request->nusername;
+        $user->username = $request->nusername;
         $user->save();
 
-         DB::commit();
-         $notify[] = ['success', 'Username updated successfully'];
-
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            //throw $e;
-            $notify[] = ['error', 'Error: ' . $e];
-        }
-
-        
-        return back()->withNotify($notify);
+        return back()->withNotify([['success', 'Username updated successfully']]);
     }
-
-    
 
     Protected function referralComission_change_of_sponsor(User $user, $details, $trx_type, $post_balance, $trx){
 
@@ -797,6 +821,10 @@ class ManageUsersController extends Controller
     }
 
 
+    /**
+     * Money Box. Subtracting may take it below zero (the sufficiency check was
+     * switched off on purpose in the old code; unchanged).
+     */
     public function addSubBalance(Request $request, $id)
     {
         $request->validate([
@@ -805,126 +833,48 @@ class ManageUsersController extends Controller
             'remark' => 'required|string|max:255',
         ]);
 
-        $user   = User::findOrFail($id);
-        $amount = $request->amount;
+        User::findOrFail($id);
+        $amount = (float) $request->amount;
+        $add    = $request->act === 'add';
         $trx    = getTrx();
 
-        $transaction = new Transaction();
+        // One transaction with the member's row locked: two adjustments at
+        // the same moment used to overwrite each other's balance.
+        try {
+            $user = DB::transaction(function () use ($id, $amount, $add, $trx, $request) {
+                $user = User::lockForUpdate()->findOrFail($id);
+                $user->balance = (float) $user->balance + ($add ? $amount : -$amount);
+                $user->save();
 
-        if ($request->act == 'add') {
-            $user->balance += $amount;
+                $transaction               = new Transaction();
+                $transaction->user_id      = $user->id;
+                $transaction->amount       = $amount;
+                $transaction->post_balance = $user->balance;
+                $transaction->charge       = 0;
+                $transaction->trx_type     = $add ? '+' : '-';
+                $transaction->remark       = $add ? 'balance_add' : 'balance_subtract';
+                $transaction->trx          = $trx;
+                $transaction->details      = $request->remark;
+                $transaction->save();
 
-            $transaction->trx_type = '+';
-            $transaction->remark   = 'balance_add';
-
-            $notifyTemplate = 'BAL_ADD';
-
-            $notify[] = ['success', 'Balance added successfully'];
-        } else {
-            /*
-            if ($amount > $user->balance) {
-                $notify[] = ['error', $user->username . ' doesn\'t have sufficient balance.'];
-                return back()->withNotify($notify);
-            }
-            */
-
-            $user->balance -= $amount;
-
-            $transaction->trx_type = '-';
-            $transaction->remark   = 'balance_subtract';
-
-            $notifyTemplate = 'BAL_SUB';
-            $notify[]       = ['success', 'Balance subtracted successfully'];
+                return $user;
+            });
+        } catch (\DomainException $e) {
+            return back()->withErrors(['amount' => $e->getMessage()]);
         }
 
-        $user->save();
-
-        $transaction->user_id      = $user->id;
-        $transaction->amount       = $amount;
-        $transaction->post_balance = $user->balance;
-        $transaction->charge       = 0;
-        $transaction->trx          = $trx;
-        $transaction->details      = $request->remark;
-        $transaction->save();
-
-        notify($user, $notifyTemplate, [
+        notify($user, $add ? 'BAL_ADD' : 'BAL_SUB', [
             'trx'          => $trx,
             'amount'       => showAmount($amount, currencyFormat: false),
             'remark'       => $request->remark,
-            'post_balance' => showAmount($user->balance, currencyFormat: false)
+            'post_balance' => showAmount($user->balance, currencyFormat: false),
         ]);
 
-        return back()->withNotify($notify);
+        return back()->withNotify([['success', $add ? 'Balance added successfully' : 'Balance subtracted successfully']]);
     }
-   
 
     //VISA wallet
     public function addSubBalanceVisa(Request $request, $id)
-    {   
-        /*
-        if($request->stats > 1 || $request->stats < 0){
-            
-            $notify[] = ['success', 'Stats must be 0 or 1'];
-            return back()->withNotify($notify);
-        }
-        //'stats' => 'required|numeric',
-        */
-        
-        $request->validate([
-            'amount' => 'required|numeric|gt:0',
-            'act'    => 'required|in:add,sub',
-            'remark' => 'required|string|max:255',
-        ]);
-
-        $user   = User::findOrFail($id);
-        $amount = $request->amount;
-        $trx    = getTrx();
-
-        $transaction = new Transaction();
-
-        if ($request->act == 'add') {
-            $user->visa += $amount;
-            $transaction->trx_type = '+';
-            $transaction->remark   = 'visa_wallet_add';
-            $notifyTemplate = 'BAL_ADD';
-            $notify[] = ['success', 'VISA wallet added successfully'];
-        } else {
-            if ($amount > $user->visa) {
-                $notify[] = ['error', $user->username . ' doesn\'t have sufficient money is VISA wallet.'];
-                return back()->withNotify($notify);
-            }
-
-            $user->visa -= $amount;
-            $transaction->trx_type = '-';
-            $transaction->remark   = 'visa_wallet_subtract';
-
-            $notifyTemplate = 'BAL_SUB';
-            $notify[]       = ['success', 'VISA wallet subtracted successfully'];
-        }
-
-        $user->save();
-
-        $transaction->user_id      = $user->id;
-        $transaction->amount       = $amount;
-        $transaction->post_balance = $user->visa;
-        $transaction->charge       = 0;
-        $transaction->trx          = $trx;
-        $transaction->details      = $request->remark;
-        $transaction->save();
-
-        notify($user, $notifyTemplate, [
-            'trx'          => $trx,
-            'amount'       => showAmount($amount, currencyFormat: false),
-            'remark'       => $request->remark,
-            'post_balance' => showAmount($user->visa, currencyFormat: false)
-        ]);
-
-        return back()->withNotify($notify);
-    }
-
-
-    // Re-purchase wallet (repurchase wallet used for buying products)
-    public function addSubBalanceProductWallet(Request $request, int $id)
     {
         $request->validate([
             'amount' => 'required|numeric|gt:0',
@@ -932,48 +882,99 @@ class ManageUsersController extends Controller
             'remark' => 'required|string|max:255',
         ]);
 
-        $user   = User::findOrFail($id);
+        User::findOrFail($id);
         $amount = (float) $request->amount;
+        $add    = $request->act === 'add';
         $trx    = getTrx();
 
-        $transaction = new Transaction();
+        // One transaction with the member's row locked: two adjustments at
+        // the same moment used to overwrite each other's balance.
+        try {
+            $user = DB::transaction(function () use ($id, $amount, $add, $trx, $request) {
+                $user = User::lockForUpdate()->findOrFail($id);
+                if (!$add && $amount > (float) $user->visa) {
+                    throw new \DomainException($user->username . ' doesn\'t have sufficient money in the VISA wallet.');
+                }
+                $user->visa = (float) $user->visa + ($add ? $amount : -$amount);
+                $user->save();
 
-        if ($request->act == 'add') {
-            $user->product_wallet  += $amount;
-            $transaction->trx_type  = '+';
-            $transaction->remark    = 'product_wallet_add';
-            $notifyTemplate         = 'BAL_ADD';
-            $notify[]               = ['success', 'Re-purchase wallet credited successfully'];
-        } else {
-            if ($amount > (float) $user->product_wallet) {
-                $notify[] = ['error', $user->username . ' does not have sufficient Re-purchase wallet balance.'];
-                return back()->withNotify($notify);
-            }
-            $user->product_wallet  -= $amount;
-            $transaction->trx_type  = '-';
-            $transaction->remark    = 'product_wallet_subtract';
-            $notifyTemplate         = 'BAL_SUB';
-            $notify[]               = ['success', 'Re-purchase wallet debited successfully'];
+                $transaction               = new Transaction();
+                $transaction->user_id      = $user->id;
+                $transaction->amount       = $amount;
+                $transaction->post_balance = $user->visa;
+                $transaction->charge       = 0;
+                $transaction->trx_type     = $add ? '+' : '-';
+                $transaction->remark       = $add ? 'visa_wallet_add' : 'visa_wallet_subtract';
+                $transaction->trx          = $trx;
+                $transaction->details      = $request->remark;
+                $transaction->save();
+
+                return $user;
+            });
+        } catch (\DomainException $e) {
+            return back()->withErrors(['amount' => $e->getMessage()]);
         }
 
-        $user->save();
+        notify($user, $add ? 'BAL_ADD' : 'BAL_SUB', [
+            'trx'          => $trx,
+            'amount'       => showAmount($amount, currencyFormat: false),
+            'remark'       => $request->remark,
+            'post_balance' => showAmount($user->visa, currencyFormat: false),
+        ]);
 
-        $transaction->user_id      = $user->id;
-        $transaction->amount       = $amount;
-        $transaction->post_balance = $user->product_wallet;
-        $transaction->charge       = 0;
-        $transaction->trx          = $trx;
-        $transaction->details      = $request->remark;
-        $transaction->save();
+        return back()->withNotify([['success', $add ? 'VISA wallet added successfully' : 'VISA wallet subtracted successfully']]);
+    }
 
-        notify($user, $notifyTemplate, [
+    // Re-purchase wallet (repurchase wallet used for buying products)
+    public function addSubBalanceProductWallet(Request $request, $id)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|gt:0',
+            'act'    => 'required|in:add,sub',
+            'remark' => 'required|string|max:255',
+        ]);
+
+        User::findOrFail($id);
+        $amount = (float) $request->amount;
+        $add    = $request->act === 'add';
+        $trx    = getTrx();
+
+        // One transaction with the member's row locked: two adjustments at
+        // the same moment used to overwrite each other's balance.
+        try {
+            $user = DB::transaction(function () use ($id, $amount, $add, $trx, $request) {
+                $user = User::lockForUpdate()->findOrFail($id);
+                if (!$add && $amount > (float) $user->product_wallet) {
+                    throw new \DomainException($user->username . ' does not have sufficient Re-purchase wallet balance.');
+                }
+                $user->product_wallet = (float) $user->product_wallet + ($add ? $amount : -$amount);
+                $user->save();
+
+                $transaction               = new Transaction();
+                $transaction->user_id      = $user->id;
+                $transaction->amount       = $amount;
+                $transaction->post_balance = $user->product_wallet;
+                $transaction->charge       = 0;
+                $transaction->trx_type     = $add ? '+' : '-';
+                $transaction->remark       = $add ? 'product_wallet_add' : 'product_wallet_subtract';
+                $transaction->trx          = $trx;
+                $transaction->details      = $request->remark;
+                $transaction->save();
+
+                return $user;
+            });
+        } catch (\DomainException $e) {
+            return back()->withErrors(['amount' => $e->getMessage()]);
+        }
+
+        notify($user, $add ? 'BAL_ADD' : 'BAL_SUB', [
             'trx'          => $trx,
             'amount'       => showAmount($amount, currencyFormat: false),
             'remark'       => $request->remark,
             'post_balance' => showAmount($user->product_wallet, currencyFormat: false),
         ]);
 
-        return back()->withNotify($notify);
+        return back()->withNotify([['success', $add ? 'Re-purchase wallet credited successfully' : 'Re-purchase wallet debited successfully']]);
     }
 
     public function login($id)
@@ -982,10 +983,22 @@ class ManageUsersController extends Controller
         return to_route('user.home');
     }
 
+    /**
+     * Ban or unban. The page sends which one it means (?state=ban|unban):
+     * the old button just flipped the status, so a second click from a stale
+     * tab undid the first.
+     */
     public function status(Request $request, $id)
     {
-        $user = User::findOrFail($id);
-        if ($user->status == Status::USER_ACTIVE) {
+        $user   = User::findOrFail($id);
+        $active = (int) $user->status === Status::USER_ACTIVE;
+        $want   = $request->input('state', $active ? 'ban' : 'unban');
+
+        if (($want === 'ban') !== $active) {
+            return back()->withNotify([['info', $active ? 'This user is already active.' : 'This user is already banned.']]);
+        }
+
+        if ($want === 'ban') {
             $request->validate([
                 'reason' => 'required|string|max:255'
             ]);
@@ -1001,28 +1014,33 @@ class ManageUsersController extends Controller
         return back()->withNotify($notify);
     }
 
-
+    /** Block or restore withdrawals (?state=block|unblock, for the same reason as status()). */
     public function toggleWithdrawalBlock(Request $request, $id)
     {
-        $user = User::findOrFail($id);
+        $user    = User::findOrFail($id);
+        $blocked = (bool) $user->withdrawal_blocked;
+        $want    = $request->input('state', $blocked ? 'unblock' : 'block');
 
-        if (!$user->withdrawal_blocked) {
+        if (($want === 'block') === $blocked) {
+            return back()->withNotify([['info', $blocked ? 'Withdrawals are already blocked for this user.' : 'Withdrawals are already open for this user.']]);
+        }
+
+        if ($want === 'block') {
             $request->validate([
                 'reason' => 'required|string|max:500',
             ]);
-            $user->withdrawal_blocked       = true;
-            $user->withdrawal_block_reason  = $request->reason;
+            $user->withdrawal_blocked      = true;
+            $user->withdrawal_block_reason = $request->reason;
             $notify[] = ['success', 'Withdrawal access blocked for ' . $user->username];
         } else {
-            $user->withdrawal_blocked       = false;
-            $user->withdrawal_block_reason  = null;
+            $user->withdrawal_blocked      = false;
+            $user->withdrawal_block_reason = null;
             $notify[] = ['success', 'Withdrawal access restored for ' . $user->username];
         }
 
         $user->save();
         return back()->withNotify($notify);
     }
-
 
     public function showNotificationSingleForm($id)
     {
@@ -1294,15 +1312,23 @@ class ManageUsersController extends Controller
         return back()->withNotify($notify);
     }
 
-    public function toggleAmbassador(int $id)
+    /** Tag or untag as Ambassador (?state=on|off, for the same reason as status()). */
+    public function toggleAmbassador(Request $request, int $id)
     {
         $user = User::findOrFail($id);
-        $user->ambassador = !$user->ambassador;
+        $is   = (bool) $user->ambassador;
+        $want = $request->input('state', $is ? 'off' : 'on');
+
+        if (($want === 'on') === $is) {
+            return back()->withNotify([['info', $is ? 'Already an Ambassador.' : 'Not an Ambassador.']]);
+        }
+
+        $user->ambassador = $want === 'on';
         $user->save();
 
-        $status  = $user->ambassador ? 'tagged as Ambassador' : 'removed from Ambassador status';
+        $status   = $user->ambassador ? 'tagged as Ambassador' : 'removed from Ambassador status';
         $notify[] = ['success', $user->fullname . ' has been ' . $status . '.'];
-        return to_route('admin.users.detail', $user->id)->withNotify($notify);
+        return back()->withNotify($notify);
     }
 }
 
