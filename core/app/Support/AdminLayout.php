@@ -195,6 +195,14 @@ class AdminLayout
         'admin.admins.index',
         'admin.roles.index',
         'admin.permissions.index',
+        // 7f-5b: tickets, notices, flashcards
+        'admin.ticket.index',
+        'admin.ticket.pending',
+        'admin.ticket.answered',
+        'admin.ticket.closed',
+        'admin.ticket.view',
+        'admin.notices.index',
+        'admin.flashcard.index',
     ];
 
     public static function for(Request $request): ?array

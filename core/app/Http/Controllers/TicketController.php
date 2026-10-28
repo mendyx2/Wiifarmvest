@@ -58,7 +58,7 @@ class TicketController extends Controller
 
         // Legacy view: Template::user.support.create
         return Inertia::render('User/TicketCreate', [
-            'maxUpload' => convertToReadableSize(ini_get('upload_max_filesize')),
+            'maxUpload' => $this->attachmentLimit(),
             'storeUrl'  => route('ticket.store'),
             'listUrl'   => route('ticket.index'),
         ])->withViewData(compact('pageTitle'));
@@ -91,7 +91,7 @@ class TicketController extends Controller
                 'message'     => $message->message,
                 'attachments' => $message->attachments->map(fn ($file) => route('ticket.download', encrypt($file->id)))->values(),
             ]),
-            'maxUpload' => convertToReadableSize(ini_get('upload_max_filesize')),
+            'maxUpload' => $this->attachmentLimit(),
             'replyUrl'  => route('ticket.reply', $myTicket->id),
             'closeUrl'  => route('ticket.close', $myTicket->id),
             'listUrl'   => route('ticket.index'),

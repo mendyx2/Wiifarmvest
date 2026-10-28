@@ -83,7 +83,11 @@ trait SupportTicketManager
         $column             = $this->column;
         $user               = $this->user;
         $ticket->$column    = $user->id;
-        $ticket->ticket     = rand(100000, 999999);
+        // rand() alone could repeat a number, and the member's link opens a ticket by its number
+        do {
+            $number = random_int(100000, 999999);
+        } while (SupportTicket::where('ticket', $number)->exists());
+        $ticket->ticket     = $number;
         $ticket->name       = $user->fullname;
         $ticket->email      = $user->email;
         $ticket->subject    = $request->subject;
@@ -334,21 +338,26 @@ trait SupportTicketManager
         return 200;
     }
 
+    /** The largest attachment, as shown on the forms: 10 MB, or less when PHP allows less. */
+    protected function attachmentLimit(): string
+    {
+        $php = ini_get('upload_max_filesize');
+        return $php && ini_parse_quantity($php) < 10 * 1024 * 1024 ? convertToReadableSize($php) : '10MB';
+    }
+
     protected function validation($request)
     {
-        $this->files = $request->file('attachments');
+        $this->files = (array) $request->file('attachments');
 
+        // There was no size limit; at most 5 files of 10 MB each
         return [
-            'attachments' => [
-                function ($attribute, $value, $fail) {
-                    foreach ($this->files as $file) {
-                        $ext = strtolower($file->getClientOriginalExtension());
-                        if (!in_array($ext, $this->allowedExtension)) {
-                            return $fail("Only png, jpg, jpeg, pdf, doc, docx files are allowed");
-                        }
-                    }
-                    if (count($this->files) > 5) {
-                        return $fail("Maximum 5 files can be uploaded");
+            'attachments'   => ['nullable', 'array', 'max:5'],
+            'attachments.*' => [
+                'file',
+                'max:10240',
+                function ($attribute, $file, $fail) {
+                    if (!in_array(strtolower($file->getClientOriginalExtension()), $this->allowedExtension, true)) {
+                        $fail('Only png, jpg, jpeg, pdf, doc, docx files are allowed');
                     }
                 },
             ],
@@ -433,14 +442,12 @@ trait SupportTicketManager
             }
             abort(404);
         }
-        $file = $attachment->attachment;
-        $path = getFilePath('ticket');
-        $fullPath = $path . '/' . $file;
-        $title = slug($attachment->supportMessage->ticket->subject);
-        $ext = pathinfo($file, PATHINFO_EXTENSION);
-        $mimetype = mime_content_type($fullPath);
-        header('Content-Disposition: attachment; filename="' . $title . '.' . $ext . '";');
-        header("Content-Type: " . $mimetype);
-        return readfile($fullPath);
+        $file     = $attachment->attachment;
+        $fullPath = getFilePath('ticket') . '/' . $file;
+        // A missing file used to end in a PHP warning and a broken download
+        abort_unless(is_file($fullPath), 404);
+        $title = slug($attachment->supportMessage->ticket->subject) ?: 'attachment';
+
+        return response()->download($fullPath, $title . '.' . pathinfo($file, PATHINFO_EXTENSION));
     }
 }

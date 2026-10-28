@@ -657,7 +657,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
     // Direct notices — admin-composed personal notices sent to a single user
     Route::controller(\App\Http\Controllers\Admin\AdminNoticeController::class)->prefix('notices')->name('notices.')->group(function () {
         Route::get('/',        'index')->name('index');
-        Route::get('/create',  'create')->name('create');
+        Route::get('/create',  fn () => to_route('admin.notices.index'))->name('create'); // the form is a dialog on the list
         Route::post('/',       'store')->name('store');
     });
 

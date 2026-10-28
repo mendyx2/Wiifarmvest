@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112). Next: 7f-5b tickets, notices, flashcards, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113). Next: 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5651,6 +5651,114 @@ always been super-admin only, and that is unchanged.
   - **Sidebar:** the single group.
   - No sideways scroll at phone width on all three pages.
 - **Regression:** 38 browser suites, 1252 checks, all pass.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+### Step 113: Support tickets, direct notices and flashcards in React (7f-5b)
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Support/Tickets.tsx` | `admin.ticket.index`, `.pending`, `.answered`, `.closed` | `support/tickets.blade.php` |
+| `Support/Ticket.tsx` | `admin.ticket.view` | `support/reply.blade.php` |
+| `Pages/Admin/Notices.tsx` | `admin.notices.index` | `notices/{index,create}.blade.php` |
+| `Pages/Admin/Flashcards.tsx` | `admin.flashcard.index` | `flashcard/index.blade.php` |
+
+**Duplicates removed:**
+
+- **The four ticket lists** (all, pending, answered, closed) shared one
+  Blade template. They are one page with a tab per status. The four
+  routes stay (the sidebar links to them), and the search keeps the tab.
+- **"Send Direct Notice"** was its own page. It is now a dialog on the
+  notices list, and `notices/create` redirects there.
+  - The dialog uses the same fields as Users → member → Send
+    Notification (`NotificationFields`).
+  - Both send through `AdminNoticeService`.
+- The ticket page reuses the member pages' `AttachmentPicker`. The
+  attachment rules come from the shared `SupportTicketManager` trait,
+  so they are the same on both sides.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Flashcard upload took any file** up to 50 MB (`required\|file`). The file kept its own extension in the public `assets/images/flashcard` folder, so a `.php` or `.html` file could be uploaded where the web server serves it. | The file must be an image (jpg, jpeg, png, gif, webp) or a video (mp4, webm, ogg, mov) matching the chosen type. Both the content (`mimes`) and the name (`extensions`) are checked: PHP code named `.jpg` and an `.html` file are refused. |
+| **Ticket attachments had no size limit.** The 5-file and file-type checks ran in one closure, and an unused `convertToMb()` hinted at a limit that never existed. | At most 5 files, 10 MB each (or PHP's upload limit if lower), checked per file. The forms show the real limit. Member and admin share the rules. |
+| **A ticket attachment whose file was missing** gave a PHP warning and a broken download (`mime_content_type` on a missing path, then raw headers and `readfile`). | 404. Downloads use `response()->download()`. |
+| **Ticket numbers came from `rand(100000, 999999)`** with no uniqueness check. The member's link opens a ticket by its number, so two tickets could share one. | `random_int`, repeated until the number is unused. |
+| **The ticket list's status badge was HTML built on the server** and printed raw (`statusBadge`). | Label and colour are sent; React draws the badge. Messages are shown as text with their line breaks. A `<script>` in a message shows as text, as before. |
+| **Direct notices could be sent by a switched-off channel.** The `via` rule allowed email, sms and push whatever the settings said. | Only switched-on channels are offered and accepted. When all are off, the page says so and has no send button. A wrong username is a field error. |
+| **Flashcard show/hide flipped the state blindly**, and deleting a card left its "seen" records. | An explicit state, with "already" on a repeat. Delete also removes its views. |
+
+**Behaviour change:** deleting a ticket message used to say "Support
+ticket deleted"; it deletes one message, so it now says "Message
+deleted".
+
+**Member side:** only the attachment error display changed. The two
+ticket pages now show per-file errors (`attachments.0`) as well as
+list errors.
+
+**For the owner:**
+
+- **Who can handle tickets and flashcards:** both are super-admin only,
+  because the access map does not name them. The seeded "view tickets",
+  "reply tickets", "close tickets", "delete tickets" and "manage
+  flashcards" permissions open nothing; the Permissions page says so.
+  To let support staff handle tickets, map `admin.ticket.*` in
+  `config/admin_access.php`. Members' tickets can hold personal
+  documents, so this is your call.
+- Direct notices need "manage settings", as before.
+
+**Deleted:** `admin/support/*`, `admin/notices/*`, `admin/flashcard/*`
+(5 views).
+
+**Verification:**
+
+- **Server checks** (`p7f5b_check.php`):
+  - **Lists:** the four tabs show the right tickets; search.
+  - **One ticket:**
+    - messages newest first, with authors and attachments; `maxUpload`
+      shows PHP's 2 MB;
+    - replies with a `.php` attachment, a 12 MB pdf or six files are
+      refused;
+    - a reply with a pdf: saved with the admin id, ticket marked
+      answered;
+    - download of that file; a missing file is 404;
+    - close; delete a message with its attachments;
+    - ticket numbers are distinct.
+  - **Notices:**
+    - stats and rows (HTML stripped to text); search by username;
+    - a search for a member who has no notice returns none;
+    - `notices/create` redirects;
+    - an unknown username, a switched-off channel and an e-mail
+      without subject are refused;
+    - send logs a notice; with every channel off the send is refused.
+  - **Flashcards:**
+    - list with "seen" counts;
+    - refused: a `.php` file, an `.html` file, PNG bytes named `.mp4`,
+      PHP code named `.jpg`, a picture uploaded as a video;
+    - an image is saved;
+    - hide, then again ("already"); delete removes its views.
+  - **Access:** a staff admin is refused on all three areas.
+- **Browser checks** (`e2e/phase7f5b.mjs`, 28 checks):
+  - **Tickets:**
+    - tabs, search and Details are Inertia visits;
+    - a closed ticket has no reply form;
+    - a script shows as text and line breaks are kept;
+    - staff badge and attachment links;
+    - reply multipart with `attachments[0]`; close; delete a message.
+  - **Notices:**
+    - stats; the send dialog with only the switched-on channel;
+    - the POST trims the username;
+    - with every channel off the page warns and has no button.
+  - **Flashcards:**
+    - previews;
+    - the file chooser's `accept` follows the type;
+    - upload multipart, and the form empties afterwards;
+    - hide (spoofed PATCH with state) and delete.
+  - No sideways scroll at phone width on all seven page states.
+- **Regression:** (results recorded in the next commit.)
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 

@@ -1,6 +1,6 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import type { FormEvent } from 'react';
-import AttachmentPicker, { chosenFiles } from '@/Components/AttachmentPicker';
+import AttachmentPicker, { chosenFiles, attachmentError } from '@/Components/AttachmentPicker';
 import { useTrans } from '@/lib/i18n';
 import type { PageProps } from '@/types';
 
@@ -48,7 +48,7 @@ export default function TicketCreate({ maxUpload, storeUrl, listUrl }: Props) {
                                     {form.errors.message && <small style={{ color: '#DC2626' }}>{form.errors.message}</small>}
                                 </div>
                                 <div className="col-md-9">
-                                    <AttachmentPicker files={form.data.attachments} onChange={(files) => form.setData('attachments', files)} maxUpload={maxUpload} error={form.errors.attachments} />
+                                    <AttachmentPicker files={form.data.attachments} onChange={(files) => form.setData('attachments', files)} maxUpload={maxUpload} error={attachmentError(form.errors)} />
                                 </div>
                                 <div className="col-md-3">
                                     <button className="btn btn--base w-100 my-2" type="submit" disabled={form.processing}>
