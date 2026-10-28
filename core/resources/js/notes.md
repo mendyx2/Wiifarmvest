@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114). Next: 7f-6b unilevel, key-in, ACB, autoship · 7f-6c awards, projects · 7f-6d dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115). Next: 7f-6c awards, projects · 7f-6d dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5881,6 +5881,87 @@ partials), `admin/reports.blade.php`, and `app/Jobs/ProcessSharePurchase.php`.
   - **Vendor reports:** the error and the POST.
   - No sideways scroll at phone width on all nine pages.
 - **Regression:** 40 browser suites, 1315 checks, all pass.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+### Step 115: Unilevel, ACB, autoship and key-in bonus in React (7f-6b)
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Unilevel/Generations.tsx` | `admin.unilevel.generations.index` | `unilevel/generations.blade.php` |
+| `Unilevel/Allocate.tsx` | `admin.unilevel.allocate.index` | `unilevel/allocate.blade.php` |
+| `Pages/Admin/Acb.tsx` | `admin.acb.index` | `acb/index.blade.php` |
+| `Pages/Admin/BonusWallet.tsx` | `admin.autoship.index`, `admin.key-in-bonus.index` | `autoship/index.blade.php`, `key-in-bonus/index.blade.php` |
+
+**Duplicates removed:**
+
+- **Autoship and Key-In Bonus** were two copies of one report: a wallet
+  column on members, the transactions that credited it, and (for
+  autoship only) the monthly sweep. They are one page component,
+  `BonusWallet.tsx`. The shared server part is
+  `App\Support\BonusWalletReport`, and the controllers only give the
+  wallet's name, stats and extra tab.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Search on the autoship and key-in bonus "holding" tabs listed the wrong members.** The query was `autoship > 0 AND username LIKE x OR firstname LIKE x OR ...`, so a member with nothing in the wallet matched by name or e-mail. In the test, a search for "Ada" also listed a member with no autoship. | The search conditions are grouped; only members holding the wallet are listed. |
+| **Editing a unilevel generation switched it back on.** The edit form had a status checkbox; unticked, it sent nothing, and the server defaulted to "on". | Edit changes number, title, percentage and description only. On/off is the toggle, which takes an explicit state. |
+| **No sign of the total paid.** The generations page did not add up the percentages; together they can exceed the PV itself. | The page shows the total of the active generations, in red with a warning above 100%. The allocate page shows the total for the chosen project. |
+| **The ACB page hard-coded "5% · 2% · 1%" and "3 Gen".** | The rates come from `ProcessAcbBonusJob::RATES`, the constant the job pays with (made public). |
+| **Unknown username or an existing ACB member was a toast**, and the form was emptied. | A field error; the form keeps its values. |
+| **The swept-month filter took any text**, and unknown tabs fell through to an empty page. | The month must be `YYYY-MM`, and an unknown tab shows the first tab. |
+
+**Checked and fine:** `GET /acbProcess` (it runs the ACB payouts) is
+behind the `cron.secret` middleware with the other cron URLs.
+
+**Deleted:** `admin/unilevel/*`, `admin/acb/*`, `admin/autoship/*`,
+`admin/key-in-bonus/*` (5 views).
+
+**Verification:**
+
+- **Server checks** (`p7f6b_check.php`):
+  - **Generations:**
+    - add; a duplicate number and generation 16 are refused;
+    - disable, then again ("already");
+    - **edit without a status field keeps it off;**
+    - list and available numbers.
+  - **Allocate:**
+    - a repeated id is saved once; an unknown id is refused;
+    - the chosen project shows its generations;
+    - clear; deleting a generation removes its links.
+  - **ACB:**
+    - rates from the job;
+    - an unknown username and an existing member are field errors;
+    - add, with the username trimmed; search; remove.
+  - **Autoship:**
+    - stats; the holding list;
+    - **search "Ada" lists only the member holding autoship** (the old
+      query, run alongside, also lists "chi" with none);
+    - credits; swept with months; one month; a bad month is ignored.
+  - **Key-in:** two tabs; an unknown tab shows "holding"; credits.
+- **Browser checks** (`e2e/phase7f6b.mjs`, 26 checks):
+  - **Generations:**
+    - the total in the summary;
+    - add offers only free numbers, and the POST has no status;
+    - edit offers its own number;
+    - enable with state; the over-100% warning.
+  - **Allocate:**
+    - choose a project as an Inertia visit;
+    - ticked generations and the total badge;
+    - unticking is saved.
+  - **ACB:**
+    - rates; add trims the username;
+    - remove asks, saying the balance stays; DELETE.
+  - **Autoship:**
+    - 4 stats and 3 tabs; search keeps the tab;
+    - the swept month filter as a GET; credits columns.
+  - **Key-in:** 2 stats, 2 tabs, no month filter.
+  - No sideways scroll at phone width on all five pages.
+- **Regression:** (results recorded in the next commit.)
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 

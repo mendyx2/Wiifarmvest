@@ -213,6 +213,12 @@ class AdminLayout
         'admin.dividend.investors',
         'admin.dividend.user.dividends',
         'admin.request.report',
+        // 7f-6b: unilevel, ACB, autoship, key-in bonus
+        'admin.unilevel.generations.index',
+        'admin.unilevel.allocate.index',
+        'admin.acb.index',
+        'admin.autoship.index',
+        'admin.key-in-bonus.index',
     ];
 
     public static function for(Request $request): ?array

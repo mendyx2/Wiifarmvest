@@ -31,7 +31,7 @@ class ProcessAcbBonusJob implements ShouldQueue
     public int $tries   = 5;
     public int $backoff = 120;
 
-    private const RATES = [1 => 0.05, 2 => 0.02, 3 => 0.01];
+    public const RATES = [1 => 0.05, 2 => 0.02, 3 => 0.01];
 
     public function __construct(
         public readonly int $creditId
