@@ -373,24 +373,24 @@ class CronController extends Controller
     private function matchingBound()
     { 
         $generalSetting = gs();
+        // Hours and days compared as numbers: date('H') and date('d') give "01",
+        // and the setting holds "1", so 01:00–09:00, 24:00 and the 1st never matched
         if ($generalSetting->matching_bonus_time == 'daily') {
-            $day = Date('H');
-            if (strtolower($day) != $generalSetting->matching_when) {
+            $hour = (int) $generalSetting->matching_when % 24; // "24:00" is hour 0
+            if ((int) now()->format('G') !== $hour) {
                 return '1';
             }
         }
       
 
         if ($generalSetting->matching_bonus_time == 'weekly') {
-            $day = Date('D');
-            if (strtolower($day) != $generalSetting->matching_when) {
+            if (strtolower(now()->format('D')) != $generalSetting->matching_when) {
                 return '2';
             }
         }
 
         if ($generalSetting->matching_bonus_time == 'monthly') {
-            $day = Date('d');
-            if (strtolower($day) != $generalSetting->matching_when) {
+            if ((int) now()->format('j') !== (int) $generalSetting->matching_when) {
                 return '3';
             }
         }

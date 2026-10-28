@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105). Next: 7f settings, frontend, system · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107). Next: 7f-2 notifications and languages, 7f-3 gateways and withdraw methods, 7f-4 frontend and system, 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -4922,6 +4922,108 @@ redirect. Re-checked:
   (members will need to log in again), the database password, and
   every payment, mail and SMS key in it.
 - Delete or rotate the old log file.
+
+### Step 107: Site settings in React (7f-1)
+
+7f is split into six parts:
+
+| Part | Pages |
+|---|---|
+| 7f-1 | Settings hub and plain site settings |
+| 7f-2 | Notification settings and languages |
+| 7f-3 | Payment gateways, withdraw methods and the KYC form (the form builder) |
+| 7f-4 | Frontend manager, extensions, cron, system |
+| 7f-5 | Admins, roles, permissions, support, notices, flashcards |
+| 7f-6 | MLM pages and the dashboard |
+
+**Pages** (all in `Pages/Admin/Settings/`):
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Hub.tsx` | `admin.setting.system` | `setting/system.blade.php` |
+| `General.tsx` | `admin.setting.general` | `setting/general.blade.php` |
+| `Configuration.tsx` | `admin.setting.system.configuration` | `setting/configuration.blade.php` |
+| `LogoIcon.tsx` | `admin.setting.logo.icon` | `setting/logo_icon.blade.php` |
+| `TextFile.tsx` | `admin.setting.custom.css`, `admin.setting.sitemap`, `admin.setting.robot` | `setting/custom_css.blade.php`, `sitemap.blade.php`, `robots.blade.php` |
+| `Maintenance.tsx` | `admin.maintenance.mode` | `setting/maintenance.blade.php` |
+| `Cookie.tsx` | `admin.setting.cookie` | `setting/cookie.blade.php` |
+| `Notice.tsx` | `admin.setting.notice` | `admin/notice.blade.php` |
+
+**Notes on the pages:**
+
+- The **hub** searches titles, subtitles and keywords as you type. Its
+  cards open React pages as Inertia visits and Blade pages normally.
+- Maintenance Mode, GDPR Cookie and Sitemap XML had no card. They were
+  only reachable through the top search. They now have cards
+  (`settings.json`).
+- **Custom CSS, sitemap and robots.txt** were three copies of one page
+  (a CodeMirror box). They are now one `TextFile.tsx`, a monospace box
+  where Tab inserts spaces, with an "Open" link to the live file.
+- Colours use the browser's colour picker next to the hex field, instead
+  of the jQuery Spectrum plugin.
+- The on/off modules are switches with clickable labels, instead of
+  bootstrap-toggle.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Matching bonus never paid on some schedules.** The cron compared `date('H')` / `date('d')` ("01") with the saved value ("1") as text. A daily time of 01:00–09:00 or 24:00, and the monthly "1st day", never matched. | Compared as numbers ("24:00" is hour 0). Times are read from `now()`, which also honours the app timezone and test clocks. |
+| Saving the matching bonus with an unknown schedule failed with "undefined variable"; carry/flush took any number. | Every field is checked: schedule, hour 1–24, weekday, day 1/15, carry/flush 0–2. |
+| **robots.txt never reached crawlers.** The page saved to `robots.xml`, a name nobody asks for. | `robots.txt` in the site root, which `server.php` (Step 106) now serves. The page shows the old `robots.xml` content the first time, so nothing is lost. |
+| Robots, sitemap and custom CSS were written relative to the process's working directory. | Always the site root (one level above `core/`). A failed write says so instead of claiming success. |
+| A broken sitemap was saved as is (search engines then reject the whole file). | Must be well-formed XML. A DOCTYPE/ENTITY is refused. |
+| Records per page accepted any number (0 broke every list); the timezone index was not range-checked; a charge percentage could exceed 100. | 20/50/100; a real timezone; 0–100%. The timezone file is written with `var_export`. |
+| System Configuration treated a missing field as "off". | All eleven switches must be sent, as true/false. |
+| Logo upload errors were swallowed. | `report($e)`. Maintenance mode is switched only after its image is saved. |
+| `GeneralSettingController::matchingUpdate()` was a dead copy (the route uses `ManageUsersController`). | Removed. |
+
+**Moved to 7f-3:** the KYC setting page (`kyc/setting.blade.php`). It
+is built with the form builder, like the withdraw methods and manual
+gateways.
+
+**Deleted:** `setting/{system,general,configuration,logo_icon,custom_css,sitemap,robots,cookie,maintenance}.blade.php`,
+`admin/notice.blade.php`.
+
+**Verification:**
+
+- **Server checks** (`p7f1_check.php`):
+  - **Hub:** 16 cards (3 new); an admin without "manage settings" may
+    not open it.
+  - **General:** pagination 0, a timezone out of range and a bad colour
+    are refused; save writes `Africa/Lagos` to the timezone file.
+  - **Matching bonus:**
+    - an unknown schedule, a missing hour and flush 7 are refused;
+    - daily 03:00 is saved;
+    - against a fixed clock, 03:20 runs and 13:20 skips; 24:00 runs at
+      00:10; monthly "1" runs on the 1st and skips the 2nd; weekly
+      "sat" runs on a Saturday.
+  - **Configuration:** missing keys are refused; registration off and
+    agree on are saved.
+  - **Logo:** a PHP file named `.png` is refused.
+  - **Robots:** reads the old `robots.xml`, saves `robots.txt`.
+  - **Sitemap:** not XML and a DOCTYPE are refused; a valid one is
+    saved.
+  - **Custom CSS:** saved.
+  - **Maintenance:** on/off, and a description is required.
+  - **Cookie** and **notice:** saved.
+  - **Sidebar:** active.
+  - The real files the checks write are restored afterwards.
+- **Browser checks** (`e2e/phase7f1.mjs`, 34 checks):
+  - **Hub:** search by title and keyword, the empty result, and the
+    Inertia and full-load cards.
+  - **General:** the colour field and swatch; the matching schedule
+    fields switching; the POSTs.
+  - **Configuration:** the switches via their labels; all 11 sent.
+  - **Logo:** only the chosen file is sent.
+  - **Robots:** Tab in the editor.
+  - **Maintenance, cookie, notice:** their POSTs.
+  - No sideways scroll at phone width on all nine pages.
+- **Regression:** 33 browser suites, 1080 checks, all pass (one
+  ad-video timing check in `phase5c4` failed once and passed on a
+  rerun; that page was not touched). `route:cache` and `view:cache`
+  succeed; the route-name scan shows only the 21 known `ipn.`
+  references.
 
 ## Part 4: Working on the front end
 

@@ -288,5 +288,26 @@
         "subtitle": "Every change an admin made: who, what, when and from where.",
         "icon": "las la-history",
         "route_name": "admin.system.action.log"
+    },
+    "maintenance_mode": {
+        "keyword": ["maintenance", "maintenance mode", "offline", "down for maintenance", "site offline"],
+        "title": "Maintenance Mode",
+        "subtitle": "Take the site offline for members, with your own message and picture.",
+        "icon": "las la-tools",
+        "route_name": "admin.maintenance.mode"
+    },
+    "gdpr_cookie": {
+        "keyword": ["cookie", "gdpr", "cookie policy", "cookie consent", "privacy"],
+        "title": "GDPR Cookie",
+        "subtitle": "The cookie notice visitors accept, and its policy text.",
+        "icon": "las la-cookie-bite",
+        "route_name": "admin.setting.cookie"
+    },
+    "sitemap": {
+        "keyword": ["sitemap", "sitemap xml", "seo", "search engine", "google"],
+        "title": "Sitemap XML",
+        "subtitle": "The sitemap.xml file search engines read.",
+        "icon": "las la-sitemap",
+        "route_name": "admin.setting.sitemap"
     }
 }

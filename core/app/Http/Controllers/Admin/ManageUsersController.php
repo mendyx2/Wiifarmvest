@@ -1316,21 +1316,30 @@ class ManageUsersController extends Controller
     }
 
 
+    /**
+     * Matching bonus (on the General Setting page). The time field depends on
+     * the schedule: an hour 1–24 for daily, a weekday for weekly, the 1st or
+     * 15th for monthly. An unknown schedule used to end in an "undefined
+     * variable" error; now every value is checked.
+     */
     public function matchingUpdate(Request $request)
     {
         $request->validate([
-            'bv_price' => 'required|min:0',
-            'total_bv' => 'required|min:0|integer',
-            'max_bv'   => 'required|min:0|integer',
+            'bv_price'            => 'required|numeric|min:0',
+            'total_bv'            => 'required|integer|min:0',
+            'max_bv'              => 'required|integer|min:0',
+            'cary_flash'          => 'required|in:0,1,2',
+            'matching_bonus_time' => 'required|in:daily,weekly,monthly',
+            'daily_time'          => 'required_if:matching_bonus_time,daily|nullable|integer|between:1,24',
+            'weekly_time'         => 'required_if:matching_bonus_time,weekly|nullable|in:sat,sun,mon,tue,wed,thu,fri',
+            'monthly_time'        => 'required_if:matching_bonus_time,monthly|nullable|in:1,15',
         ]);
 
-        if ($request->matching_bonus_time == 'daily') {
-            $when = $request->daily_time;
-        } elseif ($request->matching_bonus_time == 'weekly') {
-            $when = $request->weekly_time;
-        } elseif ($request->matching_bonus_time == 'monthly') {
-            $when = $request->monthly_time;
-        }
+        $when = match ($request->matching_bonus_time) {
+            'daily'   => (string) (int) $request->daily_time,
+            'weekly'  => $request->weekly_time,
+            'monthly' => (string) (int) $request->monthly_time,
+        };
 
         $setting                      = gs();
         $setting->bv_price            = $request->bv_price;

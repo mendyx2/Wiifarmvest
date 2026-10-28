@@ -144,6 +144,17 @@ class AdminLayout
         'admin.loans.pending',
         'admin.loans.show',
         'admin.loans.products',
+        // 7f-1: settings
+        'admin.setting.system',
+        'admin.setting.general',
+        'admin.setting.system.configuration',
+        'admin.setting.logo.icon',
+        'admin.setting.custom.css',
+        'admin.setting.sitemap',
+        'admin.setting.robot',
+        'admin.setting.cookie',
+        'admin.maintenance.mode',
+        'admin.setting.notice',
     ];
 
     public static function for(Request $request): ?array
