@@ -6040,7 +6040,7 @@ it should do, or remove it.
     - edit prefill, and unticking Active posts `status: false`;
     - add defaults; deactivate.
   - No sideways scroll at phone width on all five pages.
-- **Regression:** (results recorded in the next commit.)
+- **Regression:** 42 browser suites, 1362 checks, all pass.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 
