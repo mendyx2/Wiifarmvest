@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115). Next: 7f-6c awards, projects · 7f-6d dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115) · 7f-6c awards, projects ✅ (Step 116). Next: 7f-6d dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5962,6 +5962,85 @@ behind the `cron.secret` middleware with the other cron URLs.
   - **Key-in:** 2 stats, 2 tabs, no month filter.
   - No sideways scroll at phone width on all five pages.
 - **Regression:** 41 browser suites, 1341 checks, all pass. One older check (5c4, the ad viewer's "next ad") failed once and passed on re-runs: it checked the next ad before the page had drawn it. The test now waits for it.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+### Step 116: Awards and projects in React (7f-6c)
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Awards/Index.tsx` | `admin.awards.index` | `awards/index.blade.php` |
+| `Awards/Form.tsx` | `admin.awards.create`, `admin.awards.edit` | `awards/form.blade.php` |
+| `Awards/Payments.tsx` | `admin.awards.payments` | `awards/payments.blade.php` |
+| `Pages/Admin/Projects.tsx` | `admin.projects.index` | `projects/index.blade.php` |
+
+The project icon uses the icon picker from Step 111.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **An award could be paid twice.** "Pay" never checked whether the award was already paid. A double click, or posting again, added the payment to the member's awards wallet again. | The award row is locked and must be unpaid. A repeat answers "already paid" and pays nothing. |
+| **Award payments left no record for the member.** The wallet was raised with a bare `increment('awards', ...)`, with no transaction row. | The payment goes through `WalletService::credit()` into the `awards` wallet (remark `award_bonus`). It locks the member's row and writes the transaction, so the member sees it in their history. |
+| **Deleting an award that members had earned** left their records pointing at nothing, and another award could still name it as its prerequisite. | Refused, with "switch it off instead". An award still required by another award cannot be deleted either. |
+| **An award could require itself.** | Refused; the form does not offer the award itself. |
+| **A project could not be switched off from its form.** The "Active" checkbox sent nothing when unticked, and the server defaulted it to on. (Unilevel generations had the same bug; see Step 115.) | The form always sends all three switches (active, upgrade allowed, default), and the server requires them. |
+| **The project icon was free text**, printed into the page as a class. | It must be a class name (letters, digits, spaces, `_`, `-`). |
+| Award and project on/off flipped blindly; the award switch was an AJAX call that answered JSON and showed nothing. | They take an explicit `state`, with a toast and "already" on a repeat. |
+| The payments list showed every row at the award's *current* amount, even rows already paid at another amount. | Paid rows show what was paid. |
+
+**For the owner:** "default project" (`is_default`) is saved and
+shown, but no code reads it. Registration does not use it. Decide what
+it should do, or remove it.
+
+**Deleted:** `admin/awards/*` (3 views) and `admin/projects/*` (1 view).
+
+**Verification:**
+
+- **Server checks** (`p7f6c_check.php`):
+  - **Awards:**
+    - list with prerequisite, earned and unpaid counts;
+    - the create defaults; edit leaves itself out of the prerequisites;
+    - a duplicate name is refused; add with image;
+    - requiring itself is refused;
+    - edit with status 0 and a prerequisite;
+    - activate, then again ("already");
+    - refused: deleting Silver (earned, and required by Diamond) and
+      Bronze (earned); deleting Gold and Diamond works.
+  - **Payments:**
+    - counts; the unpaid filter;
+    - **pay Silver:** wallet 0 → 50,000, row paid with the payer and
+      the note, one `award_bonus` transaction (post balance 50,000);
+    - **paying it again, and paying the already-paid Bronze, pays
+      nothing.**
+  - **Projects:**
+    - list ("Unlimited" pairing when 0);
+    - an icon with HTML and an upgrade bonus of 150% are refused; add;
+    - **edit with status false switches it off;** an edit with no
+      status is refused;
+    - making one the default unsets the others;
+    - deactivate, then again ("already");
+    - a project with members cannot be deleted; delete.
+- **Browser checks** (`e2e/phase7f6c.mjs`, 21 checks):
+  - **Awards:**
+    - the cards, the unpaid count on "Payments", and Delete only when
+      nobody earned it; the prerequisite;
+    - activate; Edit as an Inertia visit;
+    - create: next order, active on; the multipart POST with status 0,
+      prerequisite and image;
+    - edit leaves itself out of the prerequisites.
+  - **Payments:**
+    - tabs with counts; Pay only on unpaid rows;
+    - the dialog names the amount and the wallet; the POST with a note;
+    - the Unpaid tab.
+  - **Projects:**
+    - cards, the Default badge, and no Delete when it has members;
+    - edit prefill, and unticking Active posts `status: false`;
+    - add defaults; deactivate.
+  - No sideways scroll at phone width on all five pages.
+- **Regression:** (results recorded in the next commit.)
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 

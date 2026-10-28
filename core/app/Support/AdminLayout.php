@@ -219,6 +219,12 @@ class AdminLayout
         'admin.acb.index',
         'admin.autoship.index',
         'admin.key-in-bonus.index',
+        // 7f-6c: awards, projects
+        'admin.awards.index',
+        'admin.awards.create',
+        'admin.awards.edit',
+        'admin.awards.payments',
+        'admin.projects.index',
     ];
 
     public static function for(Request $request): ?array
