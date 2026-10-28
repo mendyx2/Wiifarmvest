@@ -28,7 +28,8 @@ Route::namespace('Auth')->group(function () {
 Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->group(function () {
     Route::controller('AdminController')->group(function () {
         Route::get('dashboard', 'dashboard')->name('dashboard');
-        Route::get('dashboard1', 'parnerDashboard')->name('dashboard1');
+        // A second dashboard pointed at a method that does not exist
+        Route::get('dashboard1', fn () => to_route('admin.dashboard'))->name('dashboard1');
         Route::get('chart/deposit-withdraw', 'depositAndWithdrawReport')->name('chart.deposit.withdraw');
         Route::get('chart/transaction', 'transactionReport')->name('chart.transaction');
         Route::get('profile', 'profile')->name('profile');

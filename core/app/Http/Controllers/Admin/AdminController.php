@@ -36,271 +36,153 @@ class AdminController extends Controller
        
         $this->middleware('admin.role:super-admin');
     }
+    /**
+     * Dashboard (Pages/Admin/Dashboard.tsx): headline figures, the reserve
+     * pools, money over time and the last 30 days of logins.
+     */
     public function dashboard()
     {
-        $admin = auth('admin')->user();
-        //$admin->assignRole('super-admin');
-
-
-       //dd($admin->hasRole('super-admin')); // returns true
-
-        //dd($admin);
-
-        // if ($admin->name = 'Super Admin') {
-        //  $admin->assignRole('admin');
-        //    $admin->hasAllRoles(Role::all());
-
-        //    dd($admin->getPermissionNames());
-        // }
-
         $pageTitle = 'Dashboard';
+        $logins    = UserLogin::where('created_at', '>=', now()->subDays(30))->get(['browser', 'os', 'country']);
+        $top       = fn (string $col) => $logins->groupBy(fn ($l) => $l->$col ?: 'Unknown')->map->count()->sortDesc()->take(5)->map(fn ($n, $k) => ['label' => (string) $k, 'count' => $n])->values();
+        $range     = [now()->subDays(29)->toDateString(), now()->toDateString()];
+        // Every admin sees the dashboard; a group links to its page only for admins who may open it
+        $admin = auth('admin')->user();
+        $link  = fn (string $name) => \App\Http\Middleware\AdminAccessMiddleware::allows($admin, $name) ? route($name) : null;
 
-        //Stockist
-        $widget['total_stockist']             = Stockist::count();
-        //Order
-        $widget['total_order']              = Order::count(); 
-        $widget['total_cancel_order']       = Order::Cancel()->count();
-        $widget['total_order_sales']        = Order::Active()->sum('total_price');
-        $widget['total_order_sales_pending'] = Order::InActive()->sum('total_price');
-        $widget['total_pending_order']      = Order::InActive()->count();
-
-
-        // Active by both flags, as the stockist pages count it.
-        $widget['active_stockist']          = Stockist::active()->where('is_active', true)->count();
-        // Stock orders from stockists waiting for approval (the old count read the retired "sorders" table).
-        $widget['stockist_pending_order']   = \App\Models\StockistOrder::where('status', 'pending')->count();
-        
-        // User Info
-        $widget['total_users']             = User::count();
-
-        $widget['verified_users']          = User::active()->count();
-
-        $widget['email_unverified_users']  = User::emailUnverified()->count();
-        $widget['mobile_unverified_users'] = User::mobileUnverified()->count();
-
-
-        //Pin section 
-        $widget['total_pins'] = Pin::count();
-        $widget['total_pins_user'] = Pin::where('generate_user_id', '!=', NULL)->count();
-        $widget['total_pins_admin'] = Pin::where('generate_user_id', NULL)->count();
-
-        $widget['total_admin_used_pins'] = Pin::where('generate_user_id', NULL)->where('status', 1)->count();
-        $widget['total_user_used_pins'] = Pin::where('generate_user_id', '!=', NULL)->where('status', 1)->count();
-
-
-
-
-        // user Browsing, Country, Operating Log
-        $userLoginData = UserLogin::where('created_at', '>=', Carbon::now()->subDays(30))->get(['browser', 'os', 'country']);
-
-        $chart['user_browser_counter'] = $userLoginData->groupBy('browser')->map(function ($item, $key) {
-            return collect($item)->count();
-        });
-        $chart['user_os_counter'] = $userLoginData->groupBy('os')->map(function ($item, $key) {
-            return collect($item)->count();
-        });
-        $chart['user_country_counter'] = $userLoginData->groupBy('country')->map(function ($item, $key) {
-            return collect($item)->count();
-        })->sort()->reverse()->take(5);
-
- 
-        $deposit['total_deposit_amount']        = Deposit::successful()->sum('amount');
-        
-        $deposit['total_deposit_pending']       = Deposit::pending()->count();
-        $deposit['total_deposit_rejected']      = Deposit::rejected()->count();
-        $deposit['total_deposit_charge']        = Deposit::successful()->sum('charge');
-
-        $withdrawals['total_withdraw_amount']   = Withdrawal::approved()->sum('amount');
-        $withdrawals['total_withdraw_pending']  = Withdrawal::pending()->count();
-        $withdrawals['total_withdraw_pending_sum']  = Withdrawal::pending()->sum('amount');
-        $withdrawals['total_withdraw_rejected'] = Withdrawal::rejected()->count();
-        $withdrawals['total_withdraw_charge']   = Withdrawal::approved()->sum('charge');
-
-        $bv['bvLeft'] = UserExtra::sum('bv_left');
-        $bv['bvRight'] = UserExtra::sum('bv_right');
-        $bv['totalBvCut'] = BvLog::where('trx_type', '-')->sum('amount');
-
-        
-        
-        //$widget['last7days_income'] = Transaction::whereDate('created_at', '>=', Carbon::now()->subDays(6))->where('remark', 'purchased_plan')->sum('amount');
-        
-
-        
-
-        $widget['total_step_com'] = Transaction::where('bonus_type', 2)->sum('amount');
-        $widget['total_binary_com'] = Transaction::where('remark', 'binary_commission')->sum('amount');
-
-        // Blueprint: 4-Pool Financial Governance Balances
-        $widget['pools'] = \App\Models\CompanyPoolLedger::getBalances();
-
-        return view('admin.dashboard', compact('pageTitle', 'widget', 'chart','deposit','withdrawals','bv'));
-    }
-
-
-    public function depositAndWithdrawReport(Request $request) {
-
-        $diffInDays = Carbon::parse($request->start_date)->diffInDays(Carbon::parse($request->end_date));
-
-        $groupBy = $diffInDays > 30 ? 'months' : 'days';
-        $format = $diffInDays > 30 ? '%M-%Y'  : '%d-%M-%Y';
-
-        if ($groupBy == 'days') {
-            $dates = $this->getAllDates($request->start_date, $request->end_date);
-        } else {
-            $dates = $this->getAllMonths($request->start_date, $request->end_date);
-        }
-        $deposits = Deposit::successful()
-            ->whereDate('created_at', '>=', $request->start_date)
-            ->whereDate('created_at', '<=', $request->end_date)
-            ->selectRaw('SUM(amount) AS amount')
-            ->selectRaw("DATE_FORMAT(created_at, '{$format}') as created_on")
-            ->latest()
-            ->groupBy('created_on')
-            ->get();
-
-
-        $withdrawals = Withdrawal::approved()
-            ->whereDate('created_at', '>=', $request->start_date)
-            ->whereDate('created_at', '<=', $request->end_date)
-            ->selectRaw('SUM(amount) AS amount')
-            ->selectRaw("DATE_FORMAT(created_at, '{$format}') as created_on")
-            ->latest()
-            ->groupBy('created_on')
-            ->get();
-
-        $invests = Transaction::where('remark','purchased_plan')
-            ->whereDate('created_at', '>=', $request->start_date)
-            ->whereDate('created_at', '<=', $request->end_date)
-            ->selectRaw('SUM(amount) AS amount')
-            ->selectRaw("DATE_FORMAT(created_at, '{$format}') as created_on")
-            ->latest()
-            ->groupBy('created_on')
-            ->get();
-        $data = [];
-
-        foreach ($dates as $date) {
-            $data[] = [
-                'created_on' => $date,
-                'deposits' => getAmount($deposits->where('created_on', $date)->first()?->amount ?? 0),
-                'withdrawals' => getAmount($withdrawals->where('created_on', $date)->first()?->amount ?? 0),
-                'invests' => getAmount($invests->where('created_on', $date)->first()?->amount ?? 0)
-            ];
-        }
-
-        $data = collect($data);
-
-        // Monthly Deposit & Withdraw Report Graph
-        $report['created_on']   = $data->pluck('created_on');
-        $report['data']     = [
-            [
-                'name' => 'Deposited',
-                'data' => $data->pluck('deposits')
+        return Inertia::render('Admin/Dashboard', [
+            'admin'  => (string) auth('admin')->user()->name,
+            'today'  => now()->format('l, F j, Y'),
+            'pools'  => \App\Models\CompanyPoolLedger::getBalances(),
+            'groups' => [
+                ['title' => 'Members', 'icon' => 'las la-users', 'url' => $link('admin.users.all'), 'stats' => [
+                    ['Total members', number_format(User::count())],
+                    ['Active', number_format(User::active()->count())],
+                    ['Email unverified', number_format(User::emailUnverified()->count())],
+                    ['Mobile unverified', number_format(User::mobileUnverified()->count())],
+                ]],
+                ['title' => 'Deposits', 'icon' => 'las la-wallet', 'url' => $link('admin.deposit.list'), 'stats' => [
+                    ['Deposited', showAmount(Deposit::successful()->sum('amount'))],
+                    ['Pending', number_format(Deposit::pending()->count()), 'warning'],
+                    ['Rejected', number_format(Deposit::rejected()->count())],
+                    ['Charges', showAmount(Deposit::successful()->sum('charge'))],
+                ]],
+                ['title' => 'Withdrawals', 'icon' => 'las la-hand-holding-usd', 'url' => $link('admin.withdraw.data.all'), 'stats' => [
+                    ['Withdrawn', showAmount(Withdrawal::approved()->sum('amount'))],
+                    ['Pending', number_format(Withdrawal::pending()->count()) . ' · ' . showAmount(Withdrawal::pending()->sum('amount')), 'warning'],
+                    ['Rejected', number_format(Withdrawal::rejected()->count())],
+                    ['Charges', showAmount(Withdrawal::approved()->sum('charge'))],
+                ]],
+                ['title' => 'Product orders', 'icon' => 'las la-shopping-cart', 'url' => $link('admin.order.index'), 'stats' => [
+                    ['Sales', showAmount(Order::Active()->sum('total_price'))],
+                    ['Pending value', showAmount(Order::InActive()->sum('total_price'))],
+                    ['Orders', number_format(Order::count())],
+                    ['Pending', number_format(Order::InActive()->count()), 'warning'],
+                    ['Cancelled', number_format(Order::Cancel()->count())],
+                ]],
+                ['title' => 'Stockists', 'icon' => 'las la-store', 'url' => $link('admin.stockist.index'), 'stats' => [
+                    ['Stockists', number_format(Stockist::count())],
+                    // Active by both flags, as the stockist pages count it
+                    ['Active', number_format(Stockist::active()->where('is_active', true)->count())],
+                    ['Stock orders waiting', number_format(\App\Models\StockistOrder::where('status', 'pending')->count()), 'warning'],
+                ]],
+                ['title' => 'Pins', 'icon' => 'las la-key', 'url' => $link('admin.pin.index'), 'stats' => [
+                    ['All pins', number_format(Pin::count())],
+                    ['By members', number_format(Pin::whereNotNull('generate_user_id')->count()) . ' · ' . number_format(Pin::whereNotNull('generate_user_id')->where('status', 1)->count()) . ' used'],
+                    ['By admins', number_format(Pin::whereNull('generate_user_id')->count()) . ' · ' . number_format(Pin::whereNull('generate_user_id')->where('status', 1)->count()) . ' used'],
+                ]],
+                ['title' => 'BV and commissions', 'icon' => 'las la-project-diagram', 'url' => null, 'stats' => [
+                    ['Left BV', number_format((float) UserExtra::sum('bv_left'))],
+                    ['Right BV', number_format((float) UserExtra::sum('bv_right'))],
+                    ['BV cut', number_format((float) BvLog::where('trx_type', '-')->sum('amount'))],
+                    ['Step commission', showAmount(Transaction::where('bonus_type', 2)->sum('amount'))],
+                    ['Binary commission', showAmount(Transaction::where('remark', 'binary_commission')->sum('amount'))],
+                ]],
             ],
-            [
-                'name' => 'Withdrawn',
-                'data' => $data->pluck('withdrawals')
+            'logins' => ['browsers' => $top('browser'), 'os' => $top('os'), 'countries' => $top('country')],
+            'charts' => [
+                'from'         => $range[0],
+                'to'           => $range[1],
+                'money'        => $this->moneySeries(...$range),
+                'transactions' => $this->transactionSeries(...$range),
             ],
-            [
-                'name' => 'Invest',
-                'data' => $data->pluck('invests')
-            ]
-        ];
-
-        return response()->json($report);
+            'currency' => gs('cur_sym'),
+            'urls'     => ['money' => route('admin.chart.deposit.withdraw'), 'transactions' => route('admin.chart.transaction')],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
-    public function transactionReport(Request $request) {
-
-        $diffInDays = Carbon::parse($request->start_date)->diffInDays(Carbon::parse($request->end_date));
-
-        $groupBy = $diffInDays > 30 ? 'months' : 'days';
-        $format = $diffInDays > 30 ? '%M-%Y'  : '%d-%M-%Y';
-
-        if ($groupBy == 'days') {
-            $dates = $this->getAllDates($request->start_date, $request->end_date);
-        } else {
-            $dates = $this->getAllMonths($request->start_date, $request->end_date);
+    /** start_date / end_date of a chart request: valid dates, in order, at most 2 years apart. */
+    private function chartRange(Request $request): array
+    {
+        $request->validate([
+            'start_date' => 'required|date_format:Y-m-d',
+            'end_date'   => 'required|date_format:Y-m-d|after_or_equal:start_date|before_or_equal:' . now()->addDay()->toDateString(),
+        ]);
+        $from = Carbon::parse($request->start_date);
+        $to   = Carbon::parse($request->end_date);
+        if ($from->diffInDays($to) > 731) {
+            $from = $to->copy()->subDays(731);
         }
-
-        $plusTransactions   = Transaction::where('trx_type','+')
-            ->whereDate('created_at', '>=', $request->start_date)
-            ->whereDate('created_at', '<=', $request->end_date)
-            ->selectRaw('SUM(amount) AS amount')
-            ->selectRaw("DATE_FORMAT(created_at, '{$format}') as created_on")
-            ->latest()
-            ->groupBy('created_on')
-            ->get();
-
-        $minusTransactions  = Transaction::where('trx_type','-')
-            ->whereDate('created_at', '>=', $request->start_date)
-            ->whereDate('created_at', '<=', $request->end_date)
-            ->selectRaw('SUM(amount) AS amount')
-            ->selectRaw("DATE_FORMAT(created_at, '{$format}') as created_on")
-            ->latest()
-            ->groupBy('created_on')
-            ->get();
-
-
-        $data = [];
-
-        foreach ($dates as $date) {
-            $data[] = [
-                'created_on' => $date,
-                'credits' => getAmount($plusTransactions->where('created_on', $date)->first()?->amount ?? 0),
-                'debits' => getAmount($minusTransactions->where('created_on', $date)->first()?->amount ?? 0)
-            ];
-        }
-
-        $data = collect($data);
-
-        // Monthly Deposit & Withdraw Report Graph
-        $report['created_on']   = $data->pluck('created_on');
-        $report['data']     = [
-            [
-                'name' => 'Plus Transactions',
-                'data' => $data->pluck('credits')
-            ],
-            [
-                'name' => 'Minus Transactions',
-                'data' => $data->pluck('debits')
-            ]
-        ];
-
-        return response()->json($report);
+        return [$from->toDateString(), $to->toDateString()];
     }
 
+    /**
+     * Sums per day (up to 31 days) or per month, with a bucket for every day
+     * or month in the range, zero when nothing happened. The buckets are
+     * built with the database's own date function, so the same code runs on
+     * MySQL and SQLite (DATE_FORMAT alone tied it to MySQL).
+     *
+     * @param array<string, \Illuminate\Database\Eloquent\Builder> $queries name => query
+     */
+    private function series(string $from, string $to, array $queries): array
+    {
+        $monthly = Carbon::parse($from)->diffInDays(Carbon::parse($to)) > 31;
+        $sqlite  = \DB::connection()->getDriverName() === 'sqlite';
+        $bucket  = $sqlite ? ($monthly ? "strftime('%Y-%m', created_at)" : 'date(created_at)') : ($monthly ? "DATE_FORMAT(created_at, '%Y-%m')" : 'DATE(created_at)');
 
-    private function getAllDates($startDate, $endDate) {
-        $dates = [];
-        $currentDate = new \DateTime($startDate);
-        $endDate = new \DateTime($endDate);
-
-        while ($currentDate <= $endDate) {
-            $dates[] = $currentDate->format('d-F-Y');
-            $currentDate->modify('+1 day');
+        $keys = [];
+        for ($d = Carbon::parse($from)->startOfDay(); $d->lte(Carbon::parse($to)); $monthly ? $d->addMonthNoOverflow() : $d->addDay()) {
+            $keys[$d->format($monthly ? 'Y-m' : 'Y-m-d')] = $d->format($monthly ? 'M Y' : 'd M');
         }
 
-        return $dates;
+        $series = [];
+        foreach ($queries as $name => $query) {
+            $sums = $query->whereDate('created_at', '>=', $from)->whereDate('created_at', '<=', $to)
+                ->selectRaw("{$bucket} AS bucket, SUM(amount) AS total")
+                ->groupBy('bucket')->pluck('total', 'bucket');
+            $series[] = ['name' => $name, 'data' => array_map(fn ($k) => round((float) ($sums[$k] ?? 0), 2), array_keys($keys))];
+        }
+
+        return ['labels' => array_values($keys), 'series' => $series];
     }
 
-    private function  getAllMonths($startDate, $endDate) {
-        if ($endDate > now()) {
-            $endDate = now()->format('Y-m-d');
-        }
-
-        $startDate = new \DateTime($startDate);
-        $endDate = new \DateTime($endDate);
-
-        $months = [];
-
-        while ($startDate <= $endDate) {
-            $months[] = $startDate->format('F-Y');
-            $startDate->modify('+1 month');
-        }
-
-        return $months;
+    private function moneySeries(string $from, string $to): array
+    {
+        return $this->series($from, $to, [
+            'Deposited'       => Deposit::successful(),
+            'Withdrawn'       => Withdrawal::approved(),
+            // The "Invest" line summed remark "purchased_plan", which nothing writes: it was always 0
+            'Share purchases' => Transaction::where('remark', 'shares_purchase'),
+        ]);
     }
 
+    private function transactionSeries(string $from, string $to): array
+    {
+        return $this->series($from, $to, [
+            'Credits' => Transaction::where('trx_type', '+'),
+            'Debits'  => Transaction::where('trx_type', '-'),
+        ]);
+    }
+
+    public function depositAndWithdrawReport(Request $request)
+    {
+        return response()->json($this->moneySeries(...$this->chartRange($request)));
+    }
+
+    public function transactionReport(Request $request)
+    {
+        return response()->json($this->transactionSeries(...$this->chartRange($request)));
+    }
 
     /**
      * Profile and password on one page (Pages/Admin/Profile.tsx). They were

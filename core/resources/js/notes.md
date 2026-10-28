@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115) · 7f-6c awards, projects ✅ (Step 116). Next: 7f-6d dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115) · 7f-6c awards, projects ✅ (Step 116) · 7f-6d dashboard ✅ (Step 117). Next: 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -6043,6 +6043,103 @@ it should do, or remove it.
 - **Regression:** 42 browser suites, 1362 checks, all pass.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
+
+### Step 117: The admin dashboard in React (7f-6d)
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Dashboard.tsx` | `admin.dashboard` | `dashboard.blade.php` (and `dashboard1.blade.php`) |
+
+**New shared piece:** `Components/Admin/LineChart.tsx`, a small SVG line
+chart with no library. It follows the data-viz method:
+
+- **Colours:** the reference palette's first three categorical colours
+  (blue, orange, aqua), checked with the palette validator on the white
+  card. All checks pass; aqua is under 3:1 contrast on white, so every
+  chart has a table view.
+- **Marks:** 2px lines, hairline grid, one y axis, compact ticks (2K,
+  4K).
+- **Legend:** line keys, shown for two or more series.
+- **Hover:** a crosshair that snaps to the nearest day, with one tooltip
+  listing every series (value first). Arrow keys move it when the chart
+  has focus.
+- **Table:** a "Table" button shows the same numbers as a table.
+- **Reloading:** while a new range loads, the charts keep their frame,
+  dimmed.
+
+The admin panel has no dark theme, so only the light steps are used.
+
+**What the dashboard shows:**
+
+- **Reserve pools:** four figures and the total.
+- **Seven groups of figures:** members, deposits, withdrawals, product
+  orders, stockists, pins, BV and commissions. Each group links to its
+  list. Pending figures above 0 are highlighted.
+- **"Money over time"**, with one range control above both charts (7,
+  30 or 90 days, or 12 months). The 30-day data comes with the page, so
+  the first view needs no extra request.
+- **Member logins** in the last 30 days: top browsers, operating systems
+  and countries, as bars of one colour. They replace three pie charts.
+
+**Duplicates removed:** `admin/dashboard1`, a second dashboard view.
+Its route pointed at a `parnerDashboard()` method that does not exist,
+so the URL answered with an error. It now redirects to the dashboard.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **The "Invest" line was always zero.** It summed transactions with remark `purchased_plan`, which nothing in the code writes (a leftover from the vendor script). | The line is "Share purchases": remark `shares_purchase`, written when a member buys shares or an admin allocates them. |
+| **The chart queries were MySQL-only** (`DATE_FORMAT`). | Each day or month is a bucket made with the database's own date function (MySQL or SQLite). Every day or month in the range has a point, zero when nothing happened. |
+| **The chart endpoints took any input.** Missing or invalid dates gave a server error; any range was accepted. | Dates must be `YYYY-MM-DD`, in order and not in the future; a range is capped at two years. Up to 31 days is daily, longer is monthly. |
+| **Links went to pages the admin could not open.** The dashboard is open to every admin, but its links went to pages a staff admin is refused (403). | A group links to its page only if this admin may open it (`AdminAccessMiddleware::allows`). |
+
+**Left for later:** after 7g (the admin login pages), these have no
+users and can be removed:
+
+- the old admin Blade layout (`admin/layouts/app`) and its partials
+  (sidebar, top bar, breadcrumb, alerts, cron modal);
+- the `<x-widget>` components.
+
+**Deleted:** `admin/dashboard.blade.php`, `admin/dashboard1.blade.php`.
+
+**Verification:**
+
+- **Server checks** (`p7f6d_check.php`, on SQLite):
+  - **Dashboard:**
+    - the pools and their total; all seven groups with their figures;
+    - the logins summary;
+    - the 30-day money chart (30 labels) with share purchases counted.
+  - **Chart endpoints:**
+    - 7 days gives 7 daily points; 12 months gives 13 monthly points;
+    - 10 years is capped to 25 months;
+    - refused: an end before the start, a non-date (SQL text), no
+      dates;
+    - `dashboard1` redirects.
+  - **A staff admin:** sees no links.
+- **Browser checks** (`e2e/phase7f6d.mjs`, 14 checks):
+  - **Page:** the greeting; the pools and total; links only where
+    allowed; pending figures highlighted only above 0.
+  - **Charts:**
+    - the legends;
+    - 30 days selected, with no request on load;
+    - hover shows the crosshair and one tooltip with all series;
+      leaving hides it;
+    - focus and ← move to the day before;
+    - the table view, one row per day;
+    - "Last 7 days" refetches both charts with the same dates, and the
+      new days show.
+  - **Logins:** three lists.
+  - A staff admin sees no "Open" links.
+  - No sideways scroll at phone width.
+- **Regression:** 43 browser suites, 1376 checks, all pass.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+**Phase 7f is complete.** Every admin page except the login and
+password-reset pages (7g) is React.
 
 ## Part 4: Working on the front end
 

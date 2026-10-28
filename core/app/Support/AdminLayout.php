@@ -225,6 +225,8 @@ class AdminLayout
         'admin.awards.edit',
         'admin.awards.payments',
         'admin.projects.index',
+        // 7f-6d: dashboard
+        'admin.dashboard',
     ];
 
     public static function for(Request $request): ?array
