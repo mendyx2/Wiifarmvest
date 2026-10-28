@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115) · 7f-6c awards, projects ✅ (Step 116) · 7f-6d dashboard ✅ (Step 117). Next: 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115) · 7f-6c awards, projects ✅ (Step 116) · 7f-6d dashboard ✅ (Step 117) · 7g sign-in and password reset; old admin layout and assets removed ✅ (Step 118) | ✅ Done |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -6096,7 +6096,7 @@ so the URL answered with an error. It now redirects to the dashboard.
 | **The chart endpoints took any input.** Missing or invalid dates gave a server error; any range was accepted. | Dates must be `YYYY-MM-DD`, in order and not in the future; a range is capped at two years. Up to 31 days is daily, longer is monthly. |
 | **Links went to pages the admin could not open.** The dashboard is open to every admin, but its links went to pages a staff admin is refused (403). | A group links to its page only if this admin may open it (`AdminAccessMiddleware::allows`). |
 
-**Left for later:** after 7g (the admin login pages), these have no
+**Left for later** (done in Step 118): after 7g (the admin login pages), these have no
 users and can be removed:
 
 - the old admin Blade layout (`admin/layouts/app`) and its partials
@@ -6140,6 +6140,176 @@ users and can be removed:
 
 **Phase 7f is complete.** Every admin page except the login and
 password-reset pages (7g) is React.
+
+### Step 118: Admin sign-in and password reset in React (7g)
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Auth/Login.tsx` | `admin.login` | `admin/auth/login.blade.php` |
+| `Pages/Admin/Auth/Forgot.tsx` | `admin.password.reset` | `admin/auth/passwords/email.blade.php` |
+| `Pages/Admin/Auth/Code.tsx` | `admin.password.code.verify` | `admin/auth/passwords/code_verify.blade.php` |
+| `Pages/Admin/Auth/Reset.tsx` | `admin.password.reset.form` | `admin/auth/passwords/reset.blade.php` |
+
+**New layout:** `Layouts/AdminAuthLayout.tsx` (with
+`AdminAuthLayout.css`).
+
+- It keeps the sign-in page's design: a dark page with soft glows and
+  one light card with the site's logo and name.
+- The three password-reset pages had an older photo design. They now
+  use the same card.
+- Pages under `Pages/Admin/` get the admin sidebar layout by default.
+  These four pages set their own with `Page.layout = withAdminAuthLayout`.
+- The server skips the sidebar data on these pages:
+  `HandleInertiaRequests::ADMIN_GUEST_PAGES` makes the shared
+  `adminLayout` prop `null` there. Nobody is signed in, so there is no
+  menu to build.
+- **Accessibility:** labels are tied to their fields, errors are linked
+  with `aria-describedby`, and the sign-in error is an alert. The
+  show-password button is a real button with `aria-pressed`. The
+  animations stop when the visitor asks for reduced motion.
+
+**The code input, fixed for every page.** `Components/VerificationCode.tsx`
+is shared with the members' code pages (Step 86).
+
+- **Before:** it lined the digits up with the six boxes by spreading
+  the input's text with `letter-spacing`. That only fits one card width.
+  In the admin card the digits drifted out of their boxes.
+- **Now:** the real input still lies over the boxes, so typing,
+  pasting and one-time-code autofill work as before. Its own text is
+  hidden, and each box shows its digit. The box the next digit goes in
+  is outlined.
+- It lines up at any width. Checked on the member and the admin card,
+  at desktop and phone widths.
+
+**Sign-in, what changed:**
+
+| Before | Now |
+|---|---|
+| **Every attempt called the vendor's licence server first,** before the rate limit was checked. Each password guess posted the purchase code and site address to the vendor. | The rate limit (5 tries a minute per username and IP) is checked first. Turned-away guesses no longer call out. The licence call itself is kept: see "For the owner" below. |
+| When the licence server did not answer, sign-in failed with "Something went wrong". | "The licence server could not be reached, so sign-in is paused. Please try again in a minute." |
+| A captcha failure was a toast; a deactivated account bounced to the login page with a toast. | Both show on the form. The username is kept. |
+| After signing in, the next page opened with a normal redirect to `/admin` and then to the dashboard. | One full page load, straight to the page asked for (or the dashboard). The session and its CSRF token are new after sign-in, so a fresh page is the safe choice. |
+| Logging out kept the old CSRF token. | Logging out also renews the token. |
+
+**Password reset, what changed:**
+
+| Before | Now |
+|---|---|
+| **The form told anyone which emails are admin accounts** ("No admin account found with this email"). | Every address gets the same answer and goes on to the code page: "If this email belongs to an admin account, a code has been sent to it." |
+| **No limit on wrong codes per email**, only 10 tries a minute per IP. A six-digit code could be guessed from many addresses. | After 5 wrong codes the code is cancelled and a new one must be requested. This is the rule members already had (Step 86). |
+| A wrong code sent you back to the login page. | A wrong code stays on the code page, with the error under the boxes. |
+| **A new admin password could be 4 characters.** | At least 8, as on the admin's own password page (Step 94). |
+| The reset form posted the email in a hidden field (not used). | Only the code and the new password are sent. The email comes from the session, as before. |
+
+**Removed, now that nothing uses them:**
+
+- **Admin Blade views:**
+  - the four auth views;
+  - the old admin layout (`admin/layouts/app` and `master`);
+  - its partials: sidebar, top bar, breadcrumb, alerts, cron modal.
+  - Their two view composers in `AppServiceProvider` went too.
+  - `admin/partials/sidenav.json` stays: `App\Support\AdminLayout`
+    builds the React sidebar from it.
+- **Unused Blade components:** `<x-widget>` and `widget-1` to
+  `widget-7`, `back`, `image-uploader`, `search-form` (with its date and
+  key fields), and `product/price` and `product/sku`.
+- **Admin static files no page loads any more** (about 2.5 MB):
+  - jQuery UI, the jQuery sortable plugin;
+  - an old Chart.js (2.8), ApexCharts;
+  - bootstrap-toggle, daterangepicker, moment;
+  - CodeMirror and its modes, spectrum, the image uploader, the
+    Font Awesome icon picker;
+  - `cuModal`, `admin/js/app.js`, `admin/js/search.js`;
+  - `verification_code.css`, the login photo.
+  - `assets/admin/css/app.css` and `reset.css` stay: the React admin
+    pages use them.
+
+**Every admin page is now React.** The admin GET routes not in
+`AdminLayout::REACT_ROUTES` answer with a download, JSON or a redirect.
+The one HTML view left is the e-mail preview
+(`admin/reports/email_details`): a bare page shown inside a frame.
+
+**For the owner: the vendor licence check on admin sign-in.**
+
+- **What it does:** `Laramin\Utility\Onumoti::getData()` (vendor code)
+  runs on every admin sign-in. It posts the site's purchase code and
+  address to the script vendor's server. TLS certificate checks are
+  switched off for that request.
+- **Two effects:**
+  - if their server does not answer, no admin can sign in;
+  - if their answer says so, it switches the site into maintenance mode.
+- **What 7g did:** it only moved the call behind the rate limit and
+  gave it a clear error. Removing it may break the vendor's licence
+  terms, so that is your decision.
+- **Options:**
+  1. keep it;
+  2. make it non-blocking (sign-in goes ahead when the vendor is down);
+  3. remove it.
+- **Related, also vendor code:** `Controller::__construct` adds a
+  vendor middleware to every controller (`Onumoti::mySite`).
+
+**Verification:**
+
+- **Server checks** (`p7g_check.php`, on SQLite; the licence call is
+  replaced by a counter):
+  - **Guest pages:** the four pages render with no sidebar data. The
+    code and reset pages without a session go back to step 1.
+  - **Sign-in:**
+    - a wrong password gives the error on the username;
+    - a missing password is refused by validation;
+    - "licence server down" gives the clear message and no sign-in;
+    - the right password goes to the page asked for (or the
+      dashboard) with a full page load;
+    - a deactivated admin is refused.
+  - **Lockout:** 5 wrong guesses make 5 licence calls. The 6th try,
+    even with the right password, is locked out and makes none.
+  - **Log out:** signed out, back at the login page.
+  - **Forgot password:**
+    - an unknown email gets the same answer and creates no code;
+    - an admin email creates one open code;
+    - 4 wrong codes stay on the page; the 5th cancels the code and
+      ends the session; the right code then fails;
+    - a new code with a space in it works;
+    - a 4-character password and a mismatch are refused;
+    - the new password is saved, the code is closed and cannot be used
+      again;
+    - the old password fails and the new one signs in.
+  - **Signed in:** the dashboard gets its sidebar data again.
+- **Browser checks** (`e2e/phase7g.mjs`, 28 checks):
+  - **Sign-in:**
+    - no sidebar, one card;
+    - labels tied to the fields, the username focused;
+    - the eye button shows the password and flips its label and
+      `aria-pressed`;
+    - posting username and password;
+    - the error alert, the password cleared and the username kept;
+    - a password error tied to its field;
+    - success opens the dashboard with a full page load.
+  - **Forgot:**
+    - an Inertia visit from "Forgot password?";
+    - an email error tied to its field;
+    - back to login.
+  - **Code:**
+    - the masked email shown;
+    - Submit off until 6 digits;
+    - sent by itself at the sixth digit, digits only;
+    - a wrong code clears the boxes and shows the error;
+    - each digit in its own box, the next box marked;
+    - the boxes inside the row.
+  - **New password:**
+    - a mismatch shown with the button off;
+    - token and both passwords posted;
+    - fields cleared.
+  - **Phone width:** no sideways scroll on the sign-in and code pages.
+- **Member pages:** `phase5d1.mjs` (the member code pages) still passes
+  with the new code input.
+- **Regression:** 44 browser suites, 1404 checks, all pass. `route:cache` and `view:cache`
+  succeed; the route-name scan shows only the 21 known `ipn.`
+  references.
+
+**Phase 7 is complete.** The whole admin panel is React.
 
 ## Part 4: Working on the front end
 
