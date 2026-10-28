@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110). Next: 7f-4b frontend manager, 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111). Next: 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5336,6 +5336,182 @@ and its zip helpers.
 - **Regression:** 36 browser suites, 1177 checks, all pass. The 7f-1
   hub test now counts the cards from the fixture, and opens SEO as its
   Blade example: Payment Gateways is a React page now.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+### Step 111: Frontend content, pages and SEO in React (7f-4b)
+
+The frontend manager edits the texts, pictures and lists of items the
+website shows. The active template's `sections.json` describes each
+section:
+
+- **content**: one set of values, such as the register page heading;
+- **element**: a list of items, such as social links, FAQ entries or
+  policy pages;
+- **field types**: text, textarea, rich text, icon, a choice, images
+  with their size, and a slug made from another field.
+
+The page builder chooses which sections each page shows, and in what
+order.
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Frontend/Index.tsx` | `admin.frontend.index` | `frontend/index.blade.php` |
+| `Frontend/Section.tsx` | `admin.frontend.sections` | `frontend/section.blade.php` |
+| `Frontend/Element.tsx` | `admin.frontend.sections.element` | `frontend/element.blade.php` |
+| `Frontend/Seo.tsx` | `admin.seo`, `admin.frontend.sections.element.seo`, `admin.frontend.manage.pages.seo` | `frontend/seo.blade.php`, `frontend/frontend_seo.blade.php`, `frontend/builder/seo.blade.php` |
+| `Frontend/Pages.tsx` | `admin.frontend.manage.pages` | `frontend/builder/pages.blade.php` |
+| `Frontend/PageSections.tsx` | `admin.frontend.manage.section` | `frontend/builder/index.blade.php` |
+
+**New shared pieces:**
+
+- **`Components/Admin/ContentFields.tsx`** draws a section's fields from
+  the description the server sends. The section form, the item dialog
+  and the item page all use it. It also holds the slug tools:
+  - `toSlug()` cleans the slug as you type;
+  - `useSlugCheck()` asks the server, after a short pause, whether the
+    slug is free;
+  - `SlugStatus` shows the answer.
+- **`Components/Admin/IconPicker.tsx`** replaces the jQuery
+  fontawesome-iconpicker. You can type an icon's class or pick it from
+  a searchable grid of the 1,411 Line Awesome icons. The grid's list
+  is `resources/js/data/lineIcons.json`, a separate 27 kB file that
+  loads only when the picker opens.
+- **`Components/Admin/TagInput.tsx`** holds the SEO keywords, replacing
+  select2 "tags". Enter or a comma adds a keyword; Backspace or × removes
+  one.
+- **`App\Support\SeoForm`** holds the server side of the shared SEO
+  form: the page props, the rules and the saved values.
+
+**Duplicates removed:**
+
+- **The three SEO pages** (site-wide, a page's, an item's) were copies.
+  They are now one page, `Frontend/Seo.tsx`:
+  - on the site-wide SEO every field is required;
+  - on the other two every field is optional, and a note links to the
+    site-wide SEO.
+
+  The site-wide SEO used to save through the section-content endpoint
+  (`type=data`). It has its own `POST admin/seo` (`admin.seo.update`)
+  now.
+- **The Templates page** was switched off (`abort(404)`) because there
+  is a single template. Its form could still set `active_template` to
+  any name, and that name builds view paths and file paths.
+  - `GET frontend/templates` now redirects to the frontend manager.
+  - The `POST` route is gone.
+  - The `getTemplates()` helper, which sent the purchase code to the
+    vendor's server, is removed.
+- **Not reachable before:** the settings hub has two new cards,
+  **Frontend Content** and **Manage Pages**. Neither page was linked
+  anywhere; only Policy Pages had a link, from General Setting. Every
+  card in the hub now opens a React page.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Any item could be overwritten through any section.** `frontend-content/{key}` loaded `Frontend::findOrFail($request->id)` with no check, so an id from another section, or the site SEO, cookie or maintenance row, was replaced by this section's fields. | The id must be an item of this section on the active template. Otherwise the answer is 404. |
+| **The whole request was saved.** Every input except a few named ones went into `data_values`. That included `has_image` and any key a request added. | Only the fields `sections.json` lists for that part are saved. |
+| **The HTML clean-up was undone.** Each value went through HTMLPurifier and then `htmlspecialchars_decode()`. Text typed as `&lt;script&gt;` came out as a real `<script>`. Rich text (policy pages) and icons are printed raw on the site, so a settings admin could put a script on public pages. | Rich text goes through `FormPresenter::safeHtml()` with no decode. An icon is saved as `<i class="…">` built on the server from a checked class name (letters, digits, spaces, `_`, `-`). Plain text is saved as typed, because the site escapes it when printing. |
+| **The maintenance message and the cookie policy were saved as typed** and printed raw. | Both go through `safeHtml()` (in `GeneralSettingController`). |
+| **"Remove" deleted any frontend row by id**, including a section's content and the site SEO, cookie and maintenance rows. Pages break when those rows are missing. | Only items (`*.element`) can be removed. Their pictures and SEO picture are removed with them. |
+| **The item SEO page and its save took any row id**, from any section. | The item must belong to that section, and the section must have SEO. |
+| **The page builder saved any text as a section key.** The site includes `sections.<key>` for each key, so a crafted key named any view. | Each key must be a section the template offers on pages, not a fixed one such as login or footer. Repeated keys are dropped, and keys whose section no longer exists are ignored when the page opens. |
+| **A page's slug could be the address of another part of the site** (`agreement`, `maintenance-mode`...). Such a page could never be opened. | Refused. The slug check also reports these slugs as taken. |
+| **Item slugs were compared before cleaning.** "First Post!" and "first-post" both passed the unique check, then both were saved as `first-post`. Uniqueness also covered every section. | The slug is cleaned first, then checked within the section's items. The same applies to page slugs. |
+| **Built-in pages (home, blog...) could be renamed** by posting to the update URL; only the form was hidden. | Refused. The update URL now names the page (`manage-pages/update/{id}`). |
+| The "Make Slug" check on the item page (jQuery) asked the server on every keystroke, and the result could arrive out of order. | One request after a 300 ms pause; earlier requests are cancelled. |
+
+**Behaviour changes worth knowing:**
+
+- After adding an item with its own page, you land on that item's edit
+  page, not on an empty "add" form. Items with SEO still go to their
+  SEO page first, as before.
+- Sections are ordered on the page builder with arrow buttons or by
+  dragging (HTML5 drag and drop instead of jQuery UI). A section can be
+  added only once. A warning appears until "Update Now" is clicked.
+- The public pages built from these sections (home, custom pages,
+  contact, FAQ, policy) currently redirect to the login page; that was
+  already so before this step. The content still drives the parts that
+  are live:
+  - social links;
+  - the login and register texts;
+  - KYC messages;
+  - site SEO;
+  - the maintenance page.
+
+**Deleted:** `admin/frontend/*`, 9 views (6 pages plus 3 builder pages).
+
+**Verification:**
+
+- **Server checks** (`p7f4b_check.php`):
+  - **Index:** the 20 editable sections; Templates redirects.
+  - **Content (about):**
+    - a missing field is refused;
+    - extra keys are not saved;
+    - the picture is uploaded and kept on the next save;
+    - `type=data` and an unknown section answer 404.
+  - **Items (service):**
+    - an icon containing HTML is refused;
+    - the saved icon is `<i class="las la-seedling"></i>` and the form
+      gets the class back;
+    - the id of a FAQ item or of the SEO row is refused (404) and
+      leaves that row unchanged;
+    - an item is edited in place.
+  - **Blog:**
+    - the field types (slug made from title, rich text);
+    - `onclick` and `<script>` are stripped while `&amp;` stays;
+    - the slug is cleaned to `first-post`; a second "First Post!" is
+      refused;
+    - the slug check, including the item's own slug;
+    - item SEO with keywords trimmed and de-duplicated;
+    - the SEO of another section's item is refused.
+  - **Site SEO:** keywords are required; saved in place.
+  - **Remove:** the SEO row and a section's content cannot be removed;
+    an item can.
+  - **Pages:**
+    - a site address (`agreement`) and a taken slug are refused; add;
+    - the slug check;
+    - a view path and a fixed section are refused as section keys;
+    - a duplicate key is dropped; an empty list saves null;
+    - the home page cannot be renamed or deleted;
+    - rename; renaming onto a taken slug is refused;
+    - page SEO saves with every field optional; delete.
+  - **Maintenance:** `<script>` and `onerror` are removed.
+  - **Hub:** the three cards are React; a staff admin with only "manage
+    account" is refused on every route.
+- **Browser checks** (`e2e/phase7f4b.mjs`, 47 checks):
+  - **Index:** search, the empty result, and cards that open as
+    Inertia visits.
+  - **Content form:** the multipart POST with fields at the top level
+    and `image_input[about_image]`.
+  - **Item dialog:**
+    - prefilled fields; the icon picker picks `las la-tree`;
+    - the POST carries `type`, `id` and the icon class;
+    - add; remove.
+  - **Item page:**
+    - Make Slug finds a taken slug, and Submit is disabled;
+    - typed slugs are cleaned and checked on the server;
+    - the rich-text POST;
+    - an item's own slug is not flagged.
+  - **Policy pages:** no Back link.
+  - **SEO:**
+    - the keyword tags (comma, Enter, ×);
+    - the `keywords[]` POST;
+    - the optional note on item SEO.
+  - **Pages:** add with the slug check; built-in pages have no Delete
+    button.
+  - **Page sections:**
+    - move up, add, and drag in from the list and within the page;
+    - remove; the ordered `secs` POST;
+    - rename a custom page;
+    - an empty page saves `[]`.
+  - No sideways scroll at phone width on all 11 pages.
+- **Regression:** (results recorded in the next commit.) The 7f-1 hub test used SEO as its
+  example of a Blade card. Every hub card is React now, so it checks
+  that SEO opens as an Inertia visit.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 

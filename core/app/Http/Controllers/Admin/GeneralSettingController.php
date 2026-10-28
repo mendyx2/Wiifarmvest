@@ -8,6 +8,7 @@ use App\Http\Middleware\AdminAccessMiddleware;
 use App\Models\Frontend;
 use App\Rules\FileTypeValidate;
 use App\Support\AdminLayout;
+use App\Support\FormPresenter;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -328,7 +329,8 @@ class GeneralSettingController extends Controller
         $general->maintenance_mode = $request->boolean('status') ? Status::ENABLE : Status::DISABLE;
         $general->save();
 
-        $maintenance->data_values = ['description' => $request->description, 'image' => $image];
+        // The maintenance page prints this as HTML: scripts and handlers removed
+        $maintenance->data_values = ['description' => FormPresenter::safeHtml($request->description), 'image' => $image];
         $maintenance->save();
 
         $notify[] = ['success', 'Maintenance mode updated successfully'];
@@ -361,7 +363,7 @@ class GeneralSettingController extends Controller
         $cookie              = Frontend::where('data_keys', 'cookie.data')->firstOrFail();
         $cookie->data_values = [
             'short_desc'  => $request->short_desc,
-            'description' => $request->description,
+            'description' => FormPresenter::safeHtml($request->description),
             'status'      => $request->boolean('status') ? Status::ENABLE : Status::DISABLE,
         ];
         $cookie->save();

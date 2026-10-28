@@ -181,6 +181,20 @@
     },
     
     
+    "frontend_content": {
+        "keyword": ["frontend", "content", "sections", "social icons", "policy pages", "register page", "login page", "faq", "website content"],
+        "title": "Frontend Content",
+        "subtitle": "The texts, pictures and items of each section of the website: social links, policy pages, login and register texts and more.",
+        "icon": "las la-pen-fancy",
+        "route_name": "admin.frontend.index"
+    },
+    "manage_pages": {
+        "keyword": ["pages", "page builder", "sections", "manage pages", "slug", "website pages"],
+        "title": "Manage Pages",
+        "subtitle": "The website's pages, the sections each one shows and their SEO.",
+        "icon": "las la-file-alt",
+        "route_name": "admin.frontend.manage.pages"
+    },
     "kyc_setting": {
         "keyword": [
             "KYC",

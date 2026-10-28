@@ -29,7 +29,6 @@ use Illuminate\Support\Str;
 use App\Models\Stockist_store;
 use App\Models\Stockist_store_record; 
 use App\Models\GeneralSetting;
-use Laramin\Utility\VugiChugi;
 use App\Lib\GoogleAuthenticator;
 use App\Services\MatrixPlacementService2;
 use App\Models\Transaction;
@@ -441,20 +440,6 @@ function osBrowser()
 {
     $osBrowser = ClientInfo::osBrowser();
     return $osBrowser;
-}
-
-
-function getTemplates()
-{
-    $param['purchasecode'] = env("PURCHASECODE");
-    $param['website']      = @$_SERVER['HTTP_HOST'] . @$_SERVER['REQUEST_URI'] . ' - ' . env("APP_URL");
-    $url                   = VugiChugi::gttmp() . systemDetails()['name'];
-    $response              = CurlRequest::curlPostContent($url, $param);
-    if ($response) {
-        return $response;
-    } else {
-        return null;
-    }
 }
 
 

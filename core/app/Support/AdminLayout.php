@@ -182,6 +182,15 @@ class AdminLayout
         'admin.cron.schedule',
         'admin.cron.schedule.logs',
         'admin.system.info',
+        // 7f-4b: frontend content, pages, SEO
+        'admin.seo',
+        'admin.frontend.index',
+        'admin.frontend.sections',
+        'admin.frontend.sections.element',
+        'admin.frontend.sections.element.seo',
+        'admin.frontend.manage.pages',
+        'admin.frontend.manage.section',
+        'admin.frontend.manage.pages.seo',
     ];
 
     public static function for(Request $request): ?array

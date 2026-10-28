@@ -483,6 +483,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
     // SEO
     Route::get('seo', 'FrontendController@seoEdit')->name('seo');
+    Route::post('seo', 'FrontendController@seoUpdate')->name('seo.update');
     
     // Flashcard Controller
     Route::controller('FlashcardController')->prefix('flashcard')->name('flashcard.')->group(function () {
@@ -507,14 +508,14 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
         Route::controller('FrontendController')->group(function () {
             Route::get('index', 'index')->name('index');
-            Route::get('templates', 'templates')->name('templates');
-            Route::post('templates', 'templatesActive')->name('templates.active');
+            // There is one template; the page listing them answered 404 and its form could set any name
+            Route::get('templates', fn () => to_route('admin.frontend.index'))->name('templates');
             Route::get('frontend-sections/{key?}', 'frontendSections')->name('sections');
             Route::post('frontend-content/{key}', 'frontendContent')->name('sections.content');
             Route::get('frontend-element/{key}/{id?}', 'frontendElement')->name('sections.element');
             Route::get('frontend-slug-check/{key}/{id?}', 'frontendElementSlugCheck')->name('sections.element.slug.check');
             Route::get('frontend-element-seo/{key}/{id}', 'frontendSeo')->name('sections.element.seo');
-            Route::post('frontend-element-seo/{key}/{id}', 'frontendSeoUpdate');
+            Route::post('frontend-element-seo/{key}/{id}', 'frontendSeoUpdate')->name('sections.element.seo.update');
             Route::post('remove/{id}', 'remove')->name('remove');
         });
 
@@ -523,13 +524,13 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
             Route::get('manage-pages', 'managePages')->name('manage.pages');
             Route::get('manage-pages/check-slug/{id?}', 'checkSlug')->name('manage.pages.check.slug');
             Route::post('manage-pages', 'managePagesSave')->name('manage.pages.save');
-            Route::post('manage-pages/update', 'managePagesUpdate')->name('manage.pages.update');
+            Route::post('manage-pages/update/{id}', 'managePagesUpdate')->name('manage.pages.update');
             Route::post('manage-pages/delete/{id}', 'managePagesDelete')->name('manage.pages.delete');
             Route::get('manage-section/{id}', 'manageSection')->name('manage.section');
             Route::post('manage-section/{id}', 'manageSectionUpdate')->name('manage.section.update');
 
             Route::get('manage-seo/{id}', 'manageSeo')->name('manage.pages.seo');
-            Route::post('manage-seo/{id}', 'manageSeoStore');
+            Route::post('manage-seo/{id}', 'manageSeoStore')->name('manage.pages.seo.update');
         });
     });
 
