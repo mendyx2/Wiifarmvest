@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111). Next: 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112). Next: 7f-5b tickets, notices, flashcards, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5512,6 +5512,145 @@ order.
 - **Regression:** 37 browser suites, 1226 checks, all pass. The 7f-1 hub test used SEO as its
   example of a Blade card. Every hub card is React now, so it checks
   that SEO opens as an Inertia visit.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+### Step 112: Admins, roles and permissions in React (7f-5a)
+
+7f-5 is split in two: 7f-5a (staff accounts and access, this step) and
+7f-5b (support tickets, notices, flashcards).
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Staff/Admins.tsx` | `admin.admins.index` | `admins/{index,create,edit,show}.blade.php` |
+| `Staff/Roles.tsx` | `admin.roles.index` | `roles/{index,create,edit,show}.blade.php` |
+| `Staff/Permissions.tsx` | `admin.permissions.index` | `permissions/{index,create,edit,bulk-create}.blade.php` |
+
+Each is one page with dialogs. The old create, edit and show URLs (and
+"bulk create" for permissions) redirect to the list, and the old bulk
+POST URL still works.
+
+**New shared piece:** `Components/Admin/PermissionOpens.tsx` shows
+what a permission opens. The data comes from the new
+`AdminAccessMiddleware::grantedBy()`, which reads
+`config/admin_access.php`.
+
+**Duplicates removed:**
+
+- **12 Blade views became 3 pages.** The admin "show" page, a 333-line
+  profile card, became an "Access" dialog. The role "show" page and the
+  per-role permission dialogs are now part of the role editor.
+- **"Add permission" and "Bulk create permissions" were two forms.**
+  They are now one dialog with "Add another".
+- **The sidebar had three groups** (Manage Admin, Admin Roles, Admin
+  Permissions), each holding a single link. They are now one group,
+  **Staff & Access**, with Admins, Roles and Permissions.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **"Deactivate admin" did nothing.** `is_active` was saved, but neither the login nor any middleware read it. A deactivated admin could still sign in and kept full access. | **Login** (`LoginController::authenticated()`): a deactivated admin is signed out right after the password check, with "This admin account has been deactivated". **Already signed in** (`AdminAccessMiddleware`): signed out on their next page. Accounts whose column is empty count as active. |
+| **The auth middleware logged every admin request.** `AdminAuthenticate` wrote three lines to `laravel.log` per request, including the admin's record (name, username, e-mail). | No logging. |
+| **The owner account (id 1) was hidden only in the page.** Another super-admin could still edit, deactivate or delete it by URL. | Refused on the server; the list shows it with an "Owner" badge and no actions. |
+| **Editing an admin required an e-mail address,** although the add form made it optional, and the e-mail was then never saved (the line was commented out). Admins without e-mail could not be edited. | E-mail is optional and saved. |
+| **Roles from another guard could be given.** Admins could get `web` roles, and roles could get `web` permissions; the `exists` rule did not check the guard. | Only `admin` roles and permissions are accepted. |
+| **Error messages showed raw exception text** ("Error creating admin user: SQLSTATE..."), and all messages used `with('success')`, which the React layout does not show. | Normal toasts. Exceptions are not caught and shown. |
+| **Renaming or deleting a permission silently locked pages.** The access map names permissions in code, so a renamed "manage settings" locked the settings pages for everyone but super-admin. | Permissions the map uses can be regrouped but not renamed or deleted. The page explains why. |
+| **A new role could be called "super-admin"**, and its unique check covered every guard. | "super-admin" is reserved, and the unique check is per guard. |
+| Activate / deactivate flipped the state blindly, so two clicks undid each other. | It takes an explicit `state` and answers "already" on a repeat. |
+
+**What the Permissions page now shows:** for each permission, the route
+patterns it opens and whether for viewing, changing or both. For
+example, "view users" shows `users.* (view)`. A permission the map
+does not name says "opens nothing".
+
+- Most of the seeded permissions ("view deposits", "approve
+  withdrawals", ...) open nothing. Only the names in
+  `config/admin_access.php` grant access.
+- The summary line says how many open pages.
+- The role editor has a switch to show only the permissions that open
+  pages.
+
+**For the owner:**
+
+- **Fine-grained permissions:** if you want them (for example a deposit
+  clerk who can approve deposits but not touch settings), add their
+  routes to `config/admin_access.php`. Until then a new permission
+  grants nothing. That is safe, but easy to misunderstand.
+- **The licence check:** every admin login calls the vendor's licence
+  server (`Onumoti::getData()`) with the purchase code and site URL.
+  - If that server does not answer, admin login fails with "Something
+    went wrong".
+  - The server's reply can switch the site into maintenance mode.
+
+  This is a licensing decision and is left as it is; 7g (admin login
+  pages) is the place to decide.
+
+**Deleted:** `admin/admins/*`, `admin/roles/*`, `admin/permissions/*`
+(12 views). Also deleted: the unused `update1`, `store22` and
+`update22` methods, and the controllers' own constructor middleware
+(`admin.auth`, "manage roles", "manage permissions"). The routes have
+always been super-admin only, and that is unchanged.
+
+**Verification:**
+
+- **Server checks** (`p7f5a_check.php`):
+  - **`grantedBy`:** "manage settings" opens 8 route patterns; "view
+    users" opens `users.*` for viewing and the two attachment routes;
+    "view deposits" opens nothing.
+  - **Admins:**
+    - adding is refused with no role, a web role, a taken username or
+      mismatched passwords;
+    - add without e-mail: active, password hashed;
+    - edit sets the e-mail and keeps the password when it is blank;
+    - editing yourself is refused;
+    - a second super-admin cannot edit, deactivate or delete the owner;
+    - deactivate, then again ("already"); a missing state is refused;
+    - delete removes the role links too;
+    - the 8 old URLs redirect.
+  - **Deactivated admin:**
+    - signed in: the next page signs them out with the message;
+    - logging in with the right password is refused;
+    - after activation, login works and pages open.
+  - **Roles:**
+    - "super-admin" as a name, web permissions and a duplicate name are
+      refused;
+    - add; rename and change permissions; clear permissions;
+    - super-admin cannot be edited or deleted;
+    - a role in use cannot be deleted; an unused one can;
+    - a web role answers 404.
+  - **Permissions:**
+    - a duplicate in the list (any case) and an existing name are
+      refused;
+    - add two, trimmed; the old bulk URL works;
+    - rename a free one; renaming "manage settings" is refused,
+      regrouping it is allowed;
+    - deleting map permissions is refused; deleting a free one works.
+  - **Access:** a staff admin is refused on all three pages; the sidebar
+    shows the one Staff & Access group with Admins active.
+- **Browser checks** (`e2e/phase7f5a.mjs`, 26 checks):
+  - **Admins:**
+    - your row shows Profile, "You" and "Owner";
+    - edit prefill and PUT; add, with Submit disabled until a role is
+      ticked;
+    - deactivate and delete;
+    - the Access dialog.
+  - **Roles:**
+    - no Edit on super-admin, no Delete on admin;
+    - ticked permissions, "opens nothing" and the route patterns;
+    - the "only useful" switch;
+    - group "all" and the PUT; add.
+  - **Permissions:**
+    - the summary count; Delete only where allowed;
+    - search;
+    - add two rows (the group is copied) and the POST;
+    - a locked name is read-only and the group can change.
+  - **Sidebar:** the single group.
+  - No sideways scroll at phone width on all three pages.
+- **Regression:** (results recorded in the next commit.)
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 

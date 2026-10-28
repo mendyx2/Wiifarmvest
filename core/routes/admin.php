@@ -84,23 +84,28 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
     
 
+    // Staff: one page each, with dialogs (Pages/Admin/Staff/*). The old create / edit / show
+    // pages (and bulk-create for permissions) redirect to the list.
     Route::middleware(['admin.role:super-admin'])->group(function () {
-        Route::resource('admins', \App\Http\Controllers\Admin\AdminUserController::class);
-        Route::post('admins/{user}/toggle-status', [\App\Http\Controllers\Admin\AdminUserController::class, 'toggleStatus'])
-            ->name('admins.toggle-status');
-    
-           
-        Route::resource('roles', \App\Http\Controllers\Admin\RoleController::class);
-        //Route::resource('permissions', \App\Http\Controllers\Admin\PermissionController::class);
-    
+        $toList = fn (string $list) => fn () => to_route($list);
 
-    // Permissions Routes
-   
-        Route::resource('permissions', \App\Http\Controllers\Admin\PermissionController::class);
-        Route::get('permissions/bulk/create', [\App\Http\Controllers\Admin\PermissionController::class, 'bulkCreate'])
-            ->name('permissions.bulk.create');
-        Route::post('permissions/bulk/store', [\App\Http\Controllers\Admin\PermissionController::class, 'bulkStore'])
-            ->name('permissions.bulk.store');
+        Route::resource('admins', \App\Http\Controllers\Admin\AdminUserController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('admins/create', $toList('admin.admins.index'))->name('admins.create');
+        Route::get('admins/{admin}', $toList('admin.admins.index'))->name('admins.show');
+        Route::get('admins/{admin}/edit', $toList('admin.admins.index'))->name('admins.edit');
+        Route::post('admins/{user}/toggle-status', [\App\Http\Controllers\Admin\AdminUserController::class, 'toggleStatus'])->name('admins.toggle-status');
+
+        Route::resource('roles', \App\Http\Controllers\Admin\RoleController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('roles/create', $toList('admin.roles.index'))->name('roles.create');
+        Route::get('roles/{role}', $toList('admin.roles.index'))->name('roles.show');
+        Route::get('roles/{role}/edit', $toList('admin.roles.index'))->name('roles.edit');
+
+        Route::resource('permissions', \App\Http\Controllers\Admin\PermissionController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('permissions/create', $toList('admin.permissions.index'))->name('permissions.create');
+        Route::get('permissions/bulk/create', $toList('admin.permissions.index'))->name('permissions.bulk.create');
+        Route::post('permissions/bulk/store', [\App\Http\Controllers\Admin\PermissionController::class, 'store'])->name('permissions.bulk.store');
+        Route::get('permissions/{permission}', $toList('admin.permissions.index'))->name('permissions.show');
+        Route::get('permissions/{permission}/edit', $toList('admin.permissions.index'))->name('permissions.edit');
     });
 
 

@@ -91,6 +91,18 @@ class LoginController extends Controller
     }
 
 
+    /** A deactivated account cannot sign in (the switch was never checked). */
+    protected function authenticated(Request $request, $admin)
+    {
+        if ($admin->is_active === false) {
+            $this->guard()->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+            $notify[] = ['error', 'This admin account has been deactivated.'];
+            return to_route('admin.login')->withNotify($notify)->withInput($request->only('username'));
+        }
+    }
+
     public function logout(Request $request)
     {   
         

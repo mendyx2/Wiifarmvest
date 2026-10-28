@@ -9,21 +9,13 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AdminAuthenticate
 {
+    // It used to write every admin request, with the admin's record, to the log
     public function handle(Request $request, Closure $next): Response
     {
-        \Log::info('AdminAuthenticate middleware called');
-        \Log::info('Auth guards check:', [
-            'admin guard check' => Auth::guard('admin')->check(),
-            'default guard check' => Auth::check(),
-            'user' => Auth::guard('admin')->user(),
-        ]);
-
         if (!Auth::guard('admin')->check()) {
-            \Log::warning('Admin not authenticated, redirecting to login');
-            return redirect()->route('admin.login')->with('error', 'Please login as admin first.');
+            return redirect()->route('admin.login');
         }
 
-        \Log::info('Admin authenticated successfully: ' . Auth::guard('admin')->user()->email);
         return $next($request);
     }
 }

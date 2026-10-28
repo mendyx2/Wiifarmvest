@@ -191,6 +191,10 @@ class AdminLayout
         'admin.frontend.manage.pages',
         'admin.frontend.manage.section',
         'admin.frontend.manage.pages.seo',
+        // 7f-5a: staff
+        'admin.admins.index',
+        'admin.roles.index',
+        'admin.permissions.index',
     ];
 
     public static function for(Request $request): ?array

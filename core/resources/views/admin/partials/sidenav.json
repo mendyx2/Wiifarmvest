@@ -823,40 +823,26 @@
         "route_name": "admin.flashcard.index",
         "menu_active": "admin.flashcard*"
     },
-    "admins": {
-        "title": "Manage Admin",
-        "icon": "las la-paper-plane",
+    "staff": {
+        "title": "Staff & Access",
+        "icon": "las la-user-shield",
         "counters": [],
-        "menu_active": "admin.admins*",
+        "menu_active": ["admin.admins*", "admin.roles*", "admin.permissions*"],
         "submenu": [{
-                "keyword": ["Manage Admins"],
-                "title": "All Admin",
+                "keyword": ["Manage Admins", "staff", "admin users", "deactivate admin"],
+                "title": "Admins",
                 "route_name": "admin.admins.index",
                 "menu_active": "admin.admins*"
-            }
-        ]
-    },
-    "roles": {
-        "title": "Admin Roles",
-        "icon": "las la-paper-plane",
-        "counters": [],
-        "menu_active": "admin.roles*",
-        "submenu": [{
-                "keyword": ["Manage Roles"],
-                "title": "All Roles",
+            },
+            {
+                "keyword": ["Manage Roles", "roles", "access"],
+                "title": "Roles",
                 "route_name": "admin.roles.index",
                 "menu_active": "admin.roles*"
-            }
-        ]
-    },
-    "permissions": {
-        "title": "Admin Permissions",
-        "icon": "las la-paper-plane",
-        "counters": [],
-        "menu_active": "admin.permissions*",
-        "submenu": [{
-                "keyword": ["Manage permissions"],
-                "title": "All Permissions",
+            },
+            {
+                "keyword": ["Manage permissions", "permissions", "access"],
+                "title": "Permissions",
                 "route_name": "admin.permissions.index",
                 "menu_active": "admin.permissions*"
             }
