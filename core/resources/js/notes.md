@@ -5880,7 +5880,7 @@ partials), `admin/reports.blade.php`, and `app/Jobs/ProcessSharePurchase.php`.
     reversed rows.
   - **Vendor reports:** the error and the POST.
   - No sideways scroll at phone width on all nine pages.
-- **Regression:** (results recorded in the next commit.)
+- **Regression:** 40 browser suites, 1315 checks, all pass.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 
