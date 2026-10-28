@@ -5758,7 +5758,7 @@ list errors.
     - upload multipart, and the form empties afterwards;
     - hide (spoofed PATCH with state) and delete.
   - No sideways scroll at phone width on all seven page states.
-- **Regression:** (results recorded in the next commit.)
+- **Regression:** 39 browser suites, 1280 checks, all pass.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 
