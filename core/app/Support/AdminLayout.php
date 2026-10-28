@@ -176,6 +176,12 @@ class AdminLayout
         'admin.withdraw.method.create',
         'admin.withdraw.method.edit',
         'admin.kyc.setting',
+        // 7f-4a: extensions, cron, system
+        'admin.extensions.index',
+        'admin.cron.index',
+        'admin.cron.schedule',
+        'admin.cron.schedule.logs',
+        'admin.system.info',
     ];
 
     public static function for(Request $request): ?array

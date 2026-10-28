@@ -309,5 +309,19 @@
         "subtitle": "The sitemap.xml file search engines read.",
         "icon": "las la-sitemap",
         "route_name": "admin.setting.sitemap"
+    },
+    "cron_jobs": {
+        "keyword": ["cron", "cron job", "schedule", "scheduler", "automation", "run now"],
+        "title": "Cron Jobs",
+        "subtitle": "The scheduled jobs (bonuses, payouts, cleanups), their schedules and run logs.",
+        "icon": "las la-clock",
+        "route_name": "admin.cron.index"
+    },
+    "system_information": {
+        "keyword": ["system", "server", "php", "version", "cache", "clear cache", "optimize", "update", "laravel"],
+        "title": "System Information",
+        "subtitle": "Versions, server details, clear cache and the update log.",
+        "icon": "las la-server",
+        "route_name": "admin.system.info"
     }
 }

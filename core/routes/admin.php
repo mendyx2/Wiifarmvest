@@ -409,7 +409,8 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('schedule', 'schedule')->name('schedule');
         Route::post('schedule/store', 'scheduleStore')->name('schedule.store');
         Route::post('schedule/status/{id}', 'scheduleStatus')->name('schedule.status');
-        Route::get('schedule/pause/{id}', 'schedulePause')->name('schedule.pause');
+        Route::post('schedule/pause/{id}', 'schedulePause')->name('schedule.pause');
+        Route::post('run/{id}', 'runNow')->name('run');
         Route::get('schedule/logs/{id}', 'scheduleLogs')->name('schedule.logs');
         Route::post('schedule/log/resolved/{id}', 'scheduleLogResolved')->name('schedule.log.resolved');
         Route::post('schedule/log/flush/{id}', 'logFlush')->name('log.flush');
@@ -465,12 +466,14 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
     //System Information
     Route::controller('SystemController')->name('system.')->prefix('system')->group(function () {
         Route::get('info', 'systemInfo')->name('info');
-        Route::get('server-info', 'systemServerInfo')->name('server.info');
-        Route::get('optimize', 'optimize')->name('optimize');
-        Route::get('optimize-clear', 'optimizeClear')->name('optimize.clear');
-        Route::get('system-update', 'systemUpdate')->name('update');
+        // Server, Clear Cache, Update and Update Log are part of System Information now (Step 110)
+        Route::get('server-info', fn () => to_route('admin.system.info'))->name('server.info');
+        Route::get('optimize', fn () => to_route('admin.system.info'))->name('optimize');
+        Route::get('optimize-clear', fn () => to_route('admin.system.info'));
+        Route::post('optimize-clear', 'optimizeClear')->name('optimize.clear');
+        Route::get('system-update', fn () => to_route('admin.system.info'))->name('update');
         Route::post('system-update', 'systemUpdateProcess')->name('update.process');
-        Route::get('system-update/log', 'systemUpdateLog')->name('update.log');
+        Route::get('system-update/log', fn () => to_route('admin.system.info'))->name('update.log');
 
         Route::middleware('admin.role:super-admin')->group(function () {
             Route::get('action-log', 'adminActionLog')->name('action.log');

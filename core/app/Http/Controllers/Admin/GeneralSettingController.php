@@ -158,7 +158,7 @@ class GeneralSettingController extends Controller
 
         return Inertia::render('Admin/Settings/LogoIcon', [
             'images' => ['logo' => siteLogo() . $v, 'logo_dark' => siteLogo('dark') . $v, 'favicon' => siteFavicon() . $v],
-            'urls'   => ['update' => route('admin.setting.logo.icon'), 'clearCache' => route('admin.system.optimize.clear')],
+            'urls'   => ['update' => route('admin.setting.logo.icon'), 'clearCache' => route('admin.system.info')],
         ])->withViewData(['pageTitle' => $pageTitle]);
     }
 

@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109). Next: 7f-4 frontend and system, 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110). Next: 7f-4b frontend manager, 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5243,6 +5243,99 @@ has a `<label>` above it.
   - **KYC:** add a file field; the unsaved warning; the JSON POST.
   - No sideways scroll at phone width on all eight pages.
 - **Regression:** 35 browser suites, 1152 checks, all pass.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+### Step 110: Extensions, cron jobs and system information in React (7f-4a)
+
+7f-4 is split in two: 7f-4a (this step) and 7f-4b (the frontend manager
+and page builder).
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Extensions.tsx` | `admin.extensions.index` | `extension/index.blade.php` |
+| `Pages/Admin/Cron/Index.tsx` | `admin.cron.index` | `cron/index.blade.php` |
+| `Cron/Schedules.tsx` | `admin.cron.schedule` | `cron/schedule.blade.php` |
+| `Cron/Logs.tsx` | `admin.cron.schedule.logs` | `cron/logs.blade.php` |
+| `Pages/Admin/System/Info.tsx` | `admin.system.info` | `system/{info,server,optimize,update,update_log}.blade.php` |
+
+**Duplicates removed:**
+
+- **Application, Server, Clear Cache, System Update and Update Log**
+  were five small pages, none of them in the sidebar or the settings
+  hub. They are one page, System Information. The old URLs redirect to
+  it.
+- The settings hub has two new cards: **Cron Jobs** and **System
+  Information**. Neither was reachable except through the search.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **One-click "System Update"** downloaded the vendor's release, unzipped it over the whole site and ran its SQL. On this heavily customised installation it would overwrite the custom code (everything in these notes) and could break the database. | Switched off. The page shows the version and the update log, with the reason; the POST answers with the same message. Updates go through the repository. **For the owner:** confirm nobody relies on the vendor updater. |
+| **"Run Now" on a cron job never worked.** It linked to the public `/cron` URL without the secret token that URL requires, so it always answered 403. | A POST to `admin.cron.run/{id}` runs the job on the server and reports its error, if any. |
+| **Built-in cron jobs were created with `new $class`**, so a job class that needs a service in its constructor (as `CronController` does) crashed with an `Error`. The catch only took `Exception`, so it also stopped every later job in the run. | The container builds the class, and any `Throwable` is logged on that job's run and reported; the other jobs still run. `CronController::runJobs()` is shared by the public URL and "Run Now". |
+| Pause / play a cron job was a **GET** link, as was "clear cache". | POSTs with a confirm; the job's pause takes an explicit state. |
+| Extension secret keys (reCAPTCHA secret ...) were sent to the browser. | Never sent; a blank field keeps the saved value. |
+| A cron job could be saved with a schedule that does not exist or a `javascript:` URL; adding one said "updated". | Refused; "added". Editing a built-in job never changes its URL or alias. |
+| Editing a disabled cron schedule switched it back on. | Only the name and interval change. |
+| The server page received all of `$_SERVER`, which under `php -S` holds environment variables (APP_KEY, DB_PASSWORD). | Only the six values it shows are sent. |
+
+The cron page also shows the crontab command to install. It warns when
+`CRON_SECRET` is not set: without it the `/cron` URL refuses every
+call, so no scheduled job runs at all.
+
+**Deleted:** `admin/extension/*`, `admin/cron/*`, `admin/system/*` (9
+views). Also removed from `SystemController`: the vendor-update code
+and its zip helpers.
+
+**Verification:**
+
+- **Server checks** (`p7f4a_check.php`):
+  - **Extensions:**
+    - no secret in the page;
+    - a blank secret keeps the saved one;
+    - a missing required key is refused;
+    - enable.
+  - **Cron:**
+    - the list, schedules and command;
+    - Run Now:
+      - a plain job (logged, next run moved);
+      - a job whose class needs a service;
+      - a job that throws a `TypeError` (logged, error toast);
+    - a full run with the failing job first still runs the next job;
+    - pause twice ("already"), and GET pause is refused;
+    - an unknown schedule and a `javascript:` URL are refused;
+    - add;
+    - editing a built-in job ignores its URL; deleting a built-in job
+      is a 404;
+    - delete;
+    - a disabled schedule stays disabled when edited;
+    - interval 0 is refused;
+    - logs, resolve, flush.
+  - **System:**
+    - the page sends only the shown values: an env secret in
+      `$_SERVER` is not in the page;
+    - the five old URLs redirect;
+    - clear cache;
+    - the update is refused.
+  - **Hub:** the two new cards are React.
+- **Browser checks** (`e2e/phase7f4a.mjs`, 25 checks):
+  - **Extensions:** the masked secret, the POST, the help HTML and
+    image, enable.
+  - **Cron:**
+    - the command and the secret warning; the error icon;
+    - Run Now and Pause POSTs;
+    - the built-in edit without URL; add;
+    - logs as an Inertia visit;
+    - schedule edit; log flush.
+  - **System:** the info lists; clear cache.
+  - No sideways scroll at phone width on all five pages.
+- **Regression:** 36 browser suites, 1177 checks, all pass. The 7f-1
+  hub test now counts the cards from the fixture, and opens SEO as its
+  Blade example: Payment Gateways is a React page now.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 
