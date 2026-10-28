@@ -5650,7 +5650,7 @@ always been super-admin only, and that is unchanged.
     - a locked name is read-only and the group can change.
   - **Sidebar:** the single group.
   - No sideways scroll at phone width on all three pages.
-- **Regression:** (results recorded in the next commit.)
+- **Regression:** 38 browser suites, 1252 checks, all pass.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 
