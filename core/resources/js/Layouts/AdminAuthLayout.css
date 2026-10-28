@@ -1,0 +1,147 @@
+/* The admin sign-in page design (admin/auth/login.blade.php): a dark page
+   with soft glows and one light card. The password-reset pages used an
+   older photo design; they now share this one. */
+
+.al-page {
+    min-height: 100vh;
+    background: #060d1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Poppins', sans-serif;
+    position: relative;
+    overflow: hidden;
+    padding: 1.5rem 1rem;
+}
+.al-page::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 60% 60% at 15% 50%, rgba(16, 185, 129, 0.16) 0%, transparent 65%),
+        radial-gradient(ellipse 50% 50% at 85% 20%, rgba(99, 102, 241, 0.13) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 70% 80%, rgba(6, 95, 70, 0.18) 0%, transparent 60%);
+    pointer-events: none;
+}
+.al-grid {
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+}
+.al-blob { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; }
+.al-blob-1 { width: 480px; height: 480px; background: rgba(16, 185, 129, 0.11); top: -140px; left: -140px; animation: al-float 9s ease-in-out infinite; }
+.al-blob-2 { width: 300px; height: 300px; background: rgba(99, 102, 241, 0.11); bottom: -60px; right: -80px; animation: al-float 11s ease-in-out 3s infinite; }
+@keyframes al-float {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-28px) scale(1.06); }
+}
+
+.al-card {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 440px;
+    background: #f1f5f9;
+    border-radius: 20px;
+    padding: 2.6rem 2.8rem 2.2rem;
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    animation: al-card-in 0.55s ease both;
+}
+.al-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 20px 20px 0 0;
+    background: linear-gradient(90deg, #10b981, #6366f1, #10b981);
+}
+@keyframes al-card-in {
+    from { opacity: 0; transform: translateY(24px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+}
+
+.al-brand { text-align: center; margin-bottom: 1.6rem; }
+.al-logo-ring {
+    width: 68px; height: 68px;
+    margin: 0 auto 0.9rem;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.7rem; color: #fff;
+    box-shadow: 0 8px 32px rgba(16, 185, 129, 0.35);
+}
+.al-site-logo { max-height: 44px; max-width: 100%; width: auto; margin: 0 auto 0.9rem; display: block; }
+.al-site-name { font-size: 1.15rem; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; margin-bottom: 0.15rem; }
+.al-site-sub { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.15em; }
+.al-divider { height: 1px; background: #e2e8f0; margin: 0 0 1.5rem; }
+
+.al-head { margin-bottom: 1.4rem; }
+.al-head-tag { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.16em; color: #047857; margin-bottom: 0.3rem; }
+.al-head h1 { font-size: 1.4rem; font-weight: 700; color: #0f172a; letter-spacing: -0.025em; margin: 0 0 0.25rem; }
+.al-head p { font-size: 0.8rem; color: #475569; margin: 0; }
+
+.al-field { margin-bottom: 1.1rem; }
+.al-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
+.al-label label { font-size: 0.76rem; font-weight: 600; color: #334155; margin: 0; }
+.al-link { font-size: 0.75rem; color: #047857; font-weight: 500; text-decoration: none; }
+.al-link:hover, .al-link:focus { color: #065f46; text-decoration: underline; }
+
+.al-input-wrap { position: relative; }
+.al-card .al-input {
+    width: 100%; height: 46px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 1rem;
+    font-size: 0.865rem;
+    font-family: inherit;
+    color: #0f172a;
+    transition: border-color 0.22s, box-shadow 0.22s;
+    outline: none;
+}
+.al-card .al-input:focus { border-color: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15); }
+.al-card .al-input.has-right { padding-right: 2.9rem; }
+.al-card .al-input.is-invalid { border-color: #dc2626; }
+.al-eye {
+    position: absolute; top: 50%; right: 0.4rem; transform: translateY(-50%);
+    border: 0; background: transparent; color: #64748b;
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+}
+.al-eye:hover, .al-eye:focus-visible { color: #047857; background: #e2e8f0; outline: none; }
+.al-error { font-size: 0.76rem; color: #b91c1c; margin-top: 0.35rem; }
+.al-alert {
+    font-size: 0.8rem; color: #991b1b; background: #fee2e2; border: 1px solid #fecaca;
+    border-radius: 10px; padding: 0.6rem 0.8rem; margin-bottom: 1rem;
+}
+.al-captcha { margin: 0.6rem 0 0.9rem; }
+
+.al-btn {
+    width: 100%; height: 48px;
+    border: none; border-radius: 10px; cursor: pointer;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #fff;
+    font-size: 0.84rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    font-family: inherit;
+    transition: transform 0.25s, box-shadow 0.25s, opacity 0.2s;
+}
+.al-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(16, 185, 129, 0.38); }
+.al-btn:focus-visible { outline: 3px solid #6366f1; outline-offset: 2px; }
+.al-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.al-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; margin-top: 1.2rem; }
+
+/* The shared six-box code input, in this card's colours */
+.al-card .verification-code .boxes span { background: #fff; border-color: #cbd5e1; color: #0f172a; }
+.al-card .verification-code .boxes span.empty { color: #94a3b8; }
+.al-card .verification-code .boxes span.active { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+.al-card .verification-code.has-error .boxes span { border-color: #dc2626; }
+
+@media (max-width: 480px) {
+    .al-card { padding: 2rem 1.4rem 1.8rem; border-radius: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .al-blob, .al-card { animation: none; }
+    .al-btn { transition: none; }
+}

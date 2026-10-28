@@ -3,7 +3,7 @@
     top bar are React (resources/js/Layouts/AdminLayout.tsx), fed by the
     shared "adminLayout" prop (App\Support\AdminLayout).
 
-    The same stylesheets as admin/layouts/master.blade.php. Left out:
+    The stylesheets of the old admin/layouts/master.blade.php. Left out:
     jQuery, Bootstrap's JS, bootstrap-toggle, select2, nicEdit, cuModal and
     admin/js/app.js; React pages do those jobs themselves. See notes Step 93.
 --}}

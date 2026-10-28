@@ -1,49 +1,36 @@
 <?php
+
 namespace App\Http\Controllers\Admin\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\CaptchaPresenter;
 use Illuminate\Foundation\Auth\AuthenticatesUsers;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 use Laramin\Utility\Onumoti;
 
+/**
+ * Admin sign-in (Pages/Admin/Auth/Login.tsx). Laravel's AuthenticatesUsers
+ * does the work: the username field, five tries a minute per username and
+ * IP, and the "these credentials do not match" error on the username field.
+ */
 class LoginController extends Controller
 {
-    /*
-    |--------------------------------------------------------------------------
-    | Login Controller
-    |--------------------------------------------------------------------------
-    |
-    | This controller handles authenticating users for the application and
-    | redirecting them to your home screen. The controller uses a trait
-    | to conveniently provide its functionality to your applications.
-    |
-    */
-
     use AuthenticatesUsers;
 
-    /**
-     * Where to redirect users after login / registration.
-     *
-     * @var string
-     */
-    public $redirectTo = 'admin';
+    /** Where to go after signing in, unless a page asked for sign-in first. */
+    public $redirectTo = 'admin/dashboard';
 
-    /**
-     * Show the application's login form.
-     *
-     * @return \Illuminate\Http\Response
-     */
     public function showLoginForm()
     {
-        $pageTitle = "Admin Login";
-        return view('admin.auth.login', compact('pageTitle'));
+        return Inertia::render('Admin/Auth/Login', [
+            'logo'    => siteLogo(),
+            'captcha' => CaptchaPresenter::props(),
+            'urls'    => ['login' => route('admin.login'), 'forgot' => route('admin.password.reset')],
+        ])->withViewData(['pageTitle' => 'Admin Login']);
     }
 
-    /**
-     * Get the guard to be used during authentication.
-     *
-     * @return \Illuminate\Contracts\Auth\StatefulGuard
-     */
     protected function guard()
     {
         return auth()->guard('admin');
@@ -56,58 +43,69 @@ class LoginController extends Controller
 
     public function login(Request $request)
     {
-
         $this->validateLogin($request);
 
-        $request->session()->regenerateToken();
-
-        if(!verifyCaptcha()){
-            $notify[] = ['error','Invalid captcha provided'];
-            return back()->withNotify($notify);
+        if (!verifyCaptcha()) {
+            throw ValidationException::withMessages(['captcha' => 'Invalid captcha provided']);
         }
- 
 
-        Onumoti::getData();
-
-        // If the class is using the ThrottlesLogins trait, we can automatically throttle
-        // the login attempts for this application. We'll key this by the username and
-        // the IP address of the client making these requests into this application.
-        if (method_exists($this, 'hasTooManyLoginAttempts') &&
-            $this->hasTooManyLoginAttempts($request)) {
+        // Checked before the licence call below, so a stream of guesses is
+        // turned away here instead of each one calling out to the vendor.
+        if ($this->hasTooManyLoginAttempts($request)) {
             $this->fireLockoutEvent($request);
             return $this->sendLockoutResponse($request);
         }
+
+        $this->checkLicence();
 
         if ($this->attemptLogin($request)) {
             return $this->sendLoginResponse($request);
         }
 
-        // If the login attempt was unsuccessful we will increment the number of attempts
-        // to login and redirect the user back to the login form. Of course, when this
-        // user surpasses their maximum number of attempts they will get locked out.
         $this->incrementLoginAttempts($request);
 
         return $this->sendFailedLoginResponse($request);
     }
 
+    /**
+     * The script vendor's licence check (laramin/utility), kept as it was:
+     * it posts the purchase code and site address to the vendor, can switch
+     * on maintenance mode from their answer, and stops the sign-in when they
+     * do not answer. Whether to keep it is the owner's call (notes Step 118).
+     */
+    protected function checkLicence(): void
+    {
+        try {
+            Onumoti::getData();
+        } catch (ValidationException) {
+            // It used to say only "Something went wrong".
+            throw ValidationException::withMessages(['username' => 'The licence server could not be reached, so sign-in is paused. Please try again in a minute.']);
+        }
+    }
 
-    /** A deactivated account cannot sign in (the switch was never checked). */
+    /**
+     * A deactivated account cannot sign in. Otherwise the next page opens
+     * with a full page load: the session (and its CSRF token) is new, and it
+     * may be a page that is not React.
+     */
     protected function authenticated(Request $request, $admin)
     {
         if ($admin->is_active === false) {
             $this->guard()->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
-            $notify[] = ['error', 'This admin account has been deactivated.'];
-            return to_route('admin.login')->withNotify($notify)->withInput($request->only('username'));
+            throw ValidationException::withMessages(['username' => 'This admin account has been deactivated.']);
         }
+
+        return Inertia::location(redirect()->intended($this->redirectPath())->getTargetUrl());
     }
 
     public function logout(Request $request)
-    {   
-        
+    {
         $this->guard()->logout();
         $request->session()->invalidate();
-        return $this->loggedOut($request) ?: redirect($this->redirectTo);
+        $request->session()->regenerateToken();
+
+        return to_route('admin.login');
     }
 }

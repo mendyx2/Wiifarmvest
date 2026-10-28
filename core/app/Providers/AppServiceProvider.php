@@ -5,8 +5,6 @@ namespace App\Providers;
 use URL;
 use App\Lib\Searchable;
 use App\Models\Frontend;
-use App\Constants\Status;
-use App\Models\AdminNotification;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -57,20 +55,6 @@ class AppServiceProvider extends ServiceProvider
         $viewShare['emptyMessage'] = 'Data not found';
         view()->share($viewShare);
 
-
-        // Same counters as the React admin sidebar (App\Support\AdminLayout).
-        view()->composer('admin.partials.sidenav', function ($view) {
-            $view->with(\App\Support\AdminLayout::counters() + [
-                'updateAvailable' => version_compare(gs('available_version'), systemDetails()['version'], '>') ? 'v' . gs('available_version') : false,
-            ]);
-        });
-
-        view()->composer('admin.partials.topnav', function ($view) {
-            $view->with([
-                'adminNotifications' => AdminNotification::where('is_read', Status::NO)->with('user')->orderBy('id', 'desc')->take(10)->get(),
-                'adminNotificationCount' => AdminNotification::where('is_read', Status::NO)->count(),
-            ]);
-        });
 
         view()->composer('partials.seo', function ($view) {
             $seo = Frontend::where('data_keys', 'seo.data')->first();

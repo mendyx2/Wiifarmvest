@@ -15,19 +15,20 @@ use Illuminate\Http\Request;
 
 /**
  * The admin panel's sidebar and top bar, drawn by
- * resources/js/Layouts/AdminLayout.tsx. Built from the same
- * views/admin/partials/sidenav.json as the Blade sidebar
- * (partials/sidenav.blade.php), with the same rules:
+ * resources/js/Layouts/AdminLayout.tsx. Built from
+ * views/admin/partials/sidenav.json with the rules the Blade sidebar had
+ * (removed in Step 118):
  *
  *  - a link is shown only when AdminAccessMiddleware would let this admin
  *    open it, and an empty dropdown is dropped;
  *  - a section header moves to the next visible entry when its own entry
  *    is hidden;
  *  - "roles" on a submenu entry limits it to those roles;
- *  - counters are the same queries the Blade view composer runs.
+ *  - counters show how many items wait (pending deposits, open tickets...).
  *
- * Most admin pages are still Blade. Links to them do a full page load;
- * only the routes in REACT_ROUTES are opened as Inertia visits.
+ * Every admin page is React now. The routes in REACT_ROUTES open as
+ * Inertia visits; the GET routes left out answer with a download, JSON or
+ * a redirect, so links to them do a full page load.
  */
 class AdminLayout
 {
@@ -412,7 +413,7 @@ class AdminLayout
         return false;
     }
 
-    /** Menu counters; the Blade sidebar's view composer (AppServiceProvider) uses them too. */
+    /** Menu counters: how many items wait in each queue. */
     public static function counters(): array
     {
         return [

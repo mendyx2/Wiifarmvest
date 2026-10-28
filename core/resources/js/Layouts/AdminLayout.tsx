@@ -5,9 +5,9 @@ import type { AdminChrome, AdminNavLink } from '@/types';
 import './AdminLayout.css';
 
 /**
- * The admin panel's sidebar and top bar: the same markup and classes as
- * admin/partials/sidenav.blade.php and topnav.blade.php (styles in
- * assets/admin/css/app.css), without jQuery or Bootstrap's JavaScript.
+ * The admin panel's sidebar and top bar: the markup and classes of the old
+ * Blade sidenav and topnav partials (styles in assets/admin/css/app.css),
+ * without jQuery or Bootstrap's JavaScript.
  * Data: the shared "adminLayout" prop (App\Support\AdminLayout).
  *
  * app.tsx puts every page under Pages/Admin/ in this layout. It stays
