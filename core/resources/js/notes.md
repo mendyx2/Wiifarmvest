@@ -5961,7 +5961,7 @@ behind the `cron.secret` middleware with the other cron URLs.
     - the swept month filter as a GET; credits columns.
   - **Key-in:** 2 stats, 2 tabs, no month filter.
   - No sideways scroll at phone width on all five pages.
-- **Regression:** (results recorded in the next commit.)
+- **Regression:** 41 browser suites, 1341 checks, all pass. One older check (5c4, the ad viewer's "next ad") failed once and passed on re-runs: it checked the next ad before the page had drawn it. The test now waits for it.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 
