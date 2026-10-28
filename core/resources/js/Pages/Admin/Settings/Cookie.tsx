@@ -34,6 +34,7 @@ export default function Cookie({ form: initial, url }: Props) {
                             <FieldError message={form.errors.short_desc} />
                         </div>
                         <div className="form-group">
+                            <label htmlFor="ck-description">{t('Description')}</label>
                             <RichTextEditor id="ck-description" label={t('Description')} value={form.data.description} onChange={(html) => form.setData('description', html)} />
                             <FieldError message={form.errors.description} />
                         </div>

@@ -101,6 +101,7 @@ export default function TemplateEdit({ channel, template, shortcodes, urls }: Pr
                                 <div className="col-md-6">{text('email_sent_from_address', t('Email Sent From - Email'), t("Leave empty to use the global template's email."), false, 'email')}</div>
                             </div>
                             <div className="form-group">
+                                <label htmlFor="te-email_body">{t('Message')}</label>
                                 <RichTextEditor id="te-email_body" label={t('Message')} value={String(form.data.email_body)} onChange={(html) => form.setData('email_body', html)} />
                                 <FieldError message={form.errors.email_body} />
                             </div>

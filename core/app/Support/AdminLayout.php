@@ -166,6 +166,16 @@ class AdminLayout
         'admin.setting.notification.push',
         'admin.language.manage',
         'admin.language.key',
+        // 7f-3: gateways, withdraw methods, KYC form
+        'admin.gateway.automatic.index',
+        'admin.gateway.automatic.edit',
+        'admin.gateway.manual.index',
+        'admin.gateway.manual.create',
+        'admin.gateway.manual.edit',
+        'admin.withdraw.method.index',
+        'admin.withdraw.method.create',
+        'admin.withdraw.method.edit',
+        'admin.kyc.setting',
     ];
 
     public static function for(Request $request): ?array

@@ -23,10 +23,12 @@ export default function Notice({ form: initial, url }: Props) {
                 <form onSubmit={submit}>
                     <div className="card-body">
                         <div className="form-group">
+                            <label htmlFor="notice-all">{t('All user notice')}</label>
                             <RichTextEditor id="notice-all" label={t('All user notice')} value={form.data.notice} onChange={(html) => form.setData('notice', html)} />
                             <FieldError message={form.errors.notice} />
                         </div>
                         <div className="form-group">
+                            <label htmlFor="notice-free">{t('Free user notice')}</label>
                             <RichTextEditor id="notice-free" label={t('Free user notice')} value={form.data.free_user_notice} onChange={(html) => form.setData('free_user_notice', html)} />
                             <FieldError message={form.errors.free_user_notice} />
                         </div>

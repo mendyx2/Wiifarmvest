@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108). Next: 7f-3 gateways and withdraw methods, 7f-4 frontend and system, 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109). Next: 7f-4 frontend and system, 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5133,6 +5133,116 @@ gateways.
     - import from System.
   - No sideways scroll at phone width on all ten pages.
 - **Regression:** 34 browser suites, 1120 checks, all pass.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+### Step 109: Payment gateways, withdrawal methods and the KYC form in React (7f-3)
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Gateways/Automatic.tsx` | `admin.gateway.automatic.index` | `gateways/automatic/list.blade.php` |
+| `Gateways/AutomaticEdit.tsx` | `admin.gateway.automatic.edit` | `gateways/automatic/edit.blade.php` |
+| `Gateways/Manual.tsx` | `admin.gateway.manual.index` | `gateways/manual/list.blade.php` |
+| `Pages/Admin/Methods/Form.tsx` | `admin.gateway.manual.{create,edit}`, `admin.withdraw.method.{create,edit}` | `gateways/manual/{create,edit}`, `withdraw/{create,edit}` |
+| `Pages/Admin/Withdraw/Methods.tsx` | `admin.withdraw.method.index` | `withdraw/index.blade.php` |
+| `Pages/Admin/Kyc/Setting.tsx` | `admin.kyc.setting` | `kyc/setting.blade.php` |
+
+**Shared pieces:**
+
+- `Components/Admin/FormBuilder.tsx`: the form members fill in (manual
+  deposit, withdrawal, KYC).
+  - It replaces `<x-generated-form>` and `<x-form-generator-modal>`
+    (jQuery).
+  - Fields can be added, edited, removed and moved up or down.
+  - File types are ticked from the supported list instead of typed.
+  - The server still receives the same `form_generator[...]` arrays.
+- `FormProcessor::builderFields()` turns a saved form into the builder's
+  rows.
+- `Components/Admin/GatewayTabs.tsx` and `MethodTable.tsx` (the
+  manual-gateway / withdrawal-method table) are shared too.
+
+**Duplicates removed:**
+
+- Add / edit manual gateway and add / edit withdrawal method were four
+  copies of one form. They are now `Methods/Form.tsx` with a `kind`.
+- `App\View\Components\FormGenerator` rendered a view that did not
+  exist and was not used. Deleted, along with the two Blade builder
+  components.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **Gateway API secrets were sent to the browser** (secret key, private key, API key ... in the edit form). | Never sent: the field is empty with "A value is saved", and a blank field keeps the saved value. This works for global keys and for per-currency keys. `public_*` keys are still shown. |
+| **A gateway's alias came from a hidden form field.** The alias names the code that processes its payments (`Gateway\<Alias>\ProcessController`), so a changed field could break the gateway. | Never taken from the request. |
+| The same currency could be added twice; a currency missing from the request deleted every currency. | Refused ("NGN was added twice"); the currency list is only replaced when it is sent. The save is one transaction. |
+| Removing a gateway currency with an unknown id crashed; the status routes accepted any gateway id. | 404; each list only changes its own gateways. |
+| **Form builder:** an unknown file type threw a plain exception (server error); a file field could have no types; a select/radio/checkbox could have no options; two fields with the same label silently overwrote each other. | Each is refused with a message on the field. Extensions and options are trimmed and lower-cased; `xls` added. |
+| A manual gateway's alias was its name with spaces turned into `_`: "Bank/Transfer" went into URLs as is, and two gateways with the same name shared an alias. | `Str::slug`, and a second gateway with the same name is refused. |
+| A manual gateway that had lost its currency row was saved without one (it could not be used). | The row is re-created. |
+| New withdrawal methods were created with whatever the `status` column defaulted to. | On, like a new manual gateway. |
+| Image upload failures used the toast type `errors`, which does not exist (nothing was shown). | `error`, and the exception is reported. |
+| A gateway "extra" URL pointing to a removed route crashed the edit page. | Shown as "(route … not found)". |
+| **The builder's field dialog submitted the whole page** (found while testing: a form inside the page's form). | The dialog is not a `<form>`; Enter in it saves the field. |
+
+**Also fixed in 7f-1 and 7f-2 pages:** the rich-text boxes (maintenance,
+cookie, notices, email template, method instruction) had no visible
+label; `RichTextEditor` only uses its `label` as `aria-label`. Each now
+has a `<label>` above it.
+
+**Deleted:**
+
+- `admin/gateways/*` (6 views), `admin/withdraw/{index,create,edit}`;
+- `admin/kyc/setting`;
+- `components/{generated-form,form-generator-modal}.blade.php`;
+- `app/View/Components/FormGenerator.php`.
+
+**Verification:**
+
+- **Server checks** (`p7f3_check.php`):
+  - **Automatic gateways:**
+    - list counts;
+    - no secret anywhere in the edit page; a removed route is shown
+      as text;
+    - a blank secret keeps the saved one, and a tampered alias is
+      ignored;
+    - min > max, NGN twice and an unsupported EUR are refused;
+    - USD is added and the secret rotated;
+    - a save without the currency list keeps the currencies;
+    - a blank per-currency secret is kept (Flutterwave);
+    - remove; remove a missing currency (404);
+    - disable twice ("already").
+  - **Manual gateways:**
+    - a bad extension, a file field without types, a select without
+      options and duplicate labels are refused;
+    - create (code 1000, alias `bank_transfer_gtb`, form saved with
+      trimmed options and types);
+    - the same name again is refused;
+    - list and edit props;
+    - renaming re-creates a lost currency row;
+    - the automatic status route refuses a manual gateway.
+  - **Withdrawal methods:** a minimum below the fixed charge is refused;
+    create (enabled); list; edit; remove all fields; disable.
+  - **KYC:** a file field without types is refused; save twice (one
+    form row).
+- **Browser checks** (`e2e/phase7f3.mjs`, 32 checks):
+  - **Automatic gateways:**
+    - search; disable (POST);
+    - the masked secret and the copy URL;
+    - add a currency, submit (multipart, blank secret, no internal
+      fields);
+    - remove a saved currency;
+    - per-currency secret not required when saved.
+  - **Manual gateway:**
+    - move up; edit file types; the duplicate label refused;
+    - Enter adds a field without submitting the page;
+    - the multipart POST in the new order.
+  - **Withdrawal method:** edit and POST.
+  - **KYC:** add a file field; the unsaved warning; the JSON POST.
+  - No sideways scroll at phone width on all eight pages.
+- **Regression:** 35 browser suites, 1152 checks, all pass.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 

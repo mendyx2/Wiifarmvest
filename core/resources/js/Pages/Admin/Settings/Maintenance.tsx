@@ -41,6 +41,7 @@ export default function Maintenance({ form: initial, image, size, url }: Props) 
                                 <FieldError message={form.errors.image} />
                             </div>
                             <div className="col-xl-8 form-group">
+                                <label htmlFor="mm-description">{t('Description')}</label>
                                 <RichTextEditor id="mm-description" label={t('Description')} value={form.data.description} onChange={(html) => form.setData('description', html)} />
                                 <FieldError message={form.errors.description} />
                             </div>
