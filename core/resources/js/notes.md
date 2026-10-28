@@ -5482,7 +5482,7 @@ order.
   - **Maintenance:** `<script>` and `onerror` are removed.
   - **Hub:** the three cards are React; a staff admin with only "manage
     account" is refused on every route.
-- **Browser checks** (`e2e/phase7f4b.mjs`, 47 checks):
+- **Browser checks** (`e2e/phase7f4b.mjs`, 49 checks):
   - **Index:** search, the empty result, and cards that open as
     Inertia visits.
   - **Content form:** the multipart POST with fields at the top level
@@ -5509,7 +5509,7 @@ order.
     - rename a custom page;
     - an empty page saves `[]`.
   - No sideways scroll at phone width on all 11 pages.
-- **Regression:** (results recorded in the next commit.) The 7f-1 hub test used SEO as its
+- **Regression:** 37 browser suites, 1226 checks, all pass. The 7f-1 hub test used SEO as its
   example of a Blade card. Every hub card is React now, so it checks
   that SEO opens as an Inertia visit.
   `route:cache` and `view:cache` succeed; the route-name scan shows only
