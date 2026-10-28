@@ -266,7 +266,7 @@ class UserController extends Controller
         $deposits  = auth()->user()->deposits()->searchable(['trx'])->with(['gateway'])->orderBy('id', 'desc')->paginate(getPaginate())->withQueryString();
 
         // Migrated to React + Inertia (resources/js/Pages/User/DepositHistory.tsx).
-        // Legacy view: Template::user.deposit_history
+        // Was the Blade view Template::user.deposit_history (deleted)
         return Inertia::render('User/DepositHistory', [
             'deposits' => $deposits->through(fn ($deposit) => [
                 'id'            => $deposit->id,
@@ -299,7 +299,7 @@ class UserController extends Controller
         $pageTitle = '2FA Security';
 
         // Migrated to React + Inertia (resources/js/Pages/User/TwoFactor.tsx).
-        // Legacy view: Template::user.twofactor
+        // Was the Blade view Template::user.twofactor (deleted)
         return Inertia::render('User/TwoFactor', [
             'enabled'    => (bool) $user->ts,
             'secret'     => $user->ts ? null : $secret,
@@ -364,7 +364,7 @@ class UserController extends Controller
         $transactions = Transaction::where('user_id', auth()->id())->searchable(['trx'])->filter(['trx_type', 'remark'])->orderBy('id', 'desc')->paginate(getPaginate())->withQueryString();
 
         // Migrated to React + Inertia (resources/js/Pages/User/Transactions.tsx).
-        // Legacy view: Template::user.transactions
+        // Was the Blade view Template::user.transactions (deleted)
         return Inertia::render('User/Transactions', [
             'transactions' => $transactions->through(fn ($trx) => [
                 'id'          => $trx->id,
@@ -406,7 +406,7 @@ class UserController extends Controller
         $guarantor        = $guarantorRequest?->guarantor;
 
         // Migrated to React + Inertia (resources/js/Pages/User/KycForm.tsx).
-        // Legacy view: Template::user.kyc.form
+        // Was the Blade view Template::user.kyc.form (deleted)
         return Inertia::render('User/KycForm', [
             'rejectionReason' => $user->kyc_rejection_reason,
             'fields'          => FormPresenter::fields($form?->id),
@@ -457,7 +457,7 @@ class UserController extends Controller
         $guarantor = $guarantorRequest?->guarantor;
 
         // Migrated to React + Inertia (resources/js/Pages/User/KycInfo.tsx).
-        // Legacy view: Template::user.kyc.info
+        // Was the Blade view Template::user.kyc.info (deleted)
         return Inertia::render('User/KycInfo', [
             'state'           => $state,
             'rejectionReason' => $user->kyc_rejection_reason,
@@ -586,7 +586,7 @@ class UserController extends Controller
                         ->paginate(getPaginate());
 
         // Migrated to React + Inertia (resources/js/Pages/User/GuarantorRequests.tsx).
-        // Legacy view: Template::user.kyc.guarantor_requests
+        // Was the Blade view Template::user.kyc.guarantor_requests (deleted)
         return Inertia::render('User/GuarantorRequests', [
             // Only the requester's name and username: never their KYC details.
             'requests' => $incoming->through(fn ($req) => [
@@ -784,7 +784,7 @@ class UserController extends Controller
         NotificationLog::where('user_id', $user->id)->where('user_read', false)->update(['user_read' => true]);
 
         // Migrated to React + Inertia (resources/js/Pages/User/Notifications.tsx).
-        // Legacy view: Template::user.notifications
+        // Was the Blade view Template::user.notifications (deleted)
         return Inertia::render('User/Notifications', compact('notifications'))->withViewData(compact('pageTitle'));
     }
 

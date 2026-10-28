@@ -18,42 +18,12 @@ trait SupportTicketManager
     protected $allowedExtension = ['jpg', 'png', 'jpeg', 'pdf', 'doc', 'docx'];
     protected $userType;
     protected $user = null;
-    protected $layout = null;
     protected $column;
     protected $apiRequest = false;
 
-    public function supportTicket()
-    {
-        $user = $this->user;
-        if (!$user) {
-            abort(404);
-        }
-        $pageTitle = "Support Tickets";
-        $supports = SupportTicket::where($this->column, $user->id)->orderBy('id', 'desc')->paginate(getPaginate());
-        if($this->apiRequest){
-            $notify[] = 'Support ticket data';
-            return response()->json([
-                'remark'=>'tickets',
-                'status'=>'success',
-                'message'=>['success'=>$notify],
-                'data'=>[
-                    'tickets'=>$supports
-                ]
-            ]);
-        }
-        return view("Template::$this->userType" . '.support.index', compact('supports', 'pageTitle')); 
-    }
-
-    public function openSupportTicket()
-    {
-        $user = $this->user;
-
-        if (!$user) {
-            return to_route('home');
-        }
-        $pageTitle = "Open Ticket";
-        return view("Template::$this->userType" . '.support.create', compact('pageTitle', 'user'));
-    }
+    // The ticket list, new-ticket and ticket pages are each controller's own
+    // (TicketController for members, Admin\SupportTicketController); the
+    // Blade versions that were here are gone (notes Step 119).
 
     public function storeSupportTicket(Request $request)
     {
@@ -139,75 +109,6 @@ trait SupportTicketManager
 
         return to_route($this->redirectLink, $ticket->ticket)->withNotify($notify);
     }
-
-    public function viewTicket($ticket)
-    {
-        $user      = $this->user;
-        $column    = $this->column;
-        $pageTitle = "View Ticket";
-        $userId    = 0;
-        $layout    = $this->layout;
-
-        $myTicket = SupportTicket::where('ticket', $ticket)->orderBy('id', 'desc')->first();
-
-        if (!$myTicket) {
-            if ($this->apiRequest) {
-                $notify[] = 'Ticket not found';
-                return response()->json([
-                    'remark'=>'ticket_not_found',
-                    'status'=>'error',
-                    'message'=>['error'=>$notify],
-                ]);
-            }
-            abort(404);
-        }
-
-        if ($myTicket->$column > 0) {
-            if ($user) {
-                $userId = $user->id;
-            } else {
-                if ($this->apiRequest) {
-                    $notify[] = 'Unauthorized user';
-                    return response()->json([
-                        'remark'=>'unauthorized_user',
-                        'status'=>'error',
-                        'message'=>['error'=>$notify],
-                    ]);
-                }
-                return to_route($this->userType . '.login');
-            }
-        }
-
-        $myTicket = SupportTicket::where('ticket', $ticket)->where($this->column, $userId)->orderBy('id', 'desc')->first();
-        if (!$myTicket) {
-            if ($this->apiRequest) {
-                $notify[] = 'Ticket not found';
-                return response()->json([
-                    'remark'=>'ticket_not_found',
-                    'status'=>'error',
-                    'message'=>['error'=>$notify],
-                ]);
-            }
-            abort(404);
-        }
-        $messages = SupportMessage::where('support_ticket_id', $myTicket->id)->with('ticket', 'admin', 'attachments')->orderBy('id', 'desc')->get();
-
-        if ($this->apiRequest) {
-            $notify[] = 'Support ticket view';
-            return response()->json([
-                'remark'=>'ticket_view',
-                'status'=>'success',
-                'message'=>['success'=>$notify],
-                'data'=>[
-                    'my_ticket'=>$myTicket,
-                    'messages'=>$messages,
-                ]
-            ]);
-        }
-
-        return view("Template::$this->userType" . '.support.view', compact('myTicket', 'messages', 'pageTitle', 'user', 'layout'));
-    }
-
 
     public function replyTicket(Request $request, $id)
     {

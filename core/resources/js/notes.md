@@ -82,7 +82,7 @@ gets replaced, one page at a time.
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
 | **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115) · 7f-6c awards, projects ✅ (Step 116) · 7f-6d dashboard ✅ (Step 117) · 7g sign-in and password reset; old admin layout and assets removed ✅ (Step 118) | ✅ Done |
-| **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
+| **8. Clean-up** | Dead Blade views, components and static files deleted; private upload folders no longer served as plain files; Ziggy decided against (Step 119) | ✅ Done |
 
 Order within each phase: low-risk, read-only pages first; pages that move
 money last, each with manual QA on staging.
@@ -6310,6 +6310,145 @@ The one HTML view left is the e-mail preview
   references.
 
 **Phase 7 is complete.** The whole admin panel is React.
+
+## Part 3h: Phase 8 change log (clean-up)
+
+### Step 119: Clean-up: dead views, unused files, private uploads (8)
+
+**How "dead" was decided.**
+
+- A script followed every Blade view from the PHP that can render it:
+  `view()`, `Template::`, `@extends`, `@include`, `<x-…>` components and
+  PDF `loadView()`.
+- It ignored comments, so a `// Legacy view:` note did not count as a use.
+- Each candidate was then checked by hand. Two kinds of views are
+  picked by name at run time, and the script cannot follow them; both
+  were kept:
+  - the payment-gateway confirmation pages (`'user.payment.' . $alias`);
+  - the page sections the page builder places (`'sections.' . $sec`).
+
+**Deleted: 30 Blade views that nothing renders any more.**
+
+- **Member pages that became React in earlier phases (28):**
+  - payment: `payment/deposit`, `payment/manual`;
+  - network and reports: `binaryList`, `bvLog`, `pvLog`, `myRef`,
+    `my_project`, `deposit_history`, `transactions`, `repurchase_award`,
+    `acb`, `awards`, `notifications`;
+  - account: `password`, `profile_setting`, `twofactor`;
+  - KYC: `kyc/form`, `kyc/info`, `kyc/guarantor_requests`;
+  - support: `support/index`, `support/create`, `support/view`;
+  - withdrawals: `withdraw/methods`, `withdraw/preview`, `withdraw/log`;
+  - partials: `partials/breadcrumb`, `partials/registration_disabled`,
+    `layouts/breadcrumb`.
+- **Blade components (2):** `viser-form` and `confirmation-modal`, with
+  their PHP classes (`App\View\Components\ViserForm`,
+  `ConfirmationModal`).
+- **Dead code in `SupportTicketManager`:** `supportTicket()`,
+  `openSupportTicket()` and `viewTicket()` rendered the deleted support
+  views.
+  - The member `TicketController` has its own React versions of all
+    three.
+  - The admin ticket routes never used them.
+  - The unused `$layout` property went too.
+- **26 comments** that said `// Legacy view: Template::…` now say
+  `// Was the Blade view … (deleted)`.
+
+**Deleted: 11 static files no page loads.**
+
+- iziToast (CSS and JS), nicEdit (and its icon sprite), `form_generator.js`,
+  `form_actions.js`;
+- `tree.css`, `installer.css`, `verification-code.css`;
+- `flaticon.scss` (the theme loads the compiled `flaticon.css`).
+- Uploaded content (`assets/images/…`, theme pictures) was not touched.
+  Pictures may be used by text stored in the database, which a code
+  scan cannot see.
+
+**What is still Blade (88 views), and why:**
+
+| Views | Why they stay |
+|---|---|
+| Public site: `home`, `pages`, `contact`, `policy`, `maintenance`, the frontend layout, header, footer and the 11 page sections | Not part of the React plan. The page builder places the sections by name. |
+| `faq` | The FAQ route is switched off (it redirects to login, with the old code commented out). The view is kept so it can be switched back on. |
+| Payment-gateway pages (`user/payment/*`, 11) and the member layout they use (`layouts/master`, `partials/dashboard*`) | Each gateway's script (Stripe, Paystack, Razorpay…) is a full-page hand-off to the provider. |
+| `user/user_data` | The registration payment page (Paystack), reached from `RegistrationStep`. |
+| PDFs: `user/pdf`, `user/pdf1`, `shop/pdf/invoice`; `shop/ad_preview`; `emails/affiliate_invoice` | Files and e-mails, not pages. |
+| `inertia/user`, `inertia/admin` | The two root views for React. |
+| `admin/reports/email_details` | An e-mail shown inside a sandboxed frame. |
+| `errors/*`, `email/*`, `vendor/mail/*`, `vendor/pagination/*`, `partials/{seo,notify,captcha,push_script}` | Laravel's error and mail views, and parts the public pages use. |
+
+**Security fix: private uploads were public files.**
+
+- **The problem:** these folders sit inside `assets/`, which
+  `server.php` serves as plain files to anyone who has the address:
+  - members' KYC photos and ID cards (`assets/verify/`);
+  - ticket attachments (`assets/support/`);
+  - deposit and withdrawal proofs (`assets/images/verify/`).
+- **Why it is real:** file names are a timestamp plus `uniqid()`, so
+  they can be guessed. The app never needs those plain addresses: every
+  page opens these files through encrypted, signed-in routes
+  (`admin.view.attachment`, `user.download.attachment`, the ticket
+  download).
+- **Now:** `server.php` lists them as private folders. A request for
+  them goes to Laravel, which does not serve them.
+- **Checked on a running server:**
+  - an ID card, a KYC photo, a ticket attachment and a payment proof
+    are all refused, including `../`, `//` and upper-case tricks;
+  - the admin CSS and Bootstrap still load.
+
+**For the owner: member documents are stored in git.**
+
+- **What is in the repository:**
+  - 17 KYC photos and ID cards (`assets/verify/`);
+  - 2 ticket attachments (`assets/support/`).
+- **Why it matters:** anyone with access to the repository, or to a copy
+  of it, has these personal documents. They stay in the git history even
+  after they are deleted.
+- **Not done here, on purpose:**
+  - The site deploys from this repository (nixpacks). Deleting the files
+    in a commit would delete them from the live server on the next
+    deploy too.
+  - Removing them from the history needs a force-push that everyone who
+    has the repository must follow.
+- **Suggested order:**
+  1. Keep uploads on a persistent volume or object storage, outside the
+     repository.
+  2. Add `assets/verify/`, `assets/support/` and `assets/images/verify/`
+     to `.gitignore`, then stop tracking the files.
+  3. Purge them from the history (`git filter-repo`) and force-push.
+  4. Decide whether the affected members must be told.
+
+**Decision: no Ziggy.**
+
+- **The plan said:** add Ziggy for typed `route()` in TypeScript.
+- **Not added, because:**
+  - every page already gets the URLs it uses from its controller
+    (`urls: {…}`), built with Laravel's `route()`. The browser only
+    learns the addresses that page needs;
+  - Ziggy sends the whole route list (admin, stockist, cron and
+    gateway-callback URLs) to every visitor, unless a filter is kept up
+    to date by hand;
+  - it would add a dependency and a second way of building URLs.
+- **Same safety, already in place:**
+  - every page's props are typed;
+  - `route_names.php` checks that every route name in PHP and Blade
+    exists (only the 21 known `ipn.` callback names are missing).
+
+**Verification:**
+
+- **Builds:** `view:cache` compiles every remaining view (a missing
+  `@include` or component would fail here). `route:cache` succeeds.
+  The route-name scan is unchanged (21 known `ipn.` references).
+- **Server checks:**
+  - **Admin tickets** (`p7f5b_check.php`): lists, a ticket, replies,
+    attachment limits, download and close all behave as before.
+  - **Member tickets** (`p8_check.php`): the list, new-ticket and ticket
+    pages render as React. An unknown ticket gives 404.
+- **Router:** checked on a running `php -S` server (see above).
+- **Browser suites:** no TypeScript or CSS changed in this step, so the
+  build is the one Step 118's regression ran on (44 suites, 1404 checks,
+  all pass).
+
+**Phase 8 is complete.**
 
 ## Part 4: Working on the front end
 

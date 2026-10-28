@@ -17,12 +17,16 @@
 $uri = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '');
 
 $publicDirs  = ['assets', 'build'];
+// Inside assets/: members' uploads that only signed-in pages may open, through
+// Laravel's encrypted download routes (KYC photos and ID cards, ticket
+// attachments, deposit and withdrawal proofs). Never sent as plain files.
+$privateDirs = ['assets/verify/', 'assets/support/', 'assets/images/verify/'];
 $publicFiles = ['favicon.ico', 'robots.txt', 'sitemap.xml'];
 // The only PHP the built-in server may run directly: the theme colour
 // stylesheet (it accepts nothing but two hex colours)
 $publicScripts = '#^assets/templates/[A-Za-z0-9_-]+/css/color\.php$#';
 
-$serveStatic = (function () use ($uri, $publicDirs, $publicFiles, $publicScripts): bool {
+$serveStatic = (function () use ($uri, $publicDirs, $privateDirs, $publicFiles, $publicScripts): bool {
     if ($uri === '/' || str_contains($uri, "\0")) {
         return false;
     }
@@ -40,6 +44,13 @@ $serveStatic = (function () use ($uri, $publicDirs, $publicFiles, $publicScripts
     // Never a dotfile or a file in a dot-folder
     foreach ($parts as $part) {
         if ($part === '' || $part[0] === '.') {
+            return false;
+        }
+    }
+
+    $path = str_replace(DIRECTORY_SEPARATOR, '/', $relative);
+    foreach ($privateDirs as $dir) {
+        if (str_starts_with($path, $dir)) {
             return false;
         }
     }

@@ -37,7 +37,7 @@ class TicketController extends Controller
         $pageTitle = 'Support Tickets';
         $supports  = SupportTicket::where('user_id', $this->user->id)->orderBy('id', 'desc')->paginate(getPaginate());
 
-        // Legacy view: Template::user.support.index
+        // Was the Blade view Template::user.support.index (deleted)
         return Inertia::render('User/Tickets', [
             'tickets' => $supports->through(fn ($ticket) => [
                 'id'        => $ticket->id,
@@ -56,7 +56,7 @@ class TicketController extends Controller
     {
         $pageTitle = 'Open Ticket';
 
-        // Legacy view: Template::user.support.create
+        // Was the Blade view Template::user.support.create (deleted)
         return Inertia::render('User/TicketCreate', [
             'maxUpload' => $this->attachmentLimit(),
             'storeUrl'  => route('ticket.store'),
@@ -74,7 +74,7 @@ class TicketController extends Controller
         $myTicket = SupportTicket::where('ticket', $ticket)->where('user_id', $this->user->id)->orderBy('id', 'desc')->firstOrFail();
         $messages = SupportMessage::where('support_ticket_id', $myTicket->id)->with('admin', 'attachments')->orderBy('id', 'desc')->get();
 
-        // Legacy view: Template::user.support.view
+        // Was the Blade view Template::user.support.view (deleted)
         return Inertia::render('User/TicketView', [
             'ticket' => [
                 'id'      => $myTicket->id,

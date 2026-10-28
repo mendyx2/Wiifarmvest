@@ -82,7 +82,7 @@ class PlanController extends Controller
             ->values();
 
         // Migrated to React + Inertia (resources/js/Pages/User/InvestmentPortfolio.tsx).
-        // Legacy view: Template::user.investment-portfolio
+        // Was the Blade view Template::user.investment-portfolio (deleted)
         return Inertia::render('User/InvestmentPortfolio', [
             'totalUnits'      => (int) $totalUnits,
             'investmentValue' => showAmount($totalInvestmentValue),
@@ -160,7 +160,7 @@ class PlanController extends Controller
         $recent   = $dividends->getCollection()->take(5);
 
         // Migrated to React + Inertia (resources/js/Pages/User/InvestmentDetails.tsx).
-        // Legacy view: Template::user.investment-details
+        // Was the Blade view Template::user.investment-details (deleted)
         return Inertia::render('User/InvestmentDetails', [
             'investment' => [
                 'id'          => $investment->id,
@@ -201,7 +201,7 @@ class PlanController extends Controller
         $pct = fn ($have, $need) => $need > 0 ? min(100, round($have / $need * 100)) : 100;
 
         // Migrated to React + Inertia (resources/js/Pages/User/Awards.tsx).
-        // Legacy view: Template::user.awards
+        // Was the Blade view Template::user.awards (deleted)
         return Inertia::render('User/Awards', [
             'stats' => [
                 'total'  => $allAwards->count(),
@@ -247,7 +247,7 @@ class PlanController extends Controller
         $walletBalance  = (float) ($user->repurchase_award ?? 0);
 
         // Migrated to React + Inertia (resources/js/Pages/User/RepurchaseAward.tsx).
-        // Legacy view: Template::user.repurchase_award
+        // Was the Blade view Template::user.repurchase_award (deleted)
         return Inertia::render('User/RepurchaseAward', [
             'totalPv'       => number_format($totalPv, 2),
             'walletBalance' => '₦' . number_format($walletBalance, 2),
@@ -290,7 +290,7 @@ class PlanController extends Controller
         $first = $logs->firstItem() ?? 1;
 
         // Migrated to React + Inertia (resources/js/Pages/User/PvLog.tsx).
-        // Legacy view: Template::user.pvLog
+        // Was the Blade view Template::user.pvLog (deleted)
         return Inertia::render('User/PvLog', [
             'logs' => $logs->through(function ($log) use (&$first) {
                 $isCredit = $log->trx_type == '+';
@@ -680,7 +680,7 @@ class PlanController extends Controller
         $refUrl    = route('user.register') . '?ref=' . auth()->user()->username;
 
         // Migrated to React + Inertia (resources/js/Pages/User/Referrals.tsx).
-        // Legacy view: Template::user.myRef
+        // Was the Blade view Template::user.myRef (deleted)
         return Inertia::render('User/Referrals', [
             // Only name, username and join date of each referral: never their email, phone or balance.
             'referrals' => $logs->through(function ($ref) use (&$first) {
@@ -962,7 +962,7 @@ class PlanController extends Controller
             : ['url' => route('user.distributor.index') . '?parent=' . urlencode($member->username) . '&position=' . $side];
 
         // Migrated to React + Inertia (resources/js/Pages/User/BinaryList.tsx).
-        // Legacy view: Template::user.binaryList
+        // Was the Blade view Template::user.binaryList (deleted)
         return Inertia::render('User/BinaryList', [
             'members' => $paginator->through(function ($m) use (&$first, $slot) {
                 return [

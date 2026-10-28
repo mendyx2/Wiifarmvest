@@ -34,7 +34,7 @@ class ProjectController extends Controller
         $money      = fn ($n) => gs('cur_sym') . showAmount($n, currencyFormat: false);
 
         // Migrated to React + Inertia (resources/js/Pages/User/MyProject.tsx).
-        // Legacy view: Template::user.my_project
+        // Was the Blade view Template::user.my_project (deleted)
         return Inertia::render('User/MyProject', [
             'visa'      => $money($visa),
             'current'   => $currentProject ? ['id' => $currentProject->id, 'title' => $currentProject->title, 'amount' => $money($currentAmt), 'pv' => (float) $currentProject->pv] : null,
