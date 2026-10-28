@@ -187,7 +187,7 @@ class FinancialReportService
             ->where('type', 'credit')
             ->selectRaw('COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total')->first();
 
-        $lines[] = $this->line('Stockist Wallet Funding', $stockistFunding->total, $stockistFunding->n, $this->plural($stockistFunding->n, 'top-up'), 'las la-store', route('admin.stockist.index'));
+        $lines[] = $this->line('Stockist Wallet Funding', $stockistFunding->total, $stockistFunding->n, $this->plural($stockistFunding->n, 'top-up'), 'las la-store', route('admin.stockist.dashboard'));
 
         $repaid = $this->within(DB::table('loan_repayments'), 'created_at', $range)
             ->where('status', 'completed')
@@ -222,7 +222,7 @@ class FinancialReportService
                 $n,
                 $this->plural($n, 'payment'),
                 'las la-store',
-                route('admin.stockist.index')
+                route('admin.stockist.dashboard')
             );
         }
 
@@ -302,7 +302,7 @@ class FinancialReportService
             $this->line('Visa Wallets', $users->visa, null, 'held for registrations', 'las la-credit-card', route('admin.users.all')),
             $this->line('Product Wallets', $users->product_wallet, null, 'held for product purchases', 'las la-shopping-bag', route('admin.users.all')),
             $this->line('Savings Held', $users->savings, null, 'locked in savings plans', 'las la-piggy-bank', route('admin.savings.index')),
-            $this->line('Stockist Wallets', DB::table('stockists')->sum('wallet'), null, 'stockists\' balance', 'las la-store', route('admin.stockist.index')),
+            $this->line('Stockist Wallets', DB::table('stockists')->sum('wallet'), null, 'stockists\' balance', 'las la-store', route('admin.stockist.dashboard')),
             $this->line('Pending Withdrawals', $pendingWithdrawals->sum('amount'), $pendingWd, $this->plural($pendingWd, 'request') . ' awaiting approval', 'las la-hourglass-half', route('admin.withdraw.data.pending')),
             $this->line('Welcome Packages', $pendingPackages->sum('amount'), $pendingWp, $this->plural($pendingWp, 'package') . ' not yet redeemed', 'las la-box-open', route('admin.welcome-pack.index')),
         ];

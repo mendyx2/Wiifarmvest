@@ -31,7 +31,7 @@
                                 <li class="active"><i class="las la-comment-dollar __plan_info" data="ref_com"></i>@lang('Referral Commission: '){{gs('cur_sym')}} {{getAmount($plan->ref_com)}}</li>
                                 <li class="active"><i class="las la-comments-dollar __plan_info" data="tree_com"></i>@lang('Commission To Tree:') {{gs('cur_sym')}} {{getAmount($plan->tree_com)}}</li>
                             </ul>
-                            <div class="text-center"><a href="{{route('user.plan.index')}}"  class="cmn--btn-2 btn--md active"><span>@lang('Subscribe Plan')</span></a></div>
+                            <div class="text-center"><a href="{{route('user.investment.portfolio')}}"  class="cmn--btn-2 btn--md active"><span>@lang('Subscribe Plan')</span></a></div>
                         </div>
                     </div>
                 </div>

@@ -54,6 +54,9 @@ class Status{
 
     const ORDER_PAID= 1;
     const ORDER_REDEEMED = 3;
+    // What the stockist redemption really stores once every item is handed over
+    // (the member pages show it as "Redeemed"; see App\Support\ShopPresenter).
+    const ORDER_COLLECTED = 1;
 
 
     const SUPPLY_APPROVED = 0;

@@ -9,7 +9,8 @@ use Illuminate\Foundation\Auth\AuthenticatesUsers;
 use Illuminate\Http\Request;
 use Status;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Log;
+use App\Support\CaptchaPresenter;
+use Inertia\Inertia;
 
 class LoginController extends Controller
 {
@@ -28,9 +29,19 @@ class LoginController extends Controller
 
     public function showLoginForm()
     {
-        $pageTitle = "Login";
         Intended::identifyRoute();
-        return view('Template::user.auth.login', compact('pageTitle'));
+
+        return Inertia::render('Auth/Login', [
+            'logo'    => siteLogo(),
+            // Login always checked the captcha, but the old page never showed one:
+            // with a captcha switched on in Extensions, nobody could log in.
+            'captcha' => CaptchaPresenter::props(),
+            'urls'    => [
+                'login'    => route('user.login'),
+                'forgot'   => route('user.password.request'),
+                'register' => gs('registration') ? route('user.register') : null,
+            ],
+        ])->withViewData(['pageTitle' => 'Login']);
     }
 
     public function login(Request $request)
@@ -96,14 +107,12 @@ class LoginController extends Controller
 
     public function logout()
     {
-         \Log::info('Before logout', ['auth' => auth()->check(), 'session' => session()->all()]);
-    
+        // This used to write the whole session (CSRF token included) to the log
+        // before and after every logout.
         auth()->logout();
 
         request()->session()->invalidate();
         request()->session()->regenerateToken();
-        
-        \Log::info('After logout', ['auth' => auth()->check(), 'session' => session()->all()]);
 
         $notify[] = ['success', 'You have been logged out.'];
         return to_route('user.login')->withNotify($notify);
@@ -142,12 +151,11 @@ class LoginController extends Controller
 
         $redirection = Intended::getRedirection();
 
-        if ($user->section == 2) {
-            return to_route('user.land');
-             
-        }else{
-             return $redirection ? $redirection : to_route('user.home');
-        }
+        // The old "land" page for section-2 members has no route any more,
+        // so every member goes to the same place after logging in.
+        // A full page load: the next page may be Blade (verification, the
+        // registration payment page), which an Inertia visit cannot show.
+        return Inertia::location($redirection ? $redirection->getTargetUrl() : route('user.home'));
 
        
     }

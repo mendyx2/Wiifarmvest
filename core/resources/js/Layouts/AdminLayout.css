@@ -1,0 +1,165 @@
+/*
+ * Layouts/AdminLayout.tsx. The sidebar, top bar and page styles are in
+ * assets/admin/css/app.css; this file only adds what jQuery and Bootstrap's
+ * JavaScript did on the Blade pages.
+ */
+
+/* Top-bar icon links. The Blade top bar nested an <a> inside a <button>
+   (invalid HTML); these are plain links styled like ".navbar__right button". */
+.navbar__right .admin-top-btn {
+    display: inline-block;
+    position: relative;
+}
+
+.navbar__right .admin-top-btn i {
+    color: #5b6e88;
+    text-shadow: 1px 2px 5px rgba(0, 0, 0, 0.15);
+    font-size: 1.5rem;
+}
+
+/* Bootstrap's dropdown script (Popper) placed these menus; place them here. */
+.navbar__action-list .dropdown {
+    position: relative;
+}
+
+.navbar__action-list .dropdown-menu.show {
+    display: block;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: auto;
+    margin-top: 8px;
+}
+
+@media (max-width: 420px) {
+    .navbar__action-list .dropdown-menu.show {
+        position: fixed;
+        top: 60px;
+        left: 15px;
+        right: 15px;
+    }
+}
+
+/* Behind the open mobile sidebar: tap to close it. */
+.admin-sidebar-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 998; /* the sidebar is 999 */
+}
+
+/* The search results: the keyboard choice. */
+.search-list li.active {
+    background-color: #f3f3f9;
+}
+
+/* Pages/Admin/Profile.tsx: was a <style> push in profile.blade.php / password.blade.php. */
+.admin-profile-list .list-group-item:first-child {
+    border-top-left-radius: unset;
+    border-top-right-radius: unset;
+}
+
+/* Components/Admin/FilterCard.tsx: on phones the "Filter" button folds the
+   card away and back (was a jQuery slideToggle). */
+@media (max-width: 767px) {
+    .responsive-filter-card.is-hidden {
+        display: none;
+    }
+}
+
+/* Components/Admin/DateRangeField.tsx */
+.admin-date-range input[type='date'] {
+    flex: 1 1 140px;
+    min-width: 0;
+}
+
+.admin-date-range__preset {
+    flex: 1 1 140px;
+}
+
+/* Pages/Admin/Reports/NotificationHistory.tsx: SMS / push text keeps its line breaks. */
+.admin-notify-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Pages/Admin/ActionLog.tsx */
+.admin-action-detail .text-end {
+    word-break: break-word;
+}
+
+.admin-action-meta {
+    max-height: 320px;
+    overflow: auto;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Pages/Admin/Users/KycDetail.tsx: the ID card thumbnail (was inline styles). */
+.kyc-thumb {
+    padding: 0;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: none;
+    cursor: zoom-in;
+}
+
+.kyc-thumb img {
+    height: 48px;
+    width: 72px;
+    object-fit: cover;
+    border-radius: 6px;
+}
+
+/* Components/Admin/ChannelPicker.tsx: the cards are buttons now. */
+button.notification-via {
+    background: #fff;
+    font: inherit;
+    text-align: center;
+}
+
+/* Components/Admin/RichTextEditor.tsx (replaces nicEdit) */
+.admin-rte__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid #ced4da;
+    border-bottom: 0;
+    border-radius: 5px 5px 0 0;
+    background: #f8f9fa;
+}
+
+.admin-rte__btn {
+    border: 0;
+    background: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    color: #34495e;
+}
+
+.admin-rte__btn:hover,
+.admin-rte__btn:focus-visible {
+    background: #e9ecef;
+}
+
+.admin-rte__box {
+    height: auto;
+    border-radius: 0 0 5px 5px;
+    overflow: auto;
+}
+
+.admin-rte__box:focus {
+    outline: none;
+    box-shadow: none;
+    border-color: #4634ff;
+}

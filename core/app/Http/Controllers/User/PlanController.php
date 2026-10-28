@@ -18,6 +18,8 @@ use App\Models\Rinvestment;
 use App\Models\Investment;
 use App\Models\Shtransaction;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
+use App\Support\TreePresenter;
 use App\Http\Controllers\Controller;
 use App\Services\MatrixPlacementService;
 use App\Services\WalletService;
@@ -48,31 +50,12 @@ class PlanController extends Controller
             ->with('plan', 'shtransactions')
             ->get();
 
-        // Calculate totals 
+        // Calculate totals
         $totalUnits = $investments->sum('units');
-        $totalInvestmentValue = $investments->sum(fn($inv) => $inv->units * $inv->plan->price); 
+        $totalInvestmentValue = $investments->sum(fn($inv) => $inv->units * $inv->plan->price);
 
-        $weeklyGrowth = Shtransaction::where('user_id', $user->id)
-            ->whereBetween('created_at', [now()->subDays(7), now()])
-            ->where('type', 'credit')
-            ->completed()
-            ->sum('amount');
-
-        $historyLabels = [];
-        $historyData = [];
-
-        for ($i = 6; $i >= 0; $i--) {
-            $day = now()->subDays($i);
-            $label = $day->format('D');
-            $val = Shtransaction::where('user_id', $user->id)
-                ->where('type', 'credit')
-                ->completed()
-                ->whereDate('created_at', $day->toDateString())
-                ->sum('amount');
-
-            $historyLabels[] = $label;
-            $historyData[] = $val;
-        }
+        // (A weekly-growth figure and a 7-day chart series were computed here with
+        // 8 extra queries, but the page never used them; they were removed.)
 
         // Get all dividends for user
         $dividendTransactions = Shtransaction::where('user_id', $user->id)
@@ -94,19 +77,53 @@ class PlanController extends Controller
             ->groupBy(fn($t) => $t->rinvestment->plan->name)
             ->map(fn($group) => [
                 'plan' => $group->first()->rinvestment->plan->name,
-                'amount' => $group->sum('amount')
+                'amount' => showAmount($group->sum('amount')),
             ])
             ->values();
 
-        return view('Template::user.investment-portfolio', compact(
-            'pageTitle',
-            'investments',
-            'totalUnits',
-            'totalInvestmentValue', 
-            'totalDividends',
-            'dividendTransactions',
-            'dividendsByPlan'
-        ));
+        // Migrated to React + Inertia (resources/js/Pages/User/InvestmentPortfolio.tsx).
+        // Legacy view: Template::user.investment-portfolio
+        return Inertia::render('User/InvestmentPortfolio', [
+            'totalUnits'      => (int) $totalUnits,
+            'investmentValue' => showAmount($totalInvestmentValue),
+            'totalDividends'  => showAmount($totalDividends),
+            'investments'     => $investments->map(fn ($inv) => [
+                'id'         => $inv->id,
+                'plan'       => $inv->plan->name ?? 'N/A',
+                'date'       => $inv->created_at->format('M d, Y - h:i'),
+                'units'      => $inv->units,
+                'unitCost'   => showAmount($inv->unit_cost),
+                'totalValue' => showAmount($inv->units * $inv->unit_cost),
+                'url'        => route('user.investment.details', $inv->id),
+            ])->values(),
+            'dividendsByPlan' => $dividendsByPlan,
+            'dividends'       => self::dividendRows($dividendTransactions),
+            // Buy Shares pop-up
+            'plans' => Plan::active()->get()->map(fn ($plan) => [
+                'id'         => $plan->id,
+                'name'       => $plan->name,
+                'price'      => (float) $plan->price,
+                'priceLabel' => showAmount($plan->price),
+            ])->values(),
+            'balance'     => showAmount($user->balance),
+            'purchaseUrl' => route('user.shares.purchase'),
+        ])->withViewData(compact('pageTitle'));
+    }
+
+    /** Dividend transactions as the React pages show them. */
+    private static function dividendRows($paginator)
+    {
+        return $paginator->through(fn ($t) => [
+            'id'        => $t->id,
+            'date'      => $t->created_at->format('M d, Y'),
+            'time'      => $t->created_at->format('H:i'),
+            'reference' => $t->reference,
+            'plan'      => $t->rinvestment->plan->name ?? 'N/A',
+            'units'     => $t->units_held,
+            'perUnit'   => showAmount($t->amount_per_unit),
+            'amount'    => showAmount($t->amount),
+            'status'    => in_array($t->status, ['completed', 'pending'], true) ? $t->status : 'failed',
+        ]);
     }
 
     /**
@@ -137,19 +154,40 @@ class PlanController extends Controller
             ->completed()
             ->sum('amount') ?? 0;
 
-        return view('Template::user.investment-details', compact(
-            'pageTitle',
-            'investment',
-            'dividends',
-            'totalDividends'
-        ));
+        // ROI guarded against a zero amount (the Blade view divided by zero).
+        $invested = (float) $investment->five;
+        $roi      = $invested > 0 ? ($totalDividends / $invested) * 100 : 0;
+        $recent   = $dividends->getCollection()->take(5);
+
+        // Migrated to React + Inertia (resources/js/Pages/User/InvestmentDetails.tsx).
+        // Legacy view: Template::user.investment-details
+        return Inertia::render('User/InvestmentDetails', [
+            'investment' => [
+                'id'          => $investment->id,
+                'plan'        => $investment->plan->name ?? 'Investment',
+                'date'        => $investment->created_at->format('M d, Y H:i'),
+                'units'       => $investment->units,
+                'unitCost'    => showAmount($investment->unit_cost),
+                'total'       => showAmount($investment->unit_cost * $investment->units),
+                'invested'    => showAmount($invested),
+                'totalReturn' => showAmount($invested + $totalDividends),
+            ],
+            'totalDividends' => showAmount($totalDividends),
+            'roi'            => round($roi, 2),
+            'dividends'      => self::dividendRows($dividends),
+            'recent'         => $recent->map(fn ($d) => ['id' => $d->id, 'date' => $d->created_at->format('M d, Y'), 'reference' => $d->reference, 'amount' => showAmount($d->amount)])->values(),
+            'moreCount'      => max(0, $dividends->total() - $recent->count()),
+            // Receipt / certificate downloads are plain form posts (the reply is a PDF file).
+            'pdfUrl'       => route('user.plan.payment-receipt.generate-pdf'),
+            'portfolioUrl' => route('user.investment.portfolio'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function myAwards()
     {
         $pageTitle  = 'My Awards';
         $user       = auth()->user();
-        $allAwards  = Award::active()->orderBy('sort_order')->get();
+        $allAwards  = Award::active()->with('prerequisite')->orderBy('sort_order')->get();
         $earnedMap  = UserAward::where('user_id', $user->id)
                         ->get()
                         ->keyBy('award_id');
@@ -160,9 +198,43 @@ class PlanController extends Controller
         $currentRightPv = (float) ($matrix->pv_right ?? 0);
         $currentTotalPv = $currentLeftPv + $currentRightPv;
 
-        return view('Template::user.awards', compact(
-            'pageTitle', 'allAwards', 'earnedMap', 'currentLeftPv', 'currentRightPv', 'currentTotalPv'
-        ));
+        $pct = fn ($have, $need) => $need > 0 ? min(100, round($have / $need * 100)) : 100;
+
+        // Migrated to React + Inertia (resources/js/Pages/User/Awards.tsx).
+        // Legacy view: Template::user.awards
+        return Inertia::render('User/Awards', [
+            'stats' => [
+                'total'  => $allAwards->count(),
+                'earned' => $earnedMap->count(),
+                'paid'   => $earnedMap->where('status', 1)->count(),
+            ],
+            'awards' => $allAwards->map(function ($award) use ($earnedMap, $currentLeftPv, $currentRightPv, $currentTotalPv, $pct) {
+                $earned = $earnedMap->get($award->id);
+                $state  = !$earned ? 'locked' : ($earned->status == 1 ? 'paid' : 'earned');
+                $locked = $state === 'locked';
+                // Progress only means something while locked: pairing PV is used up
+                // by matching payouts, so earned/paid awards always show complete.
+                $leg = fn ($have, $need) => [
+                    'text' => $locked ? number_format($have, 0) . ' / ' . number_format($need, 0) : number_format($need, 0),
+                    'pct'  => $locked ? $pct($have, $need) : 100,
+                ];
+                return [
+                    'id'           => $award->id,
+                    'order'        => $award->sort_order,
+                    'name'         => $award->name,
+                    'description'  => \Illuminate\Support\Str::limit($award->description, 72) ?: 'No description provided.',
+                    'image'        => $award->image_url,
+                    'state'        => $state,
+                    'total'        => $leg($currentTotalPv, $award->required_total_pv),
+                    'left'         => $leg($currentLeftPv, $award->required_left_pv),
+                    'right'        => $leg($currentRightPv, $award->required_right_pv),
+                    'reward'       => showAmount($award->payment_amount),
+                    'paidAmount'   => $state === 'paid' ? showAmount($earned->paid_amount ?? $award->payment_amount) : null,
+                    'prerequisite' => $award->prerequisite?->name,
+                    'date'         => $state === 'paid' ? ($earned->paid_at?->format('M d, Y') ?? '—') : ($earned ? ($earned->earned_at?->format('M d, Y') ?? '—') : null),
+                ];
+            })->values(),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function repurchaseAward()
@@ -174,7 +246,26 @@ class PlanController extends Controller
         $awards         = RepurchaseAward::active()->get();
         $walletBalance  = (float) ($user->repurchase_award ?? 0);
 
-        return view('Template::user.repurchase_award', compact('pageTitle', 'totalPv', 'awards', 'walletBalance'));
+        // Migrated to React + Inertia (resources/js/Pages/User/RepurchaseAward.tsx).
+        // Legacy view: Template::user.repurchase_award
+        return Inertia::render('User/RepurchaseAward', [
+            'totalPv'       => number_format($totalPv, 2),
+            'walletBalance' => '₦' . number_format($walletBalance, 2),
+            'hasBalance'    => $walletBalance > 0,
+            'awards'        => $awards->map(function ($award) use ($totalPv) {
+                $required = (float) $award->required_pv;
+                return [
+                    'id'        => $award->id,
+                    'title'     => $award->title,
+                    'required'  => number_format($required, 2),
+                    'qualified' => $totalPv >= $required,
+                    'pct'       => $required > 0 ? min(100, round($totalPv / $required * 100, 1)) : 100,
+                    'remaining' => number_format(max(0, $required - $totalPv), 2),
+                    'reward'    => '₦' . number_format($award->amount, 2),
+                ];
+            })->values(),
+            'transferUrl' => route('user.bonus.transfer.index'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function pvlog(Request $request){
@@ -188,7 +279,7 @@ class PlanController extends Controller
             default   => 'PV Log',
         };  
 
-        $logs = $this->pvData($type)->where('user_id', $uid)->latest('id')->paginate(getPaginate());
+        $logs = $this->pvData($type)->where('user_id', $uid)->latest('id')->paginate(getPaginate())->withQueryString();
 
         // Summary totals (always computed against the full user dataset)
         $totalLeft  = PvLog::leftPV()->where('user_id',  $uid)->sum('amount');
@@ -196,14 +287,38 @@ class PlanController extends Controller
         $totalCut   = PvLog::cutPV()->where('user_id',   $uid)->sum('amount');
         $totalAll   = PvLog::paidPV()->where('user_id',  $uid)->sum('amount');
 
-        return view('Template::user.pvLog', compact(
-            'pageTitle', 'logs',
-            'totalLeft', 'totalRight', 'totalCut', 'totalAll'
-        ));
+        $first = $logs->firstItem() ?? 1;
+
+        // Migrated to React + Inertia (resources/js/Pages/User/PvLog.tsx).
+        // Legacy view: Template::user.pvLog
+        return Inertia::render('User/PvLog', [
+            'logs' => $logs->through(function ($log) use (&$first) {
+                $isCredit = $log->trx_type == '+';
+                return [
+                    'id'       => $log->id,
+                    'number'   => $first++,
+                    'details'  => $log->details ?: 'PV Transaction',
+                    'isCredit' => $isCredit,
+                    // "cut" = PV deducted, otherwise the leg it was added to
+                    'kind'     => !$isCredit ? 'cut' : ($log->position == 1 ? 'left' : 'right'),
+                    'amount'   => getAmount($log->amount),
+                    'date'     => $log->created_at ? date('d M Y, g:i A', strtotime($log->created_at)) : '—',
+                ];
+            }),
+            'type'   => in_array($type, ['leftPV', 'rightPV', 'cutPV'], true) ? $type : '',
+            'totals' => [
+                'left'  => getAmount($totalLeft),
+                'right' => getAmount($totalRight),
+                'cut'   => getAmount($totalCut),
+                'paid'  => getAmount($totalAll),
+            ],
+        ])->withViewData(compact('pageTitle'));
     }
     protected function pvData($scope = null)
     {
-        if ($scope) {
+        // $scope comes from ?type= in the URL. Only allow the real query scopes:
+        // calling any other static method by name (e.g. ?type=truncate) would run it.
+        if (in_array($scope, ['leftPV', 'rightPV', 'cutPV', 'paidPV'], true)) {
             $logs = PvLog::$scope();
         } else {
             $logs = PvLog::query();
@@ -223,7 +338,9 @@ class PlanController extends Controller
             'rivest_id' => 'required|numeric',
         ]);
 
-        $rinvest = Rinvestment::with('user')->find($request->rivest_id);
+        // Only the logged-in user's own investments: the receipt shows the
+        // owner's name, address, phone and email.
+        $rinvest = Rinvestment::with('user')->where('user_id', auth()->id())->find($request->rivest_id);
         if (!$rinvest) {
             $notify[] = ['error', 'Cannot download this receipt CODE:FF-109 '];
             return back()->withNotify($notify);
@@ -258,54 +375,6 @@ class PlanController extends Controller
 
     
 
-    public function shares()
-    {
-        $pageTitle = 'Shares Dashboard';
-        $user      = auth()->user();
-
-        $plans = Plan::orderBy('price', 'asc')->active()->get();
-
-        $investments = Rinvestment::where('user_id', $user->id)
-            ->with('plan')
-            ->get();
-
-        $totalUnits = $investments->sum('units');
-        $totalValue = $investments->sum(fn($inv) => $inv->units * $inv->unit_cost);
-
-        $weeklyGrowth = Shtransaction::where('user_id', $user->id)
-            ->whereBetween('created_at', [now()->subDays(7), now()])
-            ->where('type', 'credit')
-            ->completed()
-            ->sum('amount');
-
-        $historyLabels = [];
-        $historyData = [];
-        for ($i = 6; $i >= 0; $i--) {
-            $day = now()->subDays($i);
-            $historyLabels[] = $day->format('D');
-            $historyData[] = Shtransaction::where('user_id', $user->id)
-                ->where('type', 'credit')
-                ->completed()
-                ->whereDate('created_at', $day->toDateString())
-                ->sum('amount');
-        }
-
-        $goalTarget = 50000;
-        $goalPercent = $goalTarget > 0 ? min(100, ($totalValue / $goalTarget) * 100) : 0;
-
-        return view('Template::user.shares', compact(
-            'pageTitle',
-            'plans',
-            'investments',
-            'totalUnits',
-            'totalValue',
-            'weeklyGrowth',
-            'historyLabels',
-            'historyData',
-            'goalTarget',
-            'goalPercent'
-        ));
-    }
     // remember to edit the one at admin/controller/ManageUsersController.php
     public function sharesStore(Request $request)
     {
@@ -369,45 +438,31 @@ class PlanController extends Controller
 
             //Process the share pass to upline up to 7th Gen
             $this->sharesUplinerCommision($user, $trx_no, $totalPayable);
-            
 
             DB::commit();
-
-            $newInvestment = $rinvest->fresh();
-
-            $notify[] = ['success', 'Purchased ' . $quantity . ' units of ' . $plan->name . ' successfully.'];
-
-            if ($request->ajax()) {
-                return response()->json([
-                    "status" => "success",
-                    "message" => "Purchased $quantity units of $plan->name successfully.",
-                    "totalUnits" => $user->rinvestment()->sum('units'),
-                    "totalValue" => showAmount($user->rinvestment()->sum(fn($i) => $i->units * $i->unit_cost)),
-                    "newInvestment" => [
-                        'plan_name' => $plan->name,
-                        'units' => $quantity,
-                        'unit_cost' => showAmount($plan->price),
-                        'total' => showAmount($totalPayable),
-                        'status' => 'Active',
-                        'details_url' => route('plan.details', $newInvestment->id),
-                    ],
-                    "goalPercent" => min(100, ($user->rinvestment()->sum(fn($i) => $i->units * $i->unit_cost)/50000)*100),
-                ]);
-            }
         } catch (InsufficientBalanceException) {
             DB::rollBack();
-            if ($request->ajax()) {
-                return response()->json(["status" => "error", "message" => "Insufficient Balance."], 422);
-            }
-            $notify[] = ['error', 'Insufficient Balance.'];
+            return $this->sharesPurchaseFailed('Insufficient Balance.');
         } catch (\Throwable $e) {
             DB::rollBack();
-            if ($request->ajax()) {
-                return response()->json(["status" => "error", "message" => "Error completing purchase."], 500);
-            }
-            $notify[] = ['error', 'Error completing purchase.'];
+            report($e);
+            return $this->sharesPurchaseFailed('Error completing purchase.');
         }
 
+        // The purchase is committed from here on, so nothing below may report
+        // it as failed. (The removed /user/shares page got a JSON reply built
+        // inside the try block; a wrong route name in it made every purchase
+        // there answer "Error completing purchase" after the money was taken.)
+        $message = 'Purchased ' . $quantity . ' units of ' . $plan->name . ' successfully.';
+
+        $notify[] = ['success', $message];
+        return redirect()->route('user.plan.portfolio')->withNotify($notify);
+    }
+
+
+    private function sharesPurchaseFailed(string $message)
+    {
+        $notify[] = ['error', $message];
         return redirect()->route('user.plan.portfolio')->withNotify($notify);
     }
     protected function sharesUplinerCommision(User $user, $trx_no, $totalPayable)
@@ -466,14 +521,6 @@ class PlanController extends Controller
             }
     }
 
-    function reservation()
-    {
-        $pageTitle = "Reserved";
-        $rinvest = Rinvestment::where('user_id', auth()->id())->with('plan')->get();
-        //dd($rinvest);
-        $plans     = Plan::orderBy('price', 'asc')->active()->get();
-        return view('Template::user.reservation', compact('pageTitle', 'plans', 'rinvest'));
-    }
     
     function reserveStore(Request $request)
     {   
@@ -629,45 +676,84 @@ class PlanController extends Controller
     {
         $pageTitle = "My Referral";
         $logs      = User::where('ref_by', auth()->id())->latest()->paginate(getPaginate());
-        return view('Template::user.myRef', compact('pageTitle', 'logs'));
+        $first     = $logs->firstItem() ?? 1;
+        $refUrl    = route('user.register') . '?ref=' . auth()->user()->username;
+
+        // Migrated to React + Inertia (resources/js/Pages/User/Referrals.tsx).
+        // Legacy view: Template::user.myRef
+        return Inertia::render('User/Referrals', [
+            // Only name, username and join date of each referral: never their email, phone or balance.
+            'referrals' => $logs->through(function ($ref) use (&$first) {
+                return [
+                    'id'       => $ref->id,
+                    'number'   => $first++,
+                    'fullname' => $ref->fullname,
+                    'username' => $ref->username,
+                    'joined'   => showDateTime($ref->created_at, 'd M Y'),
+                    'ago'      => diffForHumans($ref->created_at),
+                ];
+            }),
+            'refUrl'  => $refUrl,
+            'refCode' => strtoupper(auth()->user()->username),
+        ])->withViewData(compact('pageTitle'));
     }
 
-    public function myRefLog1()
-    {
-        $pageTitle = "My Referral";
-        
-        $logs      = User::where('ref_by', auth()->id())->where('profile_complete', 1)->latest()->paginate(getPaginate());
-        return view('Template::user.myRef1', compact('pageTitle', 'logs'));
-    }
  
     public function myTree()
     {  
        
         $tree      = showMatrixTree(auth()->user()->id);
-        //dd($tree);
         $pageTitle = "My Tree";
-        $user      = auth()->user();  
-        return view('Template::user.myTree', compact('pageTitle', 'tree', 'user'));
+        return $this->renderTree($pageTitle, $tree, auth()->user());
+    }
+
+    /**
+     * Genealogy tree page (own tree, or a downline member's tree).
+     * Migrated to React + Inertia (resources/js/Pages/User/MyTree.tsx).
+     * (The old Blade view, user/myTree.blade.php, was deleted in Step 99.)
+     */
+    private function renderTree(string $pageTitle, array $tree, User $owner)
+    {
+        return Inertia::render('User/MyTree', [
+            'owner'     => ['fullname' => $owner->fullname, 'username' => $owner->username],
+            'nodes'     => TreePresenter::nodes($tree, slots: true),
+            'images'    => TreePresenter::images(),
+            'searchUrl' => route('user.other.tree.search'),
+        ])->withViewData(compact('pageTitle'));
+    }
+
+    /**
+     * Stage tree page. Migrated to React + Inertia (resources/js/Pages/User/MyStages.tsx).
+     * (The old Blade view, user/myStages.blade.php, was deleted in Step 99.)
+     */
+    private function renderStageTree(string $pageTitle, array $tree, $stage)
+    {
+        $user = auth()->user();
+        return Inertia::render('User/MyStages', [
+            'owner'     => ['fullname' => $user->fullname, 'username' => $user->username],
+            'stage'     => (int) $stage,
+            'stages'    => collect(range(1, 5))->map(fn ($s) => ['number' => $s, 'url' => route('user.my.treeStage', $s)]),
+            'nodes'     => TreePresenter::nodes($tree, slots: false),
+            'images'    => TreePresenter::images(),
+            'searchUrl' => route('user.other.tree.search'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function myTreeStages()
     {     
         $stt = returnCurrentMatrixStage(auth()->user()->id);
-        //dd($st); 
-        if($stt->stage_id == 6){
+        if ($stt && $stt->stage_id == 6) {
             $stt = Matrix::where('user_id', auth()->user()->id)->where('stage_id', 5)->first();
         }
-        $st = $stt->stage_id;
+        // returnCurrentMatrixStage() returns false for a user without an active
+        // matrix row; the page used to crash on ->stage_id. Show stage 1 then.
+        $st = $stt ? $stt->stage_id : 1;
         // $tree      = showMatrixStageTree(auth()->user()->id, $st);
 
         //$tree      = showMatrixTree(auth()->user()->id);
         $tree      = showMatrixStageTree(auth()->user()->id, $st);
-       
-        //dd($tree);
         $pageTitle = "My Tree";
-        
-        $user      = auth()->user();
-        return view('Template::user.myStages', compact('pageTitle', 'tree', 'user', 'st'));
+        return $this->renderStageTree($pageTitle, $tree, $st);
     }
  
     public function myTreeStage($stage = 1)
@@ -675,10 +761,8 @@ class PlanController extends Controller
         $st =  sanitizeInput($stage); 
 
         $tree      = showMatrixStageTree(auth()->user()->id, $st);
-        //dd($tree);
-        $pageTitle = "My Tree";  
-        $user      = auth()->user();
-        return view('Template::user.myStages', compact('pageTitle', 'tree', 'user', 'st'));
+        $pageTitle = "My Tree";
+        return $this->renderStageTree($pageTitle, $tree, $st);
     }
 
      public function otherTree(Request $request, $username = null)
@@ -713,7 +797,7 @@ class PlanController extends Controller
             // end here
             $tree      = showMatrixTree($user->id);
             $pageTitle = "Tree of " . $user->fullname;
-            return view('Template::user.myTree', compact('pageTitle', 'tree', 'user'));
+            return $this->renderTree($pageTitle, $tree, $user);
         }
 
         $notify[] = ['error', 'Tree Not Found !'];
@@ -721,22 +805,60 @@ class PlanController extends Controller
 
     }
 
-    public function binaryList(Request $request)
+    /**
+     * Binary summary: the member's two legs on the stage-1 tree (where PV
+     * is credited). Replaces the route that pointed to a missing method.
+     */
+    public function binarySummery()
     {
-        $pageTitle = 'Binary List';
+        $pageTitle = 'Binary Summary';
         $user      = auth()->user();
+        $matrix    = Matrix::where('stage_id', 1)->where('user_id', $user->id)->first();
+        $downline  = $this->stageOneDownline($user->id);
 
-        // One-query adjacency map from Matrix (stage 1): user_id -> {left, right}
+        $legs = [];
+        foreach (['left' => 'Left', 'right' => 'Right'] as $field => $label) {
+            $inLeg  = array_filter($downline, fn ($member) => $member['leg'] === $label);
+            $direct = $matrix && (int) $matrix->{$field} > 0 ? User::find((int) $matrix->{$field}) : null;
+
+            $legs[$field] = [
+                'label'      => $label,
+                'members'    => count($inLeg),
+                'deepest'    => $inLeg ? max(array_column($inLeg, 'level')) : 0,
+                'direct'     => $direct?->username,
+                'pairingPv'  => showAmount($matrix?->{'pv_' . $field . '_pairing'} ?? 0, currencyFormat: false),
+                'rankingPv'  => showAmount($matrix?->{'pv_' . $field} ?? 0, currencyFormat: false),
+                'emptySlot'  => $matrix && !$direct
+                    ? route('user.distributor.index', ['parent' => $user->username, 'position' => $field])
+                    : null,
+            ];
+        }
+
+        return Inertia::render('User/BinarySummary', [
+            'inTree'        => (bool) $matrix,
+            'legs'          => $legs,
+            'totalMembers'  => count($downline),
+            'binaryListUrl' => route('user.binary.list'),
+            'treeUrl'       => route('user.my.tree'),
+        ])->withViewData(compact('pageTitle'));
+    }
+
+    /**
+     * Every member under $userId on the stage-1 tree, as
+     * user_id => ['level' => n, 'leg' => 'Left'|'Right'].
+     * One query for the whole tree, then a breadth-first walk.
+     */
+    private function stageOneDownline(int $userId): array
+    {
         $allMatrices = Matrix::where('stage_id', 1)
             ->select('user_id', 'left', 'right')
             ->get()
             ->keyBy('user_id');
 
-        // BFS via Matrix left/right fields — track level and leg
         $downlineMap = [];
         $queue       = new \SplQueue();
-        $queue->enqueue(['id' => $user->id, 'level' => 0, 'leg' => null]);
-        $visited = [$user->id => true];
+        $queue->enqueue(['id' => $userId, 'level' => 0, 'leg' => null]);
+        $visited = [$userId => true];
 
         while (!$queue->isEmpty()) {
             $node   = $queue->dequeue();
@@ -755,6 +877,16 @@ class PlanController extends Controller
                 $queue->enqueue(['id' => $cid, 'level' => $node['level'] + 1, 'leg' => $leg]);
             }
         }
+
+        return $downlineMap;
+    }
+
+    public function binaryList(Request $request)
+    {
+        $pageTitle = 'Binary List';
+        $user      = auth()->user();
+
+        $downlineMap = $this->stageOneDownline($user->id);
 
         // Username search — must be a downline member
         $searchUsername = trim((string) $request->input('username', ''));
@@ -824,7 +956,34 @@ class PlanController extends Controller
             ['path' => $request->url(), 'query' => $request->query()]
         );
 
-        return view('Template::user.binaryList', compact('pageTitle', 'paginator', 'notInTree', 'searchUsername', 'total'));
+        $first = $paginator->firstItem() ?? 1;
+        $slot  = fn ($member, $child, $side) => $child
+            ? ['username' => $child->username]
+            : ['url' => route('user.distributor.index') . '?parent=' . urlencode($member->username) . '&position=' . $side];
+
+        // Migrated to React + Inertia (resources/js/Pages/User/BinaryList.tsx).
+        // Legacy view: Template::user.binaryList
+        return Inertia::render('User/BinaryList', [
+            'members' => $paginator->through(function ($m) use (&$first, $slot) {
+                return [
+                    'id'       => $m->id,
+                    'number'   => $first++,
+                    'fullname' => $m->fullname,
+                    'username' => $m->username,
+                    'level'    => $m->_level,
+                    'leg'      => $m->_leg,
+                    'plan'     => $m->_project->title ?? null,
+                    'left'     => $slot($m, $m->_left_user, 'left'),
+                    'right'    => $slot($m, $m->_right_user, 'right'),
+                    'joined'   => showDateTime($m->created_at, 'd M Y'),
+                    'ago'      => diffForHumans($m->created_at),
+                ];
+            }),
+            'total'          => $total,
+            'search'         => $searchUsername,
+            'notInTree'      => $notInTree,
+            'distributorUrl' => route('user.distributor.index'),
+        ])->withViewData(compact('pageTitle'));
     }
 
 

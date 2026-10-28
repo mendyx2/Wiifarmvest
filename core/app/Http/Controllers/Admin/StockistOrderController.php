@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
  
 use App\Http\Controllers\Controller;
 use App\Models\StockistOrder;
+use App\Models\Product;
 use App\Models\Stockist;
 use App\Models\User;
 use App\Models\StockistOrderItem;
@@ -14,214 +15,213 @@ use App\Models\StockistInventory;
 use App\Models\Stockist_store_history;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Support\AdminPresenter;
+use Inertia\Inertia;
 
 class StockistOrderController extends Controller
 {
    
-    public function __construct()
-    {
-        $this->middleware('auth');
-        $this->middleware('admin');
-        $this->admin = auth('admin')->user();
-    }
-
+    /** Manage Stockist → Stockist Orders (Pages/Admin/Stockist/Orders.tsx): stock bought from the company. */
     public function index(Request $request)
     {
-        $pageTitle = 'Stockist Order';
-        $query = StockistOrder::with(['stockist.user', 'items.product']);
-        //dd($query);
-        // Filter by status
-        if ($request->has('status') && $request->status != 'all') {
-            $query->where('status', $request->status);
-        }
+        $pageTitle = 'Stockist Orders';
+        $status    = in_array($request->status, self::STATUSES, true) ? $request->status : '';
+        $search    = trim((string) $request->search);
+        $date      = fn ($v) => is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) ? $v : '';
+        $from      = $date($request->date_from);
+        $to        = $date($request->date_to);
 
-        // Filter by date
-        if ($request->has('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        }
+        // The old filters ran on any value, so "?status=" or "?search=" with nothing in it emptied the list.
+        $orders = StockistOrder::with(['stockist.user:id,username,firstname,lastname'])
+            ->withCount('items')->withSum('items as units', 'quantity')
+            ->when($status, fn ($q) => $q->where('status', $status))
+            ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))
+            ->when($search !== '', fn ($q) => $q->where(fn ($q) => $q
+                ->where('order_number', 'like', "%{$search}%")
+                ->orWhereHas('stockist', fn ($s) => $s->where('business_name', 'like', "%{$search}%")
+                    ->orWhereHas('user', fn ($u) => $u->where('username', 'like', "%{$search}%")))))
+            ->latest('id')
+            ->paginate(20)
+            ->withQueryString()
+            ->through(fn (StockistOrder $o) => [
+                'id'       => $o->id,
+                'number'   => (string) $o->order_number,
+                'stockist' => ['name' => $o->stockist?->business_name ?? '—', 'owner' => $o->stockist?->user?->fullname, 'url' => $o->stockist ? route('admin.stockist.details', $o->stockist_id) : null],
+                'date'     => AdminPresenter::when($o->created_at),
+                'products' => (int) $o->items_count,
+                'units'    => (int) $o->units,
+                'total'    => showAmount($o->grand_total),
+                'status'   => $this->badge($o),
+                'next'     => $this->nextAction($o),
+                'url'      => route('admin.stockist-orders.show', $o->id),
+            ]);
 
-        if ($request->has('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
-        }
+        $counts = StockistOrder::selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status');
 
-        // Search by order number or stockist name
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('order_number', 'like', "%{$search}%")
-                  ->orWhereHas('stockist', function($q) use ($search) {
-                      $q->where('business_name', 'like', "%{$search}%")
-                        ->orWhereHas('user', function($q) use ($search) {
-                            $q->where('username', 'like', "%{$search}%");
-                        });
-                });
-            });
-        }
-
-        $orders = $query->latest()->paginate(20);
-
-        $stats = [
-            'pending' => StockistOrder::where('status', 'pending')->count(),
-            'approved' => StockistOrder::where('status', 'approved')->count(),
-            'processing' => StockistOrder::where('status', 'processing')->count(),
-            'shipped' => StockistOrder::where('status', 'shipped')->count(),
-            'delivered' => StockistOrder::where('status', 'delivered')->count(),
-            'total' => StockistOrder::count()
-        ];
- 
-        return view('admin.stockistorders.index', compact('orders', 'stats', 'pageTitle'));
+        return Inertia::render('Admin/Stockist/Orders', [
+            'orders'  => $orders,
+            'counts'  => collect(self::STATUSES)->mapWithKeys(fn ($st) => [$st => (int) ($counts[$st] ?? 0)])->all() + ['total' => (int) $counts->sum()],
+            'filters' => ['status' => $status, 'search' => $search, 'date_from' => $from, 'date_to' => $to],
+            'urls'    => ['action' => route('admin.stockist-orders.approve', ':id')],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
+    /** One stock order (Pages/Admin/Stockist/OrderDetail.tsx): items, totals, progress and the next step. */
     public function show(StockistOrder $order)
     {
-        $pageTitle = '';
-        //dd($order);
-        $order = $order->load(['stockist.user', 'items.product']);
-        //dd($order);
-        
-        return view('admin.stockistorders.show', compact('order','pageTitle'));
+        $order->load(['stockist.user', 'items.product']);
+        $title = 'Stockist Order ' . $order->order_number;
+        $at    = fn ($d) => $d ? showDateTime($d, 'd M Y, h:i A') : null;
+
+        return Inertia::render('Admin/Stockist/OrderDetail', [
+            'title' => $title,
+            'order' => [
+                'id'       => $order->id,
+                'number'   => (string) $order->order_number,
+                'status'   => (string) $order->status,
+                'badge'    => $this->badge($order),
+                'notes'    => $order->notes,
+                'subtotal' => showAmount($order->total_amount),
+                'shipping' => showAmount($order->shipping_cost),
+                'tax'      => showAmount($order->tax_amount),
+                'total'    => showAmount($order->grand_total),
+                'units'    => (int) $order->items->sum('quantity'),
+                'steps'    => [
+                    ['key' => 'pending', 'label' => 'Order placed', 'at' => $at($order->created_at)],
+                    ['key' => 'approved', 'label' => 'Approved', 'at' => $at($order->approved_at)],
+                    ['key' => 'processing', 'label' => 'Processing', 'at' => null],
+                    ['key' => 'shipped', 'label' => 'Shipped', 'at' => $at($order->shipped_at)],
+                    ['key' => 'delivered', 'label' => 'Delivered', 'at' => $at($order->delivered_at)],
+                ],
+            ],
+            'stockist' => $order->stockist ? [
+                'name'   => (string) $order->stockist->business_name,
+                'owner'  => AdminPresenter::user($order->stockist->user),
+                'type'   => $order->stockist->store_type_name,
+                'wallet' => showAmount($order->stockist->wallet),
+                'url'    => route('admin.stockist.details', $order->stockist_id),
+            ] : null,
+            'items' => $order->items->map(fn (StockistOrderItem $item) => [
+                'id'       => $item->id,
+                'name'     => $item->product?->name ?? 'Product #' . $item->product_id,
+                'sku'      => $item->product?->sku,
+                'image'    => $item->product?->thumbnail ? getImage(getFilePath('products') . '/' . $item->product->thumbnail, getFileSize('products')) : null,
+                'quantity' => (int) $item->quantity,
+                'unit'     => showAmount($item->unit_price),
+                'total'    => showAmount($item->total_price),
+            ])->values(),
+            'actions' => [
+                'approve' => $order->canBeApproved() ? route('admin.stockist-orders.approve', $order->id) : null,
+                'process' => $order->status === 'approved' ? route('admin.stockist-orders.processOrder', $order->id) : null,
+                'ship'    => $order->canBeShipped() ? route('admin.stockist-orders.ship', $order->id) : null,
+                'deliver' => $order->canBeDelivered() ? route('admin.stockist-orders.deliver', $order->id) : null,
+                'cancel'  => $order->canBeCancelled() ? route('admin.stockist-orders.cancel', $order->id) : null,
+            ],
+            'urls' => ['index' => route('admin.stockist-orders.index')],
+        ])->withViewData(['pageTitle' => $title]);
     }
+
+    private const STATUSES = ['pending', 'approved', 'processing', 'shipped', 'delivered', 'cancelled'];
+
+    private function badge(StockistOrder $order): array
+    {
+        return AdminPresenter::badge(ucfirst((string) $order->status), 'badge--' . $order->getStatusBadgeClass());
+    }
+
+    /** The one button the list shows for an order, if any. */
+    private function nextAction(StockistOrder $order): ?array
+    {
+        return match (true) {
+            $order->canBeApproved()             => ['label' => 'Approve', 'url' => route('admin.stockist-orders.approve', $order->id)],
+            $order->status === 'shipped'        => ['label' => 'Mark Delivered', 'url' => route('admin.stockist-orders.deliver', $order->id)],
+            $order->canBeShipped()              => ['label' => 'Ship', 'url' => route('admin.stockist-orders.ship', $order->id)],
+            default                             => null,
+        };
+    }
+
+    /**
+     * Move an order on, with the order row locked and its status checked
+     * again inside the transaction. The old actions checked the status
+     * before the transaction without a lock, so two clicks on Deliver both
+     * passed: the stock was added to the stockist twice and the sponsor
+     * bonus paid twice.
+     */
+    private function transition(StockistOrder $order, callable $allowed, callable $apply, string $refused, string $done)
+    {
+        try {
+            $ok = DB::transaction(function () use ($order, $allowed, $apply) {
+                $locked = StockistOrder::with(['items.product', 'stockist.user'])->lockForUpdate()->find($order->id);
+                if (!$locked || !$allowed($locked)) {
+                    return false;
+                }
+                $apply($locked);
+                return true;
+            });
+        } catch (\Throwable $e) {
+            // The exception text used to be shown in the toast.
+            report($e);
+            $notify[] = ['error', 'The order could not be updated. Nothing was changed; please try again.'];
+            return back()->withNotify($notify);
+        }
+
+        $notify[] = $ok ? ['success', $done] : ['error', $refused];
+        return back()->withNotify($notify);
+    }
+
     public function approveOrder(StockistOrder $order)
     {
-        //dd($order);
-        if (!$order->canBeApproved()) {
-             $notify[] = ['error', 'Order cannot be approved in its current status.'];
-             return back()->withNotify($notify);
-           
-        }
-
-        DB::beginTransaction();
-
-        try {
-
-            $order->markAsApproved();
-            DB::commit();
-            $notify[] = ['success', 'Order approved successfully!'];
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            //throw $e;
-            $notify[] = ['error', 'Error code AD103'];
-            $notify[] = ['error', 'Failed to approve order: ' . $e->getMessage()];
-           
-        }
-        return back()->withNotify($notify);
-        
+        return $this->transition($order, fn ($o) => $o->canBeApproved(), fn ($o) => $o->markAsApproved(),
+            'Order cannot be approved in its current status.', 'Order approved successfully!');
     }
-   public function processOrder(StockistOrder $order)
+
+    public function processOrder(StockistOrder $order)
     {
-        if ($order->status !== 'approved') {
-             $notify[] = ['error', 'Order can only be processed from approved status.'];
-             return back()->withNotify($notify);
-
-        }
-
-        DB::beginTransaction();
-
-        try {
-
-             $order->update([
-                'status' => 'processing'
-            ]);
-            DB::commit();
-            $notify[] = ['success', 'Order marked as processing!'];
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            //throw $e;
-            $notify[] = ['error', 'Error code AD103'];
-            $notify[] = ['error', 'Failed to process order: ' . $e->getMessage()];
-           
-        }
-        return back()->withNotify($notify);
-
-
+        return $this->transition($order, fn ($o) => $o->status === 'approved', fn ($o) => $o->update(['status' => 'processing']),
+            'Order can only be processed from approved status.', 'Order marked as processing!');
     }
- 
-    
 
     public function shipOrder(StockistOrder $order)
     {
-        if (!$order->canBeShipped()) {
-            $notify[] = ['error', 'Order cannot be shipped in its current status.'];
-             return back()->withNotify($notify);
-        }
-        DB::beginTransaction();
-
-        try {
-
-             $order->markAsShipped();
-            DB::commit();
-            $notify[] = ['success','Order marked as shipped!'];
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            //throw $e;
-            $notify[] = ['error', 'Error code AD103'];
-            $notify[] = ['error', 'Failed to ship order: ' . $e->getMessage()];
-           
-        }
-        return back()->withNotify($notify);
+        return $this->transition($order, fn ($o) => $o->canBeShipped(), fn ($o) => $o->markAsShipped(),
+            'Order cannot be shipped in its current status.', 'Order marked as shipped!');
     }
 
     public function deliverOrder(StockistOrder $order)
-    {   
-        if (!$order->canBeDelivered()) {
-            $notify[] = ['error', 'Order cannot be delivered in its current status.'];
-             return back()->withNotify($notify);
-        }
-
-        DB::beginTransaction();
-        try {
-            // Mark order as delivered
-            $order->markAsDelivered();
-
-            // Update stockist stores inventory
-            foreach ($order->items as $item) {
-                $userD = $order->stockist->user;
-
-                $this->updateStockistInventory($order->id, $userD, $item); 
-
+    {
+        return $this->transition($order, fn ($o) => $o->canBeDelivered(), function ($o) {
+            $o->markAsDelivered();
+            foreach ($o->items as $item) {
+                $this->updateStockistInventory($o->id, $o->stockist->user, $item);
             }
- 
-            DB::commit();
-            $notify[] = ['success','Order delivered and inventory updated successfully!'];
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            $notify[] = ['error', 'Failed to deliver order: '];
-            $notify[] = ['error', $e->getMessage()];
-        }
-        return back()->withNotify($notify);
-
+        }, 'Order cannot be delivered in its current status.', 'Order delivered and inventory updated successfully!');
     }
+
     public function cancelOrder(Request $request, StockistOrder $order)
     {
-        if (!$order->canBeCancelled()) {
-            $notify[] = ['error', 'Order cannot be cancelled in its current status.'];
-             return back()->withNotify($notify);
-        }
+        $result = DB::transaction(function () use ($order) {
+            // Locked and re-checked, so two clicks can't refund twice.
+            $locked = StockistOrder::with(['items', 'stockist'])->lockForUpdate()->find($order->id);
+            if (!$locked || !$locked->canBeCancelled()) {
+                return false;
+            }
 
-        DB::beginTransaction();
-        try {
-            // Refund stockist's wallet
-            $order->stockist->addToWallet($order->grand_total);
+            $locked->stockist->addToWallet($locked->grand_total);
 
-            //add stockist transaction here..
+            // Placing the order took this stock from the company; it has not
+            // reached the stockist yet (that happens on delivery), so give it back.
+            foreach ($locked->items as $item) {
+                Product::whereKey($item->product_id)->increment('quantity', $item->quantity);
+            }
 
-            // Update order status
-            $order->update(['status' => 'cancelled']);
+            $locked->update(['status' => 'cancelled']);
 
-            DB::commit();
-            $notify[] = ['success','Order cancelled and amount refunded!'];
-            
+            return true;
+        });
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            $notify[] = ['error', 'Failed to cancel order: '];
-            $notify[] = ['error', $e->getMessage()];
-            
-        }
+        $notify[] = $result
+            ? ['success', 'Order cancelled, amount refunded and stock returned.']
+            : ['error', 'Order cannot be cancelled in its current status.'];
         return back()->withNotify($notify);
     }
 
@@ -238,6 +238,7 @@ class StockistOrderController extends Controller
 
         $stockistStore = Stockist_store::where('user_id', $userId)
             ->where('product_id', $productId)
+            ->lockForUpdate()
             ->first();
 
         $stockist = Stockist::where('user_id', $userId)->first();
@@ -273,7 +274,7 @@ class StockistOrderController extends Controller
         $stockist_store_history->user_id = $userId;
         $stockist_store_history->stockist_store_id = $stockistStore->id;
         $stockist_store_history->quantity = $quantity;
-        $stockist_store_history->admin_id = $this->admin->id;
+        $stockist_store_history->admin_id = auth('admin')->id();
         $stockist_store_history->save();
         
         if($stockist_store_type == 1){
@@ -282,7 +283,10 @@ class StockistOrderController extends Controller
                 $amount = $quantity * 40;
                 if ($user->ref_by) {
     
-                    $user_ref = User::findOrFail($user->ref_by);
+                    $user_ref = User::lockForUpdate()->find($user->ref_by);
+                    if (!$user_ref) {
+                        return;
+                    }
                     $user_ref->balance +=  $amount;
                     $user_ref->save();
                     //dd($user_ref);

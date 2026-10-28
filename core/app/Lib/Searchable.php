@@ -74,7 +74,14 @@ class Searchable{
                 return $this;
             }
             try{
-                $date      = explode('-', request()->date);
+                // "start - end". Split on " - " first so ISO dates (2026-10-01 - 2026-10-26,
+                // sent by the React filters) work; a bare "-" still works for "10/01/2026-10/26/2026".
+                $raw  = (string) request()->date;
+                $date = match (true) {
+                    str_contains($raw, ' - ')                         => explode(' - ', $raw, 2),
+                    (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($raw)) => [$raw], // one ISO day
+                    default                                           => explode('-', $raw),
+                };
                 $startDate = Carbon::parse(trim($date[0]))->format('Y-m-d');
                 $endDate = @$date[1] ? Carbon::parse(trim(@$date[1]))->format('Y-m-d') : $startDate;
             }catch(\Exception $e){

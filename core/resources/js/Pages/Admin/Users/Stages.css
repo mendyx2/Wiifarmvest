@@ -1,0 +1,55 @@
+/* Moved from resources/views/admin/users/stages.blade.php (@push('style')),
+   scoped under .page-user-stages so it only applies to this page. */
+
+.page-user-stages {
+    .st-tabs { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+
+    .st-tab {
+        display:inline-flex; align-items:center; gap:.45rem;
+        padding:.45rem 1rem; border-radius:50px; font-size:.8rem; font-weight:600;
+        text-decoration:none; border:2px solid #E5E7EB; background:#fff; color:#374151;
+        transition:all .18s;
+    }
+
+    .st-tab:hover { border-color:#3B82F6; color:#3B82F6; }
+
+    .st-tab.is-active { background:#1a1a2e; border-color:#1a1a2e; color:#fff; }
+
+    .st-tab-badge {
+        display:inline-flex; align-items:center; justify-content:center;
+        background:rgba(255,255,255,.25); color:inherit;
+        min-width:20px; height:20px; border-radius:50px; padding:0 5px; font-size:.7rem; font-weight:700;
+    }
+
+    .st-tab.is-active .st-tab-badge { background:rgba(255,255,255,.3); color:#fff; }
+
+    .st-search-row { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1.1rem; }
+
+    .st-search-wrap { position:relative; flex:1; min-width:180px; }
+
+    .st-search-wrap i { position:absolute; left:.85rem; top:50%; transform:translateY(-50%); color:#9CA3AF; }
+
+    .st-search-input {
+        width:100%; padding:.55rem 1rem .55rem 2.3rem;
+        border:1.5px solid #E5E7EB; border-radius:50px; font-size:.85rem; outline:none;
+        transition:border-color .2s;
+    }
+
+    .st-search-input:focus { border-color:#1a1a2e; }
+
+    .st-search-btn {
+        padding:.55rem 1.3rem; border-radius:50px; border:none; cursor:pointer;
+        background:#1a1a2e; color:#fff; font-size:.83rem; font-weight:600;
+    }
+
+    .st-clear-btn {
+        padding:.55rem 1.1rem; border-radius:50px; border:1.5px solid #E5E7EB;
+        background:#fff; color:#6B7280; font-size:.83rem; font-weight:600; text-decoration:none;
+        display:inline-flex; align-items:center; gap:.3rem;
+    }
+
+    .st-level-badge {
+        display:inline-block; padding:.2rem .65rem; border-radius:50px;
+        font-size:.73rem; font-weight:700; background:#EFF6FF; color:#1D4ED8;
+    }
+}

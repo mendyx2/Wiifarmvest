@@ -35,6 +35,9 @@ class ForgotPasswordController extends Controller
             return back()->withNotify($notify);
         }
 
+        // Only the newest code works.
+        AdminPasswordReset::where('email', $admin->email)->where('status', Status::ENABLE)->update(['status' => Status::DISABLE]);
+
         $code = verificationCode(6);
         $adminPasswordReset = new AdminPasswordReset();
         $adminPasswordReset->email = $admin->email;
@@ -71,15 +74,34 @@ class ForgotPasswordController extends Controller
     public function verifyCode(Request $request)
     {
         $request->validate(['code' => 'required']);
-        $adminPasswordReset = AdminPasswordReset::where('email', session()->get('pass_res_mail'))->where('status',Status::ENABLE)->orderBy('id','desc')->first();
+        $code  = str_replace(' ', '', $request->code);
+        $reset = self::validReset(session()->get('pass_res_mail'), $code);
 
-        if ($adminPasswordReset->token != $request->code) {
+        if (!$reset) {
             $notify[] = ['error', 'Verification code does not match'];
             return to_route('admin.login')->withNotify($notify);
         }
 
         $notify[] = ['success', 'You can change your password'];
-        $code = str_replace(' ', '', $request->code);
         return to_route('admin.password.reset.form', $code)->withNotify($notify);
+    }
+
+    /**
+     * The open, unexpired reset for the email this browser asked about and this
+     * code. Lookups used to go by the 6-digit code alone, never expired and were
+     * not rate-limited, so the admin password could be reset by guessing.
+     */
+    public static function validReset(?string $email, ?string $code): ?AdminPasswordReset
+    {
+        if (!$email || !$code) {
+            return null;
+        }
+
+        return AdminPasswordReset::where('email', $email)
+            ->where('token', $code)
+            ->where('status', Status::ENABLE)
+            ->where('created_at', '>=', now()->subMinutes(60))
+            ->latest('id')
+            ->first();
     }
 }

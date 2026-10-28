@@ -51,6 +51,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \App\Http\Middleware\LanguageMiddleware::class,
             \App\Http\Middleware\ActiveTemplateMiddleware::class,
+            \App\Http\Middleware\HandleInertiaRequests::class,
         ]);
 
         $middleware->alias([
@@ -86,7 +87,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'stockist' => \App\Http\Middleware\StockistMiddleware::class,
             'stockist.mega' => \App\Http\Middleware\MegaStockistMiddleware::class,
-            'first.login' => \App\Http\Middleware\CheckFirstLogin::class,
             'cron.secret' => \App\Http\Middleware\CronSecret::class,
             'affiliate.track' => \App\Http\Middleware\TrackAffiliateClick::class,
         ]);

@@ -6,6 +6,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "ext-bcmath": "*",
         "authorizenet/authorizenet": "^2.0",
         "barryvdh/laravel-dompdf": "^3.1",
         "btcpayserver/btcpayserver-greenfield-php": "^2.3",
@@ -13,6 +14,7 @@
         "ezyang/htmlpurifier": "^4.17",
         "google/apiclient": "^2.15",
         "guzzlehttp/guzzle": "^7.8",
+        "inertiajs/inertia-laravel": "^2.0",
         "intervention/image": "^3.6",
         "laramin/utility": "^1.0",
         "laravel/framework": "^11.0",

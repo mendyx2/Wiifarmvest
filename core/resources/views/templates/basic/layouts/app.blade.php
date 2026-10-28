@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title> {{ gs()->siteName(__($pageTitle)) }}</title>
+    <title inertia> {{ gs()->siteName(__($pageTitle)) }}</title>
     @include('partials.seo')
     <!-- Bootstrap CSS --> 
     <meta name="theme-color" content="#135D26">
@@ -115,22 +115,7 @@
     <script src=" {{ asset($activeTemplateTrue . 'js/isotope.min.js') }}"></script>
     <script src="{{ asset($activeTemplateTrue . 'js/main.js') }}"></script>
     
-     @if(request()->routeIs('user.dashboard'))
-    <!--Start of Tawk.to Script-->
-        <script type="text/javascript">
-        var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
-        (function(){
-        var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
-        s1.async=true;
-        s1.src='https://embed.tawk.to/68b56669cbdd78615202ce7b/1j429g3gd';
-        s1.charset='UTF-8';
-        s1.setAttribute('crossorigin','*');
-        s0.parentNode.insertBefore(s1,s0);
-        })();
-        </script>
-    <!--End of Tawk.to Script-->
-
-    @endif
+    {{-- The Tawk.to live chat moved to the React dashboard (Pages/User/Dashboard.tsx, notes Step 80). --}}
 
     @stack('script-lib')
 

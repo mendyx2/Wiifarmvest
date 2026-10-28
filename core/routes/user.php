@@ -12,38 +12,41 @@ Route::namespace('User\Auth')->name('user.')->middleware(['guest', 'XssSanitizer
 
     Route::controller('RegisterController')->middleware(['guest'])->group(function () {
         Route::get('register', 'showRegistrationForm')->name('register');
-        Route::get('signup', 'showRegistrationForm')->name('register1');
-        // Route::get('signup', 'showRegistrationForm1')->name('register1');
+        // Removed duplicate page: old sign-up links (with ?ref=) land on the register page.
+        Route::get('signup', fn () => to_route('user.register', request()->query()))->name('register1');
         Route::post('register', 'register');
-        //Route::post('register2', 'register2')->name('register2');
-        Route::post('check-user', 'checkUser')->name('checkUser')->withoutMiddleware('guest');
+        // Live checks on the register page (replaces check-user and the /check/* routes).
+        Route::get('register/check', 'check')->name('register.check')->middleware('throttle:30,1');
     }); 
 
     Route::controller('ForgotPasswordController')->prefix('password')->name('password.')->group(function () {
         Route::get('reset', 'showLinkRequestForm')->name('request');
-        Route::post('email', 'sendResetCodeEmail')->name('email');
+        Route::post('email', 'sendResetCodeEmail')->name('email')->middleware('throttle:5,1');
         Route::get('code-verify', 'codeVerify')->name('code.verify');
-        Route::post('verify-code', 'verifyCode')->name('verify.code');
+        Route::post('verify-code', 'verifyCode')->name('verify.code')->middleware('throttle:10,1');
     });
 
     Route::controller('ResetPasswordController')->group(function () {
-        Route::post('password/reset', 'reset')->name('password.update');
+        Route::post('password/reset', 'reset')->name('password.update')->middleware('throttle:10,1');
         Route::get('password/reset/{token}', 'showResetForm')->name('password.reset');
     });
 });
 
 Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
     Route::get('user-data', 'User\UserController@userData')->name('data');
-    Route::get('user-data1', 'User\UserController@userData')->name('data1');
-    Route::post('user-data-submit', 'User\UserController@userDataSubmit')->name('data.submit');
+    // Removed duplicate page: for section-2 members it redirected to itself (an endless loop).
+    Route::get('user-data1', fn () => to_route('user.data'))->name('data1');
+    // POST user-data-submit removed: no page posted to it, and its code could not run
+    // (it used a variable that was only set when a parent was given). See notes Step 86.
 
     //authorization
     Route::middleware('registration.complete')->namespace('User')->controller('AuthorizationController')->group(function () {
         Route::get('authorization', 'authorizeForm')->name('authorization');
-        Route::get('resend-verify/{type}', 'sendVerifyCode')->name('send.verify.code');
-        Route::post('verify-email', 'emailVerification')->name('verify.email');
-        Route::post('verify-mobile', 'mobileVerification')->name('verify.mobile');
-        Route::post('verify-g2fa', 'g2faVerification')->name('2fa.verify');
+        Route::get('resend-verify/{type}', 'sendVerifyCode')->name('send.verify.code')->middleware('throttle:6,1');
+        // Throttled: the codes are six digits.
+        Route::post('verify-email', 'emailVerification')->name('verify.email')->middleware('throttle:10,1');
+        Route::post('verify-mobile', 'mobileVerification')->name('verify.mobile')->middleware('throttle:10,1');
+        Route::post('verify-g2fa', 'g2faVerification')->name('2fa.verify')->middleware('throttle:10,1');
     }); 
 
     //['middleware' => ['XssSanitizer']],
@@ -58,16 +61,10 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::get('dashboard', 'home')->name('home');
                 Route::get('notifications', 'notifications')->name('notifications');
                 Route::post('notifications/mark-read', 'markNotificationsRead')->name('notifications.mark.read');
-                Route::get('downline', 'downline')->name('downline');
-                Route::post('downline1', 'downline1')->name('downline1');
+                // Removed duplicate page: searching a member's tree is on the My Tree page.
+                Route::get('downline', fn () => to_route('user.my.tree'))->name('downline');
                
                 
-                //stockist
-               
-                Route::get('sales', 'salesStockistOrders')->name('stock.sales');
-                //Stockist Orders
-
-                Route::get('sorders', 'sorders')->name('sorders');
 
                 Route::get('download-attachments/{file_hash}', 'downloadAttachment')->name('download.attachment');
                 Route::get('view-attachment/{file_hash}', 'viewAttachment')->name('view.attachment');
@@ -77,10 +74,8 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::post('twofactor/enable', 'create2fa')->name('twofactor.enable');
                 Route::post('twofactor/disable', 'disable2fa')->name('twofactor.disable');
 
-                //2FA food production
-                Route::get('twofactor1', 'show2faForm1')->name('twofactor1');
-                Route::post('twofactor/enable1', 'create2fa1')->name('twofactor.enable1');
-                Route::post('twofactor/disable1', 'disable2fa1')->name('twofactor.disable1');
+                // Removed duplicate page: old URL redirects to the main page.
+                Route::get('twofactor1', fn () => to_route('user.twofactor', request()->query()))->name('twofactor1');
 
 
                 //KYC
@@ -96,36 +91,27 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
                 //Report
                 Route::get('deposit/history', 'depositHistory')->name('deposit.history');
-                Route::get('deposit/history1', 'depositHistory1')->name('deposit.history1');
+                // Removed duplicate page. Kept as a redirect: older deposits store this URL as their success/failed URL.
+                Route::get('deposit/history1', fn () => to_route('user.deposit.history', request()->query()))->name('deposit.history1');
 
                 Route::get('transactions', 'transactions')->name('transactions');
-                Route::get('transactions1', 'transactions1')->name('transactions1');
+                Route::get('transactions1', fn () => to_route('user.transactions', request()->query()))->name('transactions1'); // removed duplicate page
 
                 //Balance Transfer
-                Route::get('transfer', 'indexTransfer')->name('balance.transfer');
-                Route::post('search-user', 'searchUser')->name('search.user');
+                // Removed: this "balance transfer" form posted to a GET-only URL and no code ever
+                // moved the money. Bonus Transfer is the transfer page (notes Step 82).
+                Route::get('transfer', fn () => to_route('user.bonus.transfer.index'))->name('balance.transfer');
                 Route::post('add-device-token', 'addDeviceToken')->name('add.device.token');
                 
-                //Orders
-                //Route::get('orders', 'orders')->name('orders');
-                Route::post('check-code', 'checkCode')->name('checkCode');
 
-                 //Orders food production
-                Route::get('orders1', 'orders1')->name('orders1');
+                Route::get('orders1', fn () => to_route('user.orders.index'))->name('orders1'); // removed duplicate page
                 
-                //purchase
-                Route::post('purchase', 'purchase')->name('purchase');
-                Route::post('purchase1', 'purchase1')->name('purchase1');
-                Route::post('purchaseDone', 'purchaseDone')->name('purchaseDone');
 
-                 // Legacy restock request to the company: Mega stockists only
-                 Route::post('restock', 'restockGoods')->name('restock')->middleware('stockist.mega');
                   //product
                 Route::get('/products/{catId?}', 'products')->name('products');
                 Route::get('/product/{id}/{slug}', 'productDetails')->name('product.details');
-                Route::get('/products1/{catId?}', 'products1')->name('products1');
-                Route::get('/product1/{id}/{slug}', 'productDetails1')->name('product.details1');
-                Route::post('products/search', 'searchState')->name('product.search');   
+                Route::get('/products1/{catId?}', fn ($catId = null) => to_route('user.products', $catId))->name('products1'); // removed duplicate page
+                Route::get('/product1/{id}/{slug}', fn ($id, $slug) => to_route('user.product.details', [$id, $slug]))->name('product.details1'); // removed duplicate page
             });
             
             
@@ -134,19 +120,12 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 
                 Route::post('/flashcard/{id}/dismiss',  'dismiss')
                     ->name('flashcard.dismiss');
-                Route::get('/flashcards', 'index')
-                    ->name('flashcards.index');
+                // GET /flashcards (flashcards.index) removed: FlashcardController has no
+                // index() method, so the URL was a server error (notes Step 80).
 
             }); 
 
-            // Order routes
-            Route::controller('ProductController')->group(function () {
-                
-                Route::get('/pp/products','index')->name('products.index');
-                Route::post('/pp/products/search', 'search')->name('products.search');
-                Route::get('/pp/products/{product}/price/{state}', 'getProductPrice')->name('products.price');
-
-            });
+            Route::get('/pp/products', fn () => to_route('user.products'))->name('products.index'); // removed duplicate page
 
           
 
@@ -172,14 +151,13 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
           
             // Stockist routes
             Route::controller('StockistController')->group(function (){
-                Route::get('/redeem', 'redeemForm')->name('redeem.form');
-                Route::post('/redeem', 'redeemProduct')->name('redeem.product');
               
                 
-                Route::get('/find-stockist', 'findStockist')->name('stockist.find');
-                Route::post('/search-stockists',  'searchStockists')->name('stockist.search');
+                // Invoice redemption is done on the stockist dashboard (the old /redeem page had no view).
+                Route::get('/redeem', fn () => to_route('user.stockist.dashboard'))->name('redeem.form');
 
-                Route::get('/redeem', 'redeemForm')->name('stockist.redeem.form');
+                Route::get('/find-stockist', 'findStockist')->name('stockist.find');
+
 
                 
 
@@ -195,18 +173,16 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::post('/profile/location', 'updateLocation')->name('profile.location');
                 Route::post('/profile/opening-hours', 'updateOpeningHours')->name('profile.opening-hours');
                 Route::post('/profile/services', 'updateServices')->name('profile.services');
-                Route::get('/profile/data', 'getProfileData')->name('profile.data');
 
                    
-                Route::get('/setup', 'setup')->name('setup');
-                Route::post('/setup', 'storeSetup')->name('setup.store');
+                // Stockists are created by the admin; the old self-setup page could not be reached.
+                Route::get('/setup', fn () => to_route('user.stockist.dashboard'))->name('setup');
                 
                
                 
                 
                 Route::get('/dashboard', 'dashboard')->name('dashboard');
 
-                Route::post('/verify-invoice', 'verifyInvoice')->name('verify.invoice');
                 
                 Route::post('/process-redemption', 'processRedemption')->name('process.redemption');
                 Route::get('/history', 'redemptionHistory')->name('history');
@@ -227,7 +203,6 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                     Route::get('/inventory/catalog',  'productsCatalog')->name('inventory.catalog');
                     Route::post('/inventory/cart/add', 'addToCart')->name('inventory.cart.add');
                     Route::post('/inventory/cart/update', 'updateCart')->name('inventory.cart.update');
-                    Route::get('/inventory/cart', 'getCart')->name('inventory.cart.get');
                     Route::get('/inventory/checkout', 'checkout')->name('inventory.checkout');
                     Route::post('/inventory/order/place', 'placeOrder')->name('inventory.order.place');
                 });
@@ -235,9 +210,6 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 // Order history stays open to every stockist (a Mini's earlier company orders)
                 Route::get('/inventory/orders', 'orderHistory')->name('inventory.orders');
                 Route::get('/inventory/orders/{order}', 'orderDetails')->name('inventory.order.details');
-                
-                // Inventory Management
-                Route::post('/inventory/levels/update', 'updateInventoryLevels')->name('inventory.levels.update');
             });
 
             // Point of Sale
@@ -259,9 +231,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
             // Welcome Back Package redemption
             Route::controller('StockistWelcomePackageController')->middleware(['stockist'])->prefix('stockist/welcome-pack')->name('stockist.welcome-pack.')->group(function () {
-                Route::get('/', 'index')->name('index');
-                Route::post('/verify', 'verify')->name('verify');
-                Route::post('/redeem', 'redeem')->name('redeem');
+                Route::get('/', 'index')->name('index'); // ?code= verifies a code; redeeming happens in the POS
             });
 
             // Affiliate Program — every member gets this, no extra gating middleware
@@ -275,8 +245,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             // Redeem Affiliate Products — separate from the internal repurchase
             // redemption flow above (no unilevel/PV logic; single-shot pickup)
             Route::controller('StockistAffiliateRedemptionController')->middleware(['stockist'])->prefix('stockist/affiliate')->name('stockist.affiliate.')->group(function () { 
-                Route::get('/', 'redeemForm')->name('redeem');
-                Route::post('/verify', 'verify')->name('verify');
+                Route::get('/', 'redeemForm')->name('redeem'); // ?code= verifies an order
                 Route::post('/confirm', 'confirm')->name('confirm');
             });
 
@@ -286,12 +255,10 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::post('profile-setting', 'submitProfile'); 
                 Route::get('change-password', 'changePassword')->name('change.password');
                 Route::post('change-password', 'submitPassword');
-                // food production
 
-                Route::get('profile-setting1', 'profile1')->name('profile.setting1');
-                Route::post('profile-setting1', 'submitProfile1');
-                Route::get('change-password1', 'changePassword1')->name('change.password1');
-                Route::post('change-password1', 'submitPassword1');
+                // Removed duplicate pages: old URLs redirect to the main pages.
+                Route::get('profile-setting1', fn () => to_route('user.profile.setting', request()->query()))->name('profile.setting1');
+                Route::get('change-password1', fn () => to_route('user.change.password', request()->query()))->name('change.password1');
             }); 
 
             //E-pin Recharge
@@ -319,16 +286,11 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
 
 
-            // Withdraw food production
-            Route::controller('WithdrawController')->prefix('withdraw1')->name('withdraw1')->group(function () {
-                //Route::middleware('kyc')->group(function () {
-                    Route::get('/now', 'withdrawMoney1')->name('.now');
-                    Route::post('/', 'withdrawStore1')->name('.money1');
-                    Route::get('preview1', 'withdrawPreview1')->name('.preview1');
-                    Route::post('preview1', 'withdrawSubmit1')->name('.submit1');
-                //});
-                Route::get('history1', 'withdrawLog1')->name('.history1');
-               
+            // Removed duplicate withdraw flow (withdraw1/*): old URLs redirect to the main flow.
+            Route::prefix('withdraw1')->name('withdraw1')->group(function () {
+                Route::get('/now', fn () => to_route('user.withdraw', request()->query()))->name('.now');
+                Route::get('preview1', fn () => to_route('user.withdraw.preview', request()->query()))->name('.preview1');
+                Route::get('history1', fn () => to_route('user.withdraw.history', request()->query()))->name('.history1');
             });
 
             //MatricController.php
@@ -340,16 +302,14 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             Route::controller('DistributorController')->prefix('add-distributor')->name('distributor.')->group(function () {
                 Route::get('/',              'showForm')->name('index');
                 Route::post('/',             'store')->name('store');
-                Route::post('/check-visa',   'checkVisaBalance')->name('check.visa');
+                Route::get('/check',         'check')->name('check'); // live username / parent-slot checks
             });
            
             
-            Route::controller('TestController')->prefix('test')->name('test.')->group(function () {
-                Route::get('/', 'anotherTest')->name('test');
-            });
 
             Route::controller('PlanController')->prefix('plan')->name('plan.')->group(function () {
-             Route::get('/', 'planIndex')->name('index');
+                // planIndex never existed; the old plan page was the same thing as the portfolio (Buy Shares, subscriptions, receipts).
+                Route::get('/', fn () => to_route('user.investment.portfolio'))->name('index'); // removed duplicate page
                // Route::get('/investment', 'planIndex1')->name('investment');
                // Route::get('/reservation', 'reservation')->name('reservation');
                 //Route::post('/', 'planStore')->name('purchase');
@@ -361,7 +321,8 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             });
 
             Route::controller('PlanController')->group(function () {
-                Route::get('/shares', 'shares')->name('shares');
+                // Removed duplicate page (buying is the Buy Shares pop-up on the portfolio).
+                Route::get('/shares', fn () => to_route('user.investment.portfolio'))->name('shares');
                 Route::post('/shares', 'sharesStore')->name('shares.purchase');
 
                 Route::get('investment/portfolio', 'investmentPortfolio')->name('investment.portfolio');
@@ -378,7 +339,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
                 Route::get('my-tree/{id}', 'myTreeStage')->name('my.treeStage');
                 Route::get('referrals', 'myRefLog')->name('my.ref');
-                Route::get('referrals1', 'myRefLog1')->name('my.ref1');
+                Route::get('referrals1', fn () => to_route('user.my.ref', request()->query()))->name('my.ref1'); // removed duplicate page
                 Route::get('binary-summery', 'binarySummery')->name('binary.summery');
                 Route::get('binary-list', 'binaryList')->name('binary.list');
                 Route::get('tree/{user}', 'otherTree')->name('other.tree');
@@ -390,7 +351,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::get('/',               'index')->name('index');
                 Route::post('/transfer',      'transfer')->name('submit');
                 Route::post('/transfer-all',  'transferAll')->name('all');
-                Route::get('/check-purchase', 'checkPurchase')->name('check.purchase');
+                // GET /check-purchase removed: the page receives the autoship status with its props.
             });
 
             // My Project  
@@ -408,13 +369,11 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             
 
             Route::post('insert', 'depositInsert')->name('insert');
-            Route::post('insert1', 'depositInsert1')->name('insert1');
             Route::get('confirm', 'depositConfirm')->name('confirm');
-            Route::get('confirm1', 'depositConfirm1')->name('confirm1');
+            Route::get('confirm1', fn () => to_route('user.deposit.confirm', request()->query()))->name('confirm1'); // removed duplicate flow
             Route::get('manual', 'manualDepositConfirm')->name('manual.confirm');
-            Route::get('manual1', 'manualDepositConfirm1')->name('manual.confirm1');
+            Route::get('manual1', fn () => to_route('user.deposit.manual.confirm', request()->query()))->name('manual.confirm1'); // removed duplicate flow
             Route::post('manual', 'manualDepositUpdate')->name('manual.update');
-            Route::post('manual1', 'manualDepositUpdate1')->name('manual.update1');
         });
     });
 });

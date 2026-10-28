@@ -7,47 +7,69 @@ use App\Models\Ad;
 use App\Models\AdShare;
 use App\Models\AffiliateOrder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use App\Support\PublicShopPresenter;
+use Inertia\Inertia;
 
 class AffiliateController extends Controller
 {
     public function dashboard()
     {
-        $pageTitle = 'Affiliate Dashboard';
-        $user      = auth()->user();
-        $code      = $user->getOrCreateAffiliateCode();
-        $shopLink  = route('shop.index', ['ref' => $code]);
+        $user  = auth()->user();
+        $code  = $user->getOrCreateAffiliateCode();
+        $orders = $user->affiliateOrders();
 
-        $clicksCount = $user->affiliateClicks()->count();
-        $orders      = $user->affiliateOrders();
-        $ordersCount = (clone $orders)->count();
-        $paidCount   = (clone $orders)->whereIn('status', [AffiliateOrder::STATUS_PAID, AffiliateOrder::STATUS_FULFILLED])->count();
-        $fulfilledCount = (clone $orders)->where('status', AffiliateOrder::STATUS_FULFILLED)->count();
-
-        $recentOrders = (clone $orders)->latest()->limit(8)->get();
-        $adsCount     = Ad::active()->count();
-
-        return view('Template::user.affiliate.dashboard', compact(
-            'pageTitle', 'user', 'code', 'shopLink', 'clicksCount',
-            'ordersCount', 'paidCount', 'fulfilledCount', 'recentOrders', 'adsCount'
-        ));
+        return Inertia::render('User/Affiliate/Dashboard', [
+            'shopLink' => route('shop.index', ['ref' => $code]),
+            'stats'    => [
+                'clicks'    => number_format($user->affiliateClicks()->count()),
+                'orders'    => number_format((clone $orders)->count()),
+                'fulfilled' => number_format((clone $orders)->where('status', AffiliateOrder::STATUS_FULFILLED)->count()),
+                'bonus'     => showAmount($user->affiliate_bonus_balance),
+            ],
+            'recentOrders' => (clone $orders)->latest()->limit(8)->get()->map(fn ($order) => $this->presentOrder($order, 'M d, Y'))->values(),
+            'adsCount' => Ad::active()->count(),
+            'urls'     => [
+                'ads'           => route('user.affiliate.ads'),
+                'orders'        => route('user.affiliate.orders'),
+                'bonusTransfer' => route('user.bonus.transfer.index'),
+            ],
+        ])->withViewData(['pageTitle' => 'Affiliate Dashboard']);
     }
 
     public function orders()
     {
-        $pageTitle = 'My Affiliate Orders';
-        $orders    = auth()->user()->affiliateOrders()->with('items')->latest()->paginate(15);
+        $orders = auth()->user()->affiliateOrders()->withSum('items as items_quantity', 'quantity')->latest()->paginate(15)
+            ->through(fn ($order) => $this->presentOrder($order, 'M d, Y g:i A') + [
+                'buyerEmail' => $order->buyer_email,
+                'items'      => (int) $order->items_quantity,
+            ]);
 
-        return view('Template::user.affiliate.orders', compact('pageTitle', 'orders'));
+        return Inertia::render('User/Affiliate/Orders', [
+            'orders' => $orders,
+            'urls'   => ['dashboard' => route('user.affiliate.dashboard')],
+        ])->withViewData(['pageTitle' => 'My Affiliate Orders']);
+    }
+
+    /** One order row, as both affiliate pages show it. */
+    private function presentOrder(AffiliateOrder $order, string $dateFormat): array
+    {
+        return [
+            'id'      => $order->id,
+            'code'    => $order->order_code,
+            'buyer'   => $order->buyer_name,
+            'total'   => showAmount($order->total_amount),
+            'payment' => $order->payment_method === 'paystack' ? 'Online' : 'Cash on Pickup',
+            'status'  => PublicShopPresenter::orderStatus($order),
+            'date'    => $order->created_at?->format($dateFormat) ?? '',
+        ];
     }
 
     /** Ad Center: ready-made posts, each with this member's own tracked link. */
     public function ads()
     {
-        $pageTitle = 'Ad Center';
-        $user      = auth()->user();
+        $user = auth()->user();
         $user->getOrCreateAffiliateCode();
-
-        $ads = Ad::active()->with('product:id,name')->ordered()->paginate(12);
 
         $visits = $user->affiliateClicks()
             ->whereNotNull('ad_id')
@@ -64,9 +86,41 @@ class AffiliateController extends Controller
             ->groupBy('affiliate_clicks.ad_id')
             ->pluck('total', 'ad_id');
 
-        $shared = $user->adShares()->distinct()->count('ad_id');
+        $mimes = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp',
+                  'mp4' => 'video/mp4', 'webm' => 'video/webm', 'mov' => 'video/quicktime'];
 
-        return view('Template::user.affiliate.ads', compact('pageTitle', 'user', 'ads', 'visits', 'orders', 'shared'));
+        $ads = Ad::active()->with('product:id,name')->ordered()->paginate(12)->through(function (Ad $ad) use ($user, $visits, $orders, $mimes) {
+            $extension = strtolower(pathinfo($ad->media, PATHINFO_EXTENSION));
+
+            return [
+                'id'          => $ad->id,
+                'title'       => $ad->title,
+                'caption'     => $ad->caption ?: $ad->title,
+                'kind'        => $ad->isVideo() ? 'video' : 'image',
+                'link'        => $ad->shareUrlFor($user),
+                'media'       => $ad->mediaUrl(),
+                'mime'        => $mimes[$extension] ?? 'application/octet-stream',
+                'poster'      => $ad->posterUrl(),
+                'thumb'       => $ad->thumbUrl(),
+                'fileName'    => (Str::slug($ad->title) ?: 'ad-' . $ad->id) . '.' . $extension,
+                'destination' => $ad->product ? $ad->product->name : null,
+                'visits'      => (int) ($visits[$ad->id] ?? 0),
+                'orders'      => (int) ($orders[$ad->id] ?? 0),
+                'logUrl'      => route('user.affiliate.ads.share', $ad->id),
+            ];
+        });
+
+        return Inertia::render('User/Affiliate/Ads', [
+            'ads'   => $ads,
+            'stats' => [
+                'ads'    => number_format($ads->total()),
+                'shared' => number_format($user->adShares()->distinct()->count('ad_id')),
+                'visits' => number_format($visits->sum()),
+                'orders' => number_format($orders->sum()),
+            ],
+            'icons' => AdShare::CHANNEL_ICONS,
+            'urls'  => ['dashboard' => route('user.affiliate.dashboard')],
+        ])->withViewData(['pageTitle' => 'Ad Center']);
     }
 
     /**

@@ -9,108 +9,111 @@ use App\Models\Product;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use App\Support\ShopPresenter;
 
 class CartController extends Controller
 {
     public function index()
-    {   $pageTitle = 'Shopping Cart';
-        //dd($cart = auth()->user()->cart);
-        $cart = auth()->user()->cart ?? $this->createCart();
+    {
+        $pageTitle = 'Shopping Cart';
+        $user      = auth()->user();
+        $cart      = $user->cart->load('items.product', 'items.productstate.state');
+        $total     = (float) $cart->items->sum(fn ($item) => $item->price * $item->quantity); // same sum as Cart::updateTotal()
+        $wallet    = (float) ($user->product_wallet ?? 0);
 
-        //dd($cart);
-        if (!isset($cart->id)) {
-            $this->createCart(); 
-        }
-        //dd($cart);
-        return view('Template::user.cart.index', compact('cart', 'pageTitle'));
+        return Inertia::render('User/Shop/Cart', [
+            'items' => $cart->items->map(fn ($item) => [
+                'id'        => $item->id,
+                'name'      => (string) @$item->product->name,
+                'sku'       => @$item->product->sku,
+                'image'     => @$item->product->thumbnail ? ShopPresenter::image($item->product->thumbnail) : null,
+                'state'     => (string) @$item->productstate->state->name,
+                'quantity'  => (int) $item->quantity,
+                'price'     => showAmount($item->price, 2),
+                'lineTotal' => showAmount($item->price * $item->quantity, 2),
+                'updateUrl' => route('user.cart.update', $item->id),
+                'removeUrl' => route('user.cart.remove', $item->id),
+            ])->values(),
+            'total'       => showAmount($total, 2),
+            'wallet'      => showAmount($wallet),
+            'canCheckout' => $wallet >= $total,
+            'shortfall'   => $wallet < $total ? showAmount($total - $wallet) : null,
+            'productsUrl' => route('user.products'),
+            'checkoutUrl' => route('user.checkout'),
+        ])->withViewData(compact('pageTitle'));
     }
 
     public function addToCart(Request $request, $product_id)
-    { 
-        $request->validate([ 
-            'quantity' => 'required|integer|min:1',
-            'productId'=> 'required|integer',
-            'product_state_id'=> 'required|integer|exists:product_state_prices,id'
+    {
+        $request->validate([
+            'quantity'         => 'required|integer|min:1|max:99',
+            'productId'        => 'required|integer',
+            'product_state_id' => 'required|integer|exists:product_state_prices,id',
+        ], [
+            'product_state_id.required' => 'Please select your state first.',
         ]);
-        //product_state_id
+
         $cart = auth()->user()->cart;
-        if ($cart) {// cart exist...
-            $cartItemChecking = $cart->items()->first();
 
+        // A cart holds products for one state only (prices differ per state).
+        $firstItem = $cart->id ? $cart->items()->with('productstate')->first() : null;
+        if ($firstItem) {
+            $statePrice = getProductStatePrice($request->product_state_id);
+            if ($firstItem->productstate->state_id != $statePrice->state_id) {
+                return back()->withErrors(['cart' => 'A cart can only hold products for a single state']);
+            }
+        }
 
-            if ($cartItemChecking) {// cartItem exist...
-
-               $product_state_price  = getProductStatePrice($request->product_state_id);
-              
-                if ($cartItemChecking->productstate->state_id != $product_state_price->state_id) {
-                    return response()->json([
-                        'success' => false, 
-                        'message' => 'A cart cannot only hold a single state',
-                        'cart_count' => $cart->items->count()
-                    ]);
-                }
-
-            }//  end cartItem exist...
-        }// end cart exist...
-        //dd('i am here');
-        
         DB::beginTransaction();
         try {
-
-            
             if (!$cart->id) {
-                $cart = new Cart();
-                $cart->user_id = auth()->id();
-                $cart->total_amount =  0;
-                $cart->save();
-            }else{
-                $cart = auth()->user()->cart;
+                $cart = $this->createCart();
             }
 
-            $product = Product::where('id', $request->productId)->first();
-            $product_state = ProductStatePrice::Where('product_id', $request->productId)->where('id',$request->product_state_id)->first();
-            
+            $product       = Product::active()->where('id', $request->productId)->first();
+            $product_state = ProductStatePrice::where('product_id', $request->productId)->where('id', $request->product_state_id)->first();
+
+            // An inactive product, or a state price that belongs to another product.
+            if (!$product || !$product_state) {
+                DB::rollBack();
+                return back()->withErrors(['cart' => 'This product is not available.']);
+            }
+
             $cartItem = $cart->items()->where('product_id', $product->id)->where('product_state_id', $product_state->id)->first();
 
             if ($cartItem) {
                 $cartItem->quantity += $request->quantity;
                 $cartItem->save();
-
-            } else {
-                $cartItem_check = $cart->items()->where('product_id', $product->id)->first();
-                //  cartItem_check this is to ensure no same product for different location is in this cart.
-                if (!$cartItem_check) {
-
-                    CartItem::create([
-                        'cart_id' => $cart->id,
-                        'product_id' => $product->id,
-                        'quantity' => $request->quantity,
-                        'product_state_id' => $request->product_state_id,
-                        'price' => $product_state->price
-                    ]);
-                }
+            } elseif (!$cart->items()->where('product_id', $product->id)->exists()) {
+                // The same product for another state can't sit in the cart twice.
+                CartItem::create([
+                    'cart_id'          => $cart->id,
+                    'product_id'       => $product->id,
+                    'quantity'         => $request->quantity,
+                    'product_state_id' => $request->product_state_id,
+                    'price'            => $product_state->price,
+                ]);
             }
 
+            $cart->load('items');
             $cart->updateTotal();
-        DB::commit();
-        
-            return response()->json([
-                'success' => true,
-                'message' => 'Product added to cart successfully',
-                'cart_count' => $cart->items->count()
-            ]);
-      
-        } catch (\Exception $e) {
-        DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Add to cart failed: ' . $e->getMessage()]);
-        }
+            DB::commit();
 
+            return back();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            report($e);
+            return back()->withErrors(['cart' => 'Add to cart failed. Please try again.']);
+        }
     }
 
     public function updateCart(Request $request, CartItem $cartItem)
     {
+        $this->authorizeItem($cartItem);
+
         $request->validate([
-            'quantity' => 'required|integer|min:1'
+            'quantity' => 'required|integer|min:1|max:99'
         ]);
 
         $cartItem->quantity = $request->quantity;
@@ -118,36 +121,29 @@ class CartController extends Controller
 
         $cartItem->cart->updateTotal();
 
-
-        return response()->json(['success' => true]);
+        return back();
     }
 
     public function removeFromCart(CartItem $cartItem)
     {
-       
-        DB::beginTransaction();
-        try {
+        $this->authorizeItem($cartItem);
 
-            $cart = $cartItem->cart;
-            $cartItem->delete();
-            $cartItem->cart->updateTotal();
-           
-            //dd($cart->items->count());
-            // if ($cart->items->count() == 0) {
-            //    //dd($cart->items->count());
-            //    //$carter = Cart::find($cart->id);
-            //    $cart->destroy($cart->id);
-            // }
-           
-            
-            DB::commit();
-         return response()->json(['success' => true]);
-     
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['success' => false, 'message' => 'Add to cart failed: ' . $e->getMessage()]);
-        }
-       
+        $cart = $cartItem->cart;
+        $cartItem->delete();
+        $cart->load('items');
+        $cart->updateTotal();
+
+        $notify[] = ['success', 'Item removed from your cart'];
+        return back()->withNotify($notify);
+    }
+
+    /**
+     * Cart items are looked up by id from the URL: only the owner of the cart
+     * may change or remove them (any user could, before).
+     */
+    private function authorizeItem(CartItem $cartItem): void
+    {
+        abort_unless((int) optional($cartItem->cart)->user_id === (int) auth()->id(), 404);
     }
 
     private function createCart()
@@ -156,7 +152,6 @@ class CartController extends Controller
         $cart->user_id = auth()->id();
         $cart->total_amount =  0;
         $cart->save();
-        //dd($cart);
 
         return $cart;
     }

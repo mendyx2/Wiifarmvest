@@ -10,10 +10,10 @@ use App\Models\StockistRedemption;
 use App\Models\Stransaction;
 use App\Services\StockistRebateService;
 use App\Services\WelcomePackageService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+use App\Support\ShopPresenter;
+use Inertia\Inertia;
  
 class StockistPosController extends Controller
 {
@@ -22,31 +22,73 @@ class StockistPosController extends Controller
         private readonly StockistRebateService $rebates,
     ) {}
 
-    public function index()
+    public function index(Request $request)
     {
         $pageTitle = 'POS';
-        $stockist = auth()->user()->stockist;
+        $stockist  = auth()->user()->stockist;
 
         $inventory = Stockist_store::with('product')
             ->where('user_id', auth()->id())
             ->where('quantity', '>', 0)
             ->get()
+            ->filter(fn ($item) => $item->product !== null)
             ->map(function ($item) use ($stockist) {
                 $statePrice = ProductStatePrice::where('state_id', $stockist->state_id)
                     ->where('product_id', $item->product_id)
+                    ->orderBy('id')
                     ->first();
 
-
-                $item->unit_price = $statePrice ? (float) $statePrice->price : (float) ($item->product->price ?? 0);
-                return $item;
+                return [
+                    'productId' => $item->product_id,
+                    'name'      => (string) $item->product->name,
+                    'sku'       => $item->product->sku,
+                    'image'     => $item->product->thumbnail ? ShopPresenter::image($item->product->thumbnail) : null,
+                    'stock'     => (int) $item->quantity,
+                    // A sale is always charged at the state price. The old page showed
+                    // the base price when there was none, then refused the sale.
+                    'price'     => $statePrice ? (float) $statePrice->price : null,
+                    'priceText' => $statePrice ? showAmount($statePrice->price) : null,
+                ];
             })
-            ->filter(fn ($item) => $item->product !== null)
             ->values();
 
-        return view('Template::user.stockist.pos', compact('inventory', 'stockist', 'pageTitle'));
+        // "Verify" reloads this page with ?code=XXXXXXXXXX; the cart stays in the browser.
+        $code         = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $request->query('code', '')));
+        $welcome      = null;
+        $welcomeError = null;
+        if ($code !== '') {
+            try {
+                $package = $this->welcomePackageService->findByCode($code)->load('user');
+                $welcome = [
+                    'code'       => $package->code,
+                    'amount'     => (float) $package->amount,
+                    'amountText' => showAmount($package->amount),
+                    'username'   => (string) @$package->user->username,
+                    'fullname'   => (string) @$package->user->fullname,
+                ];
+            } catch (\RuntimeException $e) {
+                $welcomeError = $e->getMessage();
+            }
+        }
+
+        return Inertia::render('User/Stockist/Pos', [
+            'businessName' => (string) ($stockist->business_name ?: auth()->user()->fullname),
+            'wallet'       => showAmount($stockist->wallet),
+            'inventory'    => $inventory,
+            'isMega'       => $stockist->isMega(),
+            'welcome'      => $welcome,
+            'welcomeError' => $welcomeError,
+            // The receipt of the sale just made (flashed by checkout()).
+            'receipt'      => session('pos_receipt'),
+            'urls'         => [
+                'pos'      => route('user.stockist.pos.index'),
+                'checkout' => route('user.stockist.pos.checkout'),
+                'buy'      => route('user.stockist.transfers.create'),
+            ],
+        ])->withViewData(compact('pageTitle'));
     }
 
-    public function checkout(Request $request): JsonResponse
+    public function checkout(Request $request)
     {
         $request->validate([
             'items'              => 'required|array|min:1',
@@ -59,11 +101,8 @@ class StockistPosController extends Controller
         $stockist = auth()->user()->stockist;
 
 
-        if (! $stockist) {
-            return response()->json(['success' => false, 'message' => 'Stockist profile not found.'], 403);
-        }
         if (!$stockist->is_active) {
-            return response()->json(['success' => false, 'message' => 'Stockist  not active. Contact Admin.'], 403);
+            return back()->withErrors(['pos' => 'Your stockist account is not active. Contact Admin.']);
         }
 
         DB::beginTransaction();
@@ -95,6 +134,7 @@ class StockistPosController extends Controller
 
                 $statePrice = ProductStatePrice::where('state_id', $stockist->state_id)
                     ->where('product_id', $productId)
+                    ->orderBy('id')
                     ->first();
 
                 if (! $statePrice) {
@@ -194,27 +234,23 @@ class StockistPosController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'success'         => true,
-                'message'         => 'Sale processed successfully.',
-                'trx'             => $trx,
-                'total'           => $cartTotal,
-                'total_formatted' => showAmount($cartTotal, currencyFormat: false),
-                'payment_method'  => $request->payment_method,
-                'wallet_credited' => $walletCredit > 0
-                    ? showAmount($walletCredit, currencyFormat: false)
-                    : null,
-                'items_count'     => count($lineItems),
+            return to_route('user.stockist.pos.index')->with('pos_receipt', [
+                'trx'     => $trx,
+                'items'   => array_sum(array_column($lineItems, 'quantity')),
+                'total'   => showAmount($cartTotal),
+                'payment' => $request->payment_method === 'welcome_pack' ? 'Welcome Package' : 'Cash Payment',
+                'rebate'  => $walletCredit > 0 ? showAmount($walletCredit) : null,
             ]);
 
         } catch (\RuntimeException $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            return back()->withErrors(['pos' => $e->getMessage()]);
         } catch (\Throwable $e) {
             DB::rollBack();
-            throw $e;
-            Log::error('POS checkout error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
-            return response()->json(['success' => false, 'message' => 'An unexpected error occurred. Please try again.'], 500);
+            // This used to re-throw before the return, so every unexpected
+            // error became an error page.
+            report($e);
+            return back()->withErrors(['pos' => 'An unexpected error occurred. Please try again.']);
         }
     }
 }

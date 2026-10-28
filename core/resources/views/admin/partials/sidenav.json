@@ -189,17 +189,17 @@
         "menu_active": "admin.stockist*",
         "submenu": [
             {
-                "keyword": [ "Stockist","Item", "Inventory"],
+                "keyword": [ "Stockist","Item", "Inventory", "All Stockists", "Active Stockists", "Activate Stockist", "Stockist wallet"],
                 "title": "Dashboard",
                 "icon": "lab la-product-hunt",
                 "route_name": "admin.stockist.dashboard",
-                "menu_active": "admin.stockist.dashboard"
+                "menu_active": ["admin.stockist.dashboard", "admin.stockist.activation-page", "admin.stockist.details"]
             },
             {
-                "keyword": ["Stockist Orders","Recharge","Flexi load","Stockist Orders","Inactive stockist"],
+                "keyword": ["Stockist Orders","Stockist Order Request","Supplies","Stock purchase"],
                 "title": "Stockist Orders",
                 "route_name": "admin.stockist-orders.index",
-                "menu_active": "admin.stockist-orders.index"
+                "menu_active": "admin.stockist-orders.*"
             },
             {
                 "keyword": ["Redemption Report", "Stockist Sales", "Inventory Report", "Financial Report", "Accounting"],
@@ -214,31 +214,14 @@
                 "route_name": "admin.stockist.transfers.index",
                 "menu_active": "admin.stockist.transfers*",
                 "counter": "pendingStockTransfersCount"
-            },
-
-            
-           
-            {
-                "keyword": ["Stockist Orders"],
-                "title": "Stockist Order Request",
-                "route_name": "admin.sorder.index",
-                "menu_active": "admin.sorder.index"
-            },
-            {
-                "keyword": ["Stockist Supplies"],
-                "title": "Supplies",
-                "route_name": "admin.supply.index",
-                "menu_active": "admin.supply.index"
             }
-
-
         ]
     },
     "shop": {
         "keyword": ["Shop", "Product", "Category", "Sales", "Order", "Manage Shop", "Inventory", "Merchandise"],
         "title": "Shop",
         "icon": "las la-store",
-        "menu_active": "admin.product*|admin.category*|admin.sales*|admin.order*|admin.state*|admin.repurchase-award*",
+        "menu_active": ["admin.product*", "admin.category*", "admin.sales*", "admin.order*", "admin.state*", "admin.repurchase-award*"],
         "submenu": [
             {
                 "keyword": ["Product", "Item", "Manufacture", "Inventory"],
@@ -253,16 +236,10 @@
                 "menu_active": "admin.category.index"
             },
             {
-                "keyword": ["Sales", "Manage Sales", "Invoices", "Redemptions", "Daily sales", "Sales report"],
-                "title": "Manage Sales",
-                "route_name": "admin.sales.index",
-                "menu_active": "admin.sales*"
-            },
-            {
-                "keyword": ["Order", "Purchase", "Buy", "Sell"],
-                "title": "Manage Order",
+                "keyword": ["Order", "Purchase", "Buy", "Sell", "Sales", "Manage Sales", "Invoices", "Redemptions", "Daily sales", "Sales report"],
+                "title": "Orders & Sales",
                 "route_name": "admin.order.index",
-                "menu_active": "admin.order.index"
+                "menu_active": ["admin.order*", "admin.sales*"]
             },
             {
                 "keyword": ["State", "Manage States", "States", "Region", "Territory"],
@@ -281,7 +258,7 @@
     "affiliate_program": {
         "title": "Affiliate Program",
         "icon": "las la-bullhorn",
-        "menu_active": "admin.affiliate*|admin.ads*",
+        "menu_active": ["admin.affiliate.dashboard", "admin.affiliate.order*", "admin.affiliate.affiliates", "admin.affiliate.settings*", "admin.ads*"],
         "submenu": [
             {
                 "keyword": ["Affiliate Dashboard", "Affiliate Program", "Marketing"],
@@ -290,7 +267,7 @@
                 "menu_active": "admin.affiliate.dashboard"
             },
             {
-                "keyword": ["Ad Center", "Marketing Ads", "Ad Materials", "Social Media Ads"],
+                "keyword": ["Ad Center", "Marketing Ads", "Ad Materials", "Social Media Ads", "Ad Manager", "Ads", "Adverts", "Social share"],
                 "title": "Ad Materials & Media",
                 "route_name": "admin.ads.index",
                 "menu_active": "admin.ads*"
@@ -421,7 +398,7 @@
         "keyword": ["Savings","Loans","Fixed Box","Target Savings","Farm Yield","Loan Products","Cooperate Finance"],
         "title": "Savings & Loans",
         "icon": "las la-piggy-bank",
-        "menu_active": "admin.savings*|admin.loans*",
+        "menu_active": ["admin.savings*", "admin.loans*"],
         "submenu": [
             {
                 "keyword": ["Savings Settings","Interest Rate","Savings Rate"],
@@ -433,7 +410,7 @@
                 "keyword": ["All Savings","User Savings"],
                 "title": "All Savings",
                 "route_name": "admin.savings.index",
-                "menu_active": "admin.savings.index"
+                "menu_active": ["admin.savings.index", "admin.savings.show"]
             },
             {
                 "keyword": ["Farm Cycles","Farm","Cycles"],
@@ -451,7 +428,7 @@
                 "keyword": ["All Loans","Loan Management"],
                 "title": "All Loans",
                 "route_name": "admin.loans.index",
-                "menu_active": "admin.loans.index"
+                "menu_active": ["admin.loans.index", "admin.loans.show"]
             },
             {
                 "keyword": ["Loan Products","Loan Settings","Loan Configuration"],
@@ -497,70 +474,6 @@
 
             
         ]
-    },
-    "affiliate": {
-        "title": "Affiliate",
-        "icon": "las la-link",
-        "counters": [],
-        "menu_active": [
-            "admin.affiliate.dashboard",
-            "admin.affiliate.order*",
-            "admin.affiliate.affiliates",
-            "admin.affiliate.settings*"
-        ],
-        "submenu": [
-            {
-                "keyword": [
-                    "Affiliate",
-                    "Dashboard"
-                ],
-                "title": "Dashboard",
-                "route_name": "admin.affiliate.dashboard",
-                "menu_active": "admin.affiliate.dashboard"
-            },
-            {
-                "keyword": [
-                    "Affiliate",
-                    "Orders",
-                    "Shop Orders"
-                ],
-                "title": "Orders",
-                "route_name": "admin.affiliate.orders",
-                "menu_active": "admin.affiliate.orders*"
-            },
-            {
-                "keyword": [
-                    "Affiliate",
-                    "Affiliates",
-                    "Members"
-                ],
-                "title": "Affiliates",
-                "route_name": "admin.affiliate.affiliates",
-                "menu_active": "admin.affiliate.affiliates"
-            },
-            {
-                "keyword": [
-                    "Affiliate",
-                    "Settings"
-                ],
-                "title": "Settings",
-                "route_name": "admin.affiliate.settings",
-                "menu_active": "admin.affiliate.settings"
-            }
-        ]
-    },
-    "ad_manager": {
-        "keyword": [
-            "Ad Manager",
-            "Ads",
-            "Adverts",
-            "Social share",
-            "Marketing"
-        ],
-        "title": "Ad Manager",
-        "icon": "las la-bullhorn",
-        "route_name": "admin.ads.index",
-        "menu_active": "admin.ads*"
     },
     "deposits": {
         "title": "Deposits",
@@ -653,7 +566,7 @@
                 ],
                 "title": "All Deposits",
                 "route_name": "admin.deposit.list",
-                "menu_active": "admin.deposit.list",
+                "menu_active": ["admin.deposit.list", "admin.deposit.details"],
                 "params": {
                     "user_id": ""
                 }
@@ -723,7 +636,7 @@
                 ],
                 "title": "All Withdrawals",
                 "route_name": "admin.withdraw.data.all",
-                "menu_active": "admin.withdraw.data.all",
+                "menu_active": ["admin.withdraw.data.all", "admin.withdraw.data.details"],
                 "params": {
                     "user_id": ""
                 }
@@ -757,21 +670,17 @@
                 "keyword": [
                     "Affiliate",
                     "Funnel",
-                    "Analytics"
-                ],
-                "title": "Funnel Report",
-                "route_name": "admin.affiliate.funnel",
-                "menu_active": "admin.affiliate.funnel"
-            },
-            {
-                "keyword": [
-                    "Affiliate",
+                    "Analytics",
                     "Audit",
-                    "Financial"
+                    "Revenue",
+                    "Financial Audit"
                 ],
-                "title": "Financial Audit",
+                "title": "Funnel & Financial Audit",
                 "route_name": "admin.affiliate.audit",
-                "menu_active": "admin.affiliate.audit"
+                "menu_active": [
+                    "admin.affiliate.funnel",
+                    "admin.affiliate.audit"
+                ]
             }
         ]
     },

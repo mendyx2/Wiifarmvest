@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BankDetailHistory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
+use Inertia\Inertia;
 
 class ProfileController extends Controller
 {
@@ -18,18 +19,38 @@ class ProfileController extends Controller
         $bankHistories = BankDetailHistory::where('user_id', $user->id)
             ->latest()
             ->get();
-        return view('Template::user.profile_setting', compact('pageTitle', 'user', 'bankHistories'));
+
+        // Migrated to React + Inertia (resources/js/Pages/User/ProfileSetting.tsx).
+        // Legacy view: Template::user.profile_setting
+        return Inertia::render('User/ProfileSetting', [
+            'profile' => [
+                'firstname' => (string) $user->firstname,
+                'lastname'  => (string) $user->lastname,
+                'username'  => $user->username,
+                'fullname'  => $user->fullname,
+                'email'     => $user->email,
+                'mobile'    => (string) $user->mobile,
+                'bname'     => (string) $user->bname,
+                'aname'     => (string) $user->aname,
+                'ano'       => (string) $user->ano,
+                'address'   => (string) $user->address,
+                'state'     => (string) $user->state,
+                'city'      => (string) $user->city,
+                'zip'       => (string) $user->zip,
+                'country'   => (string) $user->country_name,
+                'image'     => $user->image ? getImage(getFilePath('userProfile') . '/' . $user->image, null, true) : null,
+            ],
+            'bankHistories' => $bankHistories->map(fn ($history) => [
+                'id'    => $history->id,
+                'bname' => $history->bname,
+                'aname' => $history->aname,
+                'ano'   => $history->ano,
+                'date'  => $history->created_at->format('d M Y, h:i A'),
+            ]),
+            'submitUrl' => route('user.profile.setting'),
+        ])->withViewData(compact('pageTitle'));
     }
 
-    public function profile1()
-    {
-        $pageTitle = "Profile Setting";
-        $user = auth()->user();
-        $bankHistories = BankDetailHistory::where('user_id', $user->id)
-            ->latest()
-            ->get();
-        return view('Template::user.profile_setting1', compact('pageTitle', 'user', 'bankHistories'));
-    }
 
     public function submitProfile(Request $request)
     {
@@ -95,75 +116,20 @@ class ProfileController extends Controller
         return back()->withNotify($notify);
     }
 
-    public function submitProfile1(Request $request)
-    {
-        $request->validate([
-
-            'bname' => 'required|string',
-            'aname' => 'required|string',
-            'ano' => 'required|numeric',
-            'firstname' => 'required|string',
-            'lastname' => 'required|string',
-            'image' => ['nullable','image',new FileTypeValidate(['jpg','jpeg','png'])]
-        ],[
-            'name.required'=>'The Bank name field is required',
-            'aname.required'=>'The Account name field is required',
-            'ano.required'=>'The account number field is required',
-            'firstname.required'=>'The first name field is required',
-            'lastname.required'=>'The last name field is required'
-        ]);
-
-        $user = auth()->user();
-
-        // Save old bank details to history if any field has changed
-        if ($user->bname !== $request->bname || $user->aname !== $request->aname || $user->ano !== $request->ano) {
-            if ($user->bname || $user->aname || $user->ano) {
-                BankDetailHistory::create([
-                    'user_id' => $user->id,
-                    'bname'   => $user->bname,
-                    'aname'   => $user->aname,
-                    'ano'     => $user->ano,
-                ]);
-            }
-        }
-
-        $user->bname = $request->bname;
-        $user->aname = $request->aname;
-        $user->ano = $request->ano;
-        $user->firstname = $request->firstname;
-        $user->lastname = $request->lastname;
-
-        $user->address = $request->address;
-        $user->city = $request->city;
-        $user->state = $request->state;
-        $user->zip = $request->zip;
-
-        if ($request->hasFile('image')) {
-            try {
-                $old = $user->image;
-                $user->image = fileUploader($request->image, getFilePath('userProfile'), getFileSize('userProfile'), $old);
-            } catch (\Exception $exp) {
-                $notify[] = ['error', 'Couldn\'t upload your image'];
-                return back()->withNotify($notify);
-            }
-        }
-
-        $user->save();
-        $notify[] = ['success', 'Profile updated successfully'];
-        return back()->withNotify($notify);
-    }
 
     public function changePassword()
     {
         $pageTitle = 'Change Password';
-        return view('Template::user.password', compact('pageTitle'));
+
+        // Migrated to React + Inertia (resources/js/Pages/User/ChangePassword.tsx).
+        // The legacy Blade view (Template::user.password) is kept until the
+        // React page has been verified in production.
+        return Inertia::render('User/ChangePassword', [
+            'securePassword' => (bool) gs('secure_password'),
+            'submitUrl'      => route('user.change.password'),
+        ])->withViewData(compact('pageTitle'));
     }
 
-    public function changePassword1()
-    {
-        $pageTitle = 'Change Password';
-        return view('Template::user.password1', compact('pageTitle'));
-    }
 
     public function submitPassword(Request $request)
     {
@@ -191,31 +157,6 @@ class ProfileController extends Controller
         }
     }
 
-    public function submitPassword1(Request $request)
-    {
-
-        $passwordValidation = Password::min(6);
-        if (gs('secure_password')) {
-            $passwordValidation = $passwordValidation->mixedCase()->numbers()->symbols()->uncompromised();
-        }
-
-        $request->validate([
-            'current_password' => 'required',
-            'password' => ['required','confirmed',$passwordValidation]
-        ]);
-
-        $user = auth()->user();
-        if (Hash::check($request->current_password, $user->password)) {
-            $password = Hash::make($request->password);
-            $user->password = $password;
-            $user->save();
-            $notify[] = ['success', 'Password changed successfully'];
-            return back()->withNotify($notify);
-        } else {
-            $notify[] = ['error', 'The password doesn\'t match!'];
-            return back()->withNotify($notify);
-        }
-    }
 
 
 }

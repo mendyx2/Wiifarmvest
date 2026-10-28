@@ -1,0 +1,336 @@
+/* Moved from resources/views/templates/basic/user/investment-details.blade.php (@push('style')),
+   scoped under .page-investment-details so it only applies to this page. */
+
+.page-investment-details {
+    /* ===== PAGE STYLING ===== */
+        /* (a "body { background }" rule was here; the dashboard layout overrides it with !important, so it was dropped) */
+
+    /* ===== BUTTONS ===== */
+        .btn-back {
+            background: transparent;
+            color: #229e3b;
+            border: 2px solid #229e3b;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+
+    .btn-back:hover {
+            background: #229e3b;
+            color: white;
+        }
+
+    /* ===== TITLES ===== */
+        .detail-title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 0;
+        }
+
+    .detail-subtitle {
+            color: #6c757d;
+            font-size: 0.95rem;
+            margin: 0;
+        }
+
+    /* ===== DETAIL SECTIONS ===== */
+        .card-detail-section {
+            overflow: hidden;
+            border-radius: 12px !important;
+            position: relative;
+        }
+
+    .card-detail-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: linear-gradient(90deg, #229e3b, #229e3b);
+        }
+
+    .detail-section-title {
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 1.5rem;
+        }
+
+    .detail-label {
+            color: #000;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+    .detail-label i { color: #229e3b; }
+
+    .detail-label-large {
+            color: #6c757d;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+    .detail-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            font-size: 0.9rem;
+        }
+
+    .detail-value {
+            color: #1a1a2e;
+            font-weight: 600;
+            margin: 0;
+        }
+
+    .detail-value-primary {
+            color: #229e3b;
+            font-weight: 700;
+        }
+
+    .detail-divider {
+            border-color: #e0e0e0;
+            margin: 2rem 0;
+        }
+
+    /* ===== BADGES ===== */
+        .badge-detail-units {
+            background: linear-gradient(135deg, #229e3b, #764ba2);
+            color: white;
+            padding: 0.7rem 1rem;
+            font-size: 1.1rem;
+        }
+
+    .badge-detail-active {
+            background: linear-gradient(135deg, #229e3b, #229e3b);
+            color: white;
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+        }
+
+    .badge-danger-gradient {
+            background: linear-gradient(135deg, #229e3b, #229e3b);
+            color: white;
+            padding: 0.6rem 1rem;
+            font-size: 0.9rem;
+        }
+
+    .badge-success-light {
+            background: linear-gradient(135deg, #00d08415, #00d08430);
+            color: #00d084;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+        }
+
+    .badge-warning-light {
+            background: linear-gradient(135deg, #ffc10715, #ffc10730);
+            color: #ff9800;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+        }
+
+    .badge-danger-light {
+            background: linear-gradient(135deg, #f5576c15, #f5576c30);
+            color: #f5576c;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+        }
+
+    .badge-light {
+            background-color: #f8f9fb !important;
+            color: #1a1a2e;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-weight: 600;
+        }
+
+    /* ===== DIVIDEND HIGHLIGHT CARD ===== */
+        .card-dividend-highlight {
+            background: linear-gradient(135deg, #f5576c20, #f0937b20);
+            border-radius: 12px !important;
+        }
+
+    .dividend-highlight-icon {
+            font-size: 3rem;
+            color: #f5576c;
+            opacity: 0.2;
+            display: block;
+            margin-bottom: 1rem;
+        }
+
+    .dividend-total-amount {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #f5576c;
+            margin-bottom: 0.5rem;
+        }
+
+    .highlight-desc {
+            color: #6c757d;
+        }
+
+    /* ===== TABLES ===== */
+        .table-custom { border: none; }
+
+    .table-custom thead { background-color: #f8f9fb; }
+
+    .table-custom th {
+            color: #1a1a2e;
+            font-weight: 600;
+            border: none;
+            padding: 1rem;
+        }
+
+    .table-custom tbody tr {
+            transition: all 0.3s ease;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+    .table-custom tbody tr:hover { background-color: #f8f9fb !important; }
+
+    .reference-code {
+            background-color: #f0f1ff;
+            color: #229e3b;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+    .date-value { color: #1a1a2e; font-weight: 500; }
+
+    .amount-success { color: #00d084; font-size: 1.05rem; }
+
+    /* ===== PROGRESS BAR ===== */
+        .progress-custom {
+            height: 8px;
+            border-radius: 10px;
+            background-color: #e0e0e0;
+            overflow: hidden;
+        }
+
+    .progress-bar-custom {
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            height: 100%;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(79, 172, 254, 0.3);
+        }
+
+    /* ===== DETAIL LISTS ===== */
+        .detail-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+    .detail-list-item:last-child { border-bottom: none; }
+
+    .detail-list-item span { color: #6c757d; }
+
+    /* ===== RECENT DIVIDENDS ===== */
+        .recent-dividend-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+    .recent-dividend-item:last-child { border-bottom: none; }
+
+    .recent-date {
+            display: block;
+            color: #1a1a2e;
+            font-size: 0.95rem;
+            margin-bottom: 0.25rem;
+        }
+
+    .recent-ref {
+            color: #6c757d;
+            display: block;
+        }
+
+    /* ===== ALERTS ===== */
+        .alert-more {
+            background-color: #f0f1ff;
+            border: 1px solid #e0e0ff;
+            border-radius: 8px;
+            color: #229e3b;
+            padding: 0.75rem 1rem;
+            margin-top: 1rem;
+            margin-bottom: 0;
+        }
+
+    /* ===== EMPTY STATES ===== */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            background-color: #f8f9fb;
+        }
+
+    .empty-state i {
+            font-size: 3rem;
+            color: #6c757d;
+            opacity: 0.3;
+            display: block;
+            margin-bottom: 1rem;
+        }
+
+    .empty-state-text { color: #6c757d; }
+
+    .empty-state-small-text {
+            text-align: center;
+            color: #6c757d;
+            padding: 2rem 0;
+            margin: 0;
+        }
+
+    .empty-state-small-text i {
+            font-size: 1.5rem;
+            opacity: 0.3;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+    /* ===== CARDS ===== */
+        .card {
+            border-radius: 12px !important;
+            transition: all 0.3s ease;
+        }
+
+    .card:hover { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1) !important; }
+
+    .card-header { padding: 1.5rem; background-color: white; }
+
+    .card-body { padding: 1.5rem; }
+
+    .card-title-custom {
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+
+    .card-subtitle {
+            color: #6c757d;
+            display: block;
+        }
+
+    /* ===== TEXT UTILITIES ===== */
+        .text-success { color: #00d084; }
+
+    .text-primary { color: #229e3b; }
+}

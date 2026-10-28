@@ -2,6 +2,8 @@
 
 This document logs all fixes, architectural changes, code modifications, and database additions performed on the Wiifarmvest Platform.
 
+> Front-end migration to Laravel + Inertia.js + React + TypeScript is logged separately in [`core/resources/js/notes.md`](core/resources/js/notes.md).
+
 ---
 
 ## Phase 1: Immediate Financial & Calculation Hotfixes

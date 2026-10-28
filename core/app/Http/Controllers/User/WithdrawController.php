@@ -9,6 +9,9 @@ use App\Lib\FormProcessor;
 use App\Models\AdminNotification;
 use App\Models\Loan;
 use App\Models\Withdrawal;
+use App\Support\FormPresenter;
+use App\Support\PaymentPresenter;
+use Inertia\Inertia;
 use App\Models\WithdrawMethod;
 use App\Services\WalletService;
 use Illuminate\Http\Request;
@@ -57,18 +60,38 @@ class WithdrawController extends Controller
 
         $withdrawMethod = WithdrawMethod::active()->get();
         $pageTitle = 'Withdraw Money';
-        return view('Template::user.withdraw.methods', compact('pageTitle','withdrawMethod'));
+        $user = auth()->user();
+
+        // Migrated to React + Inertia (resources/js/Pages/User/Withdraw.tsx).
+        // Legacy view: Template::user.withdraw.methods
+        return Inertia::render('User/Withdraw', [
+            // checkWithdrawalBlock() above already redirects blocked users; the page
+            // keeps the notice too, as the Blade view did.
+            'blocked'     => (bool) $user->withdrawal_blocked,
+            'blockReason' => $user->withdrawal_blocked ? $user->withdrawal_block_reason : null,
+            'balance'     => gs('cur_sym') . number_format($user->balance, 2),
+            'bank'        => ['name' => $user->bname, 'accountName' => $user->aname, 'accountNumber' => $user->ano],
+            'methods'     => $withdrawMethod->map(fn ($method) => [
+                'id'            => $method->id,
+                'name'          => __($method->name),
+                'image'         => getImage(getFilePath('withdrawMethod') . '/' . $method->image),
+                'currency'      => $method->currency,
+                'minLimit'      => (float) $method->min_limit,
+                'maxLimit'      => (float) $method->max_limit,
+                'minLabel'      => showAmount($method->min_limit),
+                'maxLabel'      => showAmount($method->max_limit),
+                'percentCharge' => (float) $method->percent_charge,
+                'fixedCharge'   => (float) $method->fixed_charge,
+                'rate'          => (float) $method->rate,
+            ])->values(),
+            'curSym'     => gs('cur_sym'),
+            'curText'    => __(gs('cur_text')),
+            'submitUrl'  => route('user.withdraw.money'),
+            'historyUrl' => route('user.withdraw.history'),
+            'profileUrl' => route('user.profile.setting'),
+        ])->withViewData(compact('pageTitle'));
     }
 
-    public function withdrawMoney1()
-    {
-        $redirect = $this->checkWithdrawalBlock() ?? $this->checkPendingLoans() ?? $this->checkBankDetails();
-        if ($redirect) return $redirect;
-
-        $withdrawMethod = WithdrawMethod::active()->get();
-        $pageTitle = 'Withdraw Money';
-        return view('Template::user.withdraw.methods1', compact('pageTitle','withdrawMethod'));
-    }
 
     public function withdrawStore(Request $request)
     {
@@ -121,70 +144,28 @@ class WithdrawController extends Controller
         return to_route('user.withdraw.preview');
     }
 
-    public function withdrawStore1(Request $request)
-    {
-        $redirect = $this->checkWithdrawalBlock() ?? $this->checkPendingLoans();
-        if ($redirect) return $redirect;
-
-        $request->validate([
-            'method_code' => 'required',
-            'amount' => 'required|numeric'
-        ]);
-        $method = WithdrawMethod::where('id', $request->method_code)->active()->firstOrFail();
-        $user = auth()->user();
-        if ($request->amount < $method->min_limit) {
-            $notify[] = ['error', 'Your requested amount is smaller than minimum amount'];
-            return back()->withNotify($notify)->withInput($request->all());
-        }
-        if ($request->amount > $method->max_limit) {
-            $notify[] = ['error', 'Your requested amount is larger than maximum amount'];
-            return back()->withNotify($notify)->withInput($request->all());
-        }
-
-        if ($request->amount > $user->balance) {
-            $notify[] = ['error', 'Insufficient balance for withdrawal'];
-            return back()->withNotify($notify)->withInput($request->all());
-        }
-
-
-        $charge = $method->fixed_charge + ($request->amount * $method->percent_charge / 100);
-        $afterCharge = $request->amount - $charge;
-
-        if ($afterCharge <= 0) {
-            $notify[] = ['error', 'Withdraw amount must be sufficient for charges'];
-            return back()->withNotify($notify)->withInput($request->all());
-        }
-
-        $finalAmount = $afterCharge * $method->rate;
-
-        $withdraw = new Withdrawal();
-        $withdraw->method_id = $method->id; // wallet method ID
-        $withdraw->user_id = $user->id;
-        $withdraw->amount = $request->amount;
-        $withdraw->currency = $method->currency;
-        $withdraw->rate = $method->rate;
-        $withdraw->charge = $charge;
-        $withdraw->final_amount = $finalAmount;
-        $withdraw->after_charge = $afterCharge;
-        $withdraw->trx = getTrx();
-        $withdraw->save();
-        session()->put('wtrx', $withdraw->trx);
-        return to_route('user.withdraw1.preview1');
-    }
 
     public function withdrawPreview()
     {
         $withdraw = Withdrawal::with('method','user')->where('trx', session()->get('wtrx'))->where('status', Status::PAYMENT_INITIATE)->orderBy('id','desc')->firstOrFail();
         $pageTitle = 'Withdraw Preview';
-        return view('Template::user.withdraw.preview', compact('pageTitle','withdraw'));
+
+        // Migrated to React + Inertia (resources/js/Pages/User/WithdrawPreview.tsx).
+        // Legacy view: Template::user.withdraw.preview
+        return Inertia::render('User/WithdrawPreview', [
+            'amount'      => showAmount($withdraw->amount),
+            'charge'      => showAmount($withdraw->charge),
+            'net'         => showAmount($withdraw->amount - $withdraw->charge),
+            'finalAmount' => showAmount($withdraw->final_amount, currencyFormat: false) . ' ' . $withdraw->currency,
+            'currency'    => $withdraw->currency,
+            'methodName'  => $withdraw->method->name,
+            'description' => FormPresenter::safeHtml($withdraw->method->description),
+            'fields'      => FormPresenter::fields($withdraw->method->form_id),
+            'twoFactor'   => (bool) auth()->user()->ts,
+            'submitUrl'   => route('user.withdraw.submit'),
+        ])->withViewData(compact('pageTitle'));
     }
 
-    public function withdrawPreview1()
-    {
-        $withdraw = Withdrawal::with('method','user')->where('trx', session()->get('wtrx'))->where('status', Status::PAYMENT_INITIATE)->orderBy('id','desc')->firstOrFail();
-        $pageTitle = 'Withdraw Preview';
-        return view('Template::user.withdraw.preview1', compact('pageTitle','withdraw'));
-    }
 
 
     public function withdrawSubmit(Request $request)
@@ -192,10 +173,6 @@ class WithdrawController extends Controller
         return $this->submitWithdrawal($request, 'user.withdraw.history');
     }
 
-    public function withdrawSubmit1(Request $request)
-    {
-        return $this->submitWithdrawal($request, 'user.withdraw1.history1');
-    }
 
     /**
      * Confirm an initiated withdrawal and take the money.
@@ -295,19 +272,43 @@ class WithdrawController extends Controller
         if ($request->search) {
             $withdraws = $withdraws->where('trx',$request->search);
         }
-        $withdraws = $withdraws->with('method')->orderBy('id','desc')->paginate(getPaginate());
-        return view('Template::user.withdraw.log', compact('pageTitle','withdraws'));
+        $withdraws = $withdraws->with('method')->orderBy('id','desc')->paginate(getPaginate())->withQueryString();
+
+        // Totals moved here from the old view's @php block.
+        $userId = auth()->id();
+        $sum    = fn ($status) => gs('cur_sym') . number_format(Withdrawal::where('user_id', $userId)->where('status', $status)->sum('amount'), 2);
+        $user   = auth()->user();
+
+        // Migrated to React + Inertia (resources/js/Pages/User/WithdrawHistory.tsx).
+        // Legacy view: Template::user.withdraw.log
+        return Inertia::render('User/WithdrawHistory', [
+            'withdraws' => $withdraws->through(fn ($withdraw) => [
+                'id'            => $withdraw->id,
+                'trx'           => $withdraw->trx,
+                'gateway'       => __(@$withdraw->method->name),
+                'date'          => $withdraw->created_at->format('M d, Y'),
+                'time'          => $withdraw->created_at->format('h:i A'),
+                'net'           => showAmount($withdraw->amount - $withdraw->charge),
+                'amount'        => showAmount($withdraw->amount),
+                'charge'        => showAmount($withdraw->charge),
+                'rate'          => '1 ' . gs('cur_text') . ' = ' . showAmount($withdraw->rate, currencyFormat: false) . ' ' . __($withdraw->currency),
+                'finalAmount'   => showAmount($withdraw->final_amount, currencyFormat: false) . ' ' . __($withdraw->currency),
+                'status'        => PaymentPresenter::withdrawStatus($withdraw),
+                'details'       => PaymentPresenter::details($withdraw->withdraw_information),
+                'adminFeedback' => $withdraw->status == Status::PAYMENT_REJECT ? $withdraw->admin_feedback : null,
+            ]),
+            'stats' => [
+                'withdrawn' => $sum(Status::PAYMENT_SUCCESS),
+                'pending'   => $sum(Status::PAYMENT_PENDING),
+                'rejected'  => $sum(Status::PAYMENT_REJECT),
+                'requests'  => Withdrawal::where('user_id', $userId)->where('status', '!=', Status::PAYMENT_INITIATE)->count(),
+            ],
+            'blocked'     => (bool) $user->withdrawal_blocked,
+            'blockReason' => $user->withdrawal_blocked ? $user->withdrawal_block_reason : null,
+            'search'      => (string) $request->search,
+            'withdrawUrl' => route('user.withdraw'),
+        ])->withViewData(compact('pageTitle'));
     }
 
-    public function withdrawLog1(Request $request)
-    {
-        $pageTitle = "Withdrawal Log";
-        $withdraws = Withdrawal::where('user_id', auth()->id())->where('status', '!=', Status::PAYMENT_INITIATE);
-        if ($request->search) {
-            $withdraws = $withdraws->where('trx',$request->search);
-        }
-        $withdraws = $withdraws->with('method')->orderBy('id','desc')->paginate(getPaginate());
-        return view('Template::user.withdraw.log1', compact('pageTitle','withdraws'));
-    }
 
 }

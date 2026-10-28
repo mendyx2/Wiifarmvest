@@ -5,7 +5,7 @@ Route::namespace('Auth')->group(function () {
     Route::middleware('admin.guest')->group(function () {
         Route::controller('LoginController')->group(function () {
             Route::get('/', 'showLoginForm')->name('login');
-            Route::post('/', 'login')->name('login');
+            Route::post('/', 'login'); // same URL as the GET route above, which owns the name
             Route::get('logout', 'logout')->middleware('admin')->withoutMiddleware('admin.guest')->name('logout');
         });
          
@@ -13,14 +13,14 @@ Route::namespace('Auth')->group(function () {
         // Admin Password Reset
         Route::controller('ForgotPasswordController')->prefix('password')->name('password.')->group(function () {
             Route::get('reset', 'showLinkRequestForm')->name('reset');
-            Route::post('reset', 'sendResetCodeEmail');
+            Route::post('reset', 'sendResetCodeEmail')->middleware('throttle:5,1');
             Route::get('code-verify', 'codeVerify')->name('code.verify');
-            Route::post('verify-code', 'verifyCode')->name('verify.code');
+            Route::post('verify-code', 'verifyCode')->name('verify.code')->middleware('throttle:10,1');
         });
 
         Route::controller('ResetPasswordController')->group(function () {
             Route::get('password/reset/{token}', 'showResetForm')->name('password.reset.form');
-            Route::post('password/reset/change', 'reset')->name('password.change');
+            Route::post('password/reset/change', 'reset')->name('password.change')->middleware('throttle:10,1');
         });
     });
 }); 
@@ -35,6 +35,9 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::post('profile', 'profileUpdate')->name('profile.update');
         Route::get('password', 'password')->name('password'); 
         Route::post('password', 'passwordUpdate')->name('password.update');
+
+        // Top-bar search (React admin layout): the pages this admin may open
+        Route::get('search-index', 'searchIndex')->name('search.index');
 
         //Notification
         Route::get('notifications', 'notifications')->name('notifications');
@@ -135,7 +138,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::post('add-sub-balance-visa/{id}', 'addSubBalanceVisa')->name('add.sub.balance.visa')->middleware('admin.role:super-admin');
         Route::post('add-sub-balance-product-wallet/{id}', 'addSubBalanceProductWallet')->name('add.sub.balance.product.wallet')->middleware('admin.role:super-admin');
         Route::get('send-notification/{id}', 'showNotificationSingleForm')->name('notification.single');
-        Route::post('send-notification/{id}', 'sendNotificationSingle')->name('notification.single');
+        Route::post('send-notification/{id}', 'sendNotificationSingle'); // same URL as the GET route, which owns the name
         Route::get('login/{id}', 'login')->name('login');
         Route::post('status/{id}', 'status')->name('status');
         Route::post('withdrawal-block/{id}', 'toggleWithdrawalBlock')->name('withdrawal.block');
@@ -154,12 +157,12 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
         // matching bonus
         Route::post('matching-bonus/update', 'matchingUpdate')->name('matching-bonus.update');
-        //User Pin 
         Route::post('buy-shares/{id}', 'buySharesForUser')->name('buy.shares');
         Route::post('ambassador/{id}', 'toggleAmbassador')->name('ambassador.toggle');
 
-        Route::get('generate/pin/{id}', 'generatePin')->name('generate.pin');
-        Route::get('used/pin/{id}', 'usedPin')->name('used.pin');
+        // A member's pins: the pin list (PinController), under "view users" like the rest of this page
+        Route::get('generate/pin/{id}', [\App\Http\Controllers\Admin\PinController::class, 'generatedBy'])->name('generate.pin');
+        Route::get('used/pin/{id}', [\App\Http\Controllers\Admin\PinController::class, 'usedBy'])->name('used.pin');
 
     });
 
@@ -190,12 +193,11 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('/', 'allStockists')->name('index');
         Route::get('activeStockist', 'activeStockist')->name('activeStockist');
         Route::get('inactiveStockist', 'inactiveStockist')->name('inactiveStockist');
-        Route::get('changeUserStockistStatus', 'changeUserStockistStatus')->name('changeUserStockistStatus');
-        
-        Route::get('detail/{id}', 'detail')->name('detail'); 
+        // Old pages: redirect to the dashboard / details page.
+        Route::get('detail/{id}', 'detail')->name('detail');
 
+        // POST only: a GET route here used to change the status from a plain link.
         Route::post('status/{id}', 'changeUserStockistStatus')->name('changeUserStockistStatus');
-        Route::post('store/{id}', 'store')->name('store');
 
         
    
@@ -205,7 +207,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
     
         // Stockist Activation
         Route::get('/stockist-activation', 'activationPage')->name('activation-page');
-        Route::post('/search-user', 'searchUser')->name('search-user');
+        Route::get('/search-user', 'searchUser')->name('search-user');
         Route::post('/activate-stockist', 'activateStockist')->name('activate');
         
         // Wallet Top-up
@@ -262,10 +264,10 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::post('{ad}/delete', 'destroy')->name('delete');
     });
 
-    // Manage Sales
-    Route::controller(\App\Http\Controllers\Admin\AdminSalesController::class)->prefix('sales')->name('sales.')->group(function () {
-        Route::get('/',    'index')->name('index');
-        Route::get('{id}', 'show')->name('show');
+    // Manage Sales: merged into Orders (Step 100); the old URLs still work.
+    Route::prefix('sales')->name('sales.')->group(function () {
+        Route::get('/', fn (\Illuminate\Http\Request $request) => redirect()->route('admin.order.index', $request->only('search')))->name('index');
+        Route::get('{id}', fn (int $id) => redirect()->route('admin.order.show', $id))->name('show')->whereNumber('id');
     });
 
     // DEPOSIT SYSTEM
@@ -294,9 +296,8 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
             Route::get('details/{id}', 'details')->name('details');
             Route::post('approve', 'approve')->name('approve');
             Route::post('reject', 'reject')->name('reject');
-            //select section
-             Route::get('/withdrawals',  'index_w')->name('index_w');
-            Route::post('update-status', 'updateStatus')->name('update-status');
+            // Bulk approve / reject from the list. "update-status" (any status, no refund)
+            // and the "withdrawals" page (its view did not exist) were removed in Step 103.
             Route::post('bulk-action', 'bulkAction')->name('bulk-action');
         });
 
@@ -374,7 +375,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
         // Logo-Icon
         Route::get('setting/logo-icon', 'logoIcon')->name('setting.logo.icon');
-        Route::post('setting/logo-icon', 'logoIconUpdate')->name('setting.logo.icon');
+        Route::post('setting/logo-icon', 'logoIconUpdate'); // same URL as the GET route, which owns the name
 
         //Custom CSS
         Route::get('custom-css', 'customCss')->name('setting.custom.css');
@@ -408,7 +409,8 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('schedule', 'schedule')->name('schedule');
         Route::post('schedule/store', 'scheduleStore')->name('schedule.store');
         Route::post('schedule/status/{id}', 'scheduleStatus')->name('schedule.status');
-        Route::get('schedule/pause/{id}', 'schedulePause')->name('schedule.pause');
+        Route::post('schedule/pause/{id}', 'schedulePause')->name('schedule.pause');
+        Route::post('run/{id}', 'runNow')->name('run');
         Route::get('schedule/logs/{id}', 'scheduleLogs')->name('schedule.logs');
         Route::post('schedule/log/resolved/{id}', 'scheduleLogResolved')->name('schedule.log.resolved');
         Route::post('schedule/log/flush/{id}', 'logFlush')->name('log.flush');
@@ -464,12 +466,14 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
     //System Information
     Route::controller('SystemController')->name('system.')->prefix('system')->group(function () {
         Route::get('info', 'systemInfo')->name('info');
-        Route::get('server-info', 'systemServerInfo')->name('server.info');
-        Route::get('optimize', 'optimize')->name('optimize');
-        Route::get('optimize-clear', 'optimizeClear')->name('optimize.clear');
-        Route::get('system-update', 'systemUpdate')->name('update');
+        // Server, Clear Cache, Update and Update Log are part of System Information now (Step 110)
+        Route::get('server-info', fn () => to_route('admin.system.info'))->name('server.info');
+        Route::get('optimize', fn () => to_route('admin.system.info'))->name('optimize');
+        Route::get('optimize-clear', fn () => to_route('admin.system.info'));
+        Route::post('optimize-clear', 'optimizeClear')->name('optimize.clear');
+        Route::get('system-update', fn () => to_route('admin.system.info'))->name('update');
         Route::post('system-update', 'systemUpdateProcess')->name('update.process');
-        Route::get('system-update/log', 'systemUpdateLog')->name('update.log');
+        Route::get('system-update/log', fn () => to_route('admin.system.info'))->name('update.log');
 
         Route::middleware('admin.role:super-admin')->group(function () {
             Route::get('action-log', 'adminActionLog')->name('action.log');
@@ -479,6 +483,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
     // SEO
     Route::get('seo', 'FrontendController@seoEdit')->name('seo');
+    Route::post('seo', 'FrontendController@seoUpdate')->name('seo.update');
     
     // Flashcard Controller
     Route::controller('FlashcardController')->prefix('flashcard')->name('flashcard.')->group(function () {
@@ -503,14 +508,14 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
         Route::controller('FrontendController')->group(function () {
             Route::get('index', 'index')->name('index');
-            Route::get('templates', 'templates')->name('templates');
-            Route::post('templates', 'templatesActive')->name('templates.active');
+            // There is one template; the page listing them answered 404 and its form could set any name
+            Route::get('templates', fn () => to_route('admin.frontend.index'))->name('templates');
             Route::get('frontend-sections/{key?}', 'frontendSections')->name('sections');
             Route::post('frontend-content/{key}', 'frontendContent')->name('sections.content');
             Route::get('frontend-element/{key}/{id?}', 'frontendElement')->name('sections.element');
             Route::get('frontend-slug-check/{key}/{id?}', 'frontendElementSlugCheck')->name('sections.element.slug.check');
             Route::get('frontend-element-seo/{key}/{id}', 'frontendSeo')->name('sections.element.seo');
-            Route::post('frontend-element-seo/{key}/{id}', 'frontendSeoUpdate');
+            Route::post('frontend-element-seo/{key}/{id}', 'frontendSeoUpdate')->name('sections.element.seo.update');
             Route::post('remove/{id}', 'remove')->name('remove');
         });
 
@@ -519,13 +524,13 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
             Route::get('manage-pages', 'managePages')->name('manage.pages');
             Route::get('manage-pages/check-slug/{id?}', 'checkSlug')->name('manage.pages.check.slug');
             Route::post('manage-pages', 'managePagesSave')->name('manage.pages.save');
-            Route::post('manage-pages/update', 'managePagesUpdate')->name('manage.pages.update');
+            Route::post('manage-pages/update/{id}', 'managePagesUpdate')->name('manage.pages.update');
             Route::post('manage-pages/delete/{id}', 'managePagesDelete')->name('manage.pages.delete');
             Route::get('manage-section/{id}', 'manageSection')->name('manage.section');
             Route::post('manage-section/{id}', 'manageSectionUpdate')->name('manage.section.update');
 
             Route::get('manage-seo/{id}', 'manageSeo')->name('manage.pages.seo');
-            Route::post('manage-seo/{id}', 'manageSeoStore');
+            Route::post('manage-seo/{id}', 'manageSeoStore')->name('manage.pages.seo.update');
         });
     });
 
@@ -569,23 +574,16 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
     //Order
     Route::controller('OrderController')->name('order.')->prefix('order')->group(function () {
-        Route::get('/{user_id?}', 'index')->name('index');
+        Route::get('detail/{id}', 'show')->name('show')->whereNumber('id');
+        Route::get('/{user_id?}', 'index')->name('index')->whereNumber('user_id');
         Route::post('status/{id}', 'status')->name('status');
     });
 
 
-    //Sorder
-    Route::controller('SorderController')->name('sorder.')->prefix('sorder')->group(function () {
-        Route::get('/{user_id?}', 'index')->name('index');
-        Route::post('status/{id}', 'status')->name('status');
-    });
-
-
-    //Supply
-    Route::controller('SupplyController')->name('supply.')->prefix('supply')->group(function () {
-        Route::get('/{user_id?}', 'index')->name('index');
-        Route::post('status/{id}', 'status')->name('status');
-    });
+    // Stockist Order Request (sorder) and Supplies: the stockist ordering system before Stockist Orders.
+    // Nothing creates these records any more, and "Supplies" acted on member orders by mistake (Step 101).
+    Route::get('sorder/{user_id?}', fn () => redirect()->route('admin.stockist-orders.index'))->name('sorder.index');
+    Route::get('supply/{user_id?}', fn () => redirect()->route('admin.stockist-orders.index'))->name('supply.index');
 
     // Savings Management
     Route::middleware('admin.role:super-admin')->controller('AdminSavingsController')->prefix('savings')->name('savings.')->group(function () {

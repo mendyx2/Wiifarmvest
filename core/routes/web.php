@@ -34,7 +34,7 @@ Route::middleware('cron.secret')->group(function () {
 
 
 
-// Public Affiliate Shop (guest-accessible, no auth) — extends layouts.frontend, never layouts.master
+// Public Affiliate Shop (guest-accessible, no auth): React pages in Layouts/PublicLayout.tsx
 Route::namespace('Shop')->prefix('shop')->name('shop.')->middleware(['affiliate.track'])->group(function () {
     Route::get('/', 'ShopController@index')->name('index');
     Route::get('/product/{product}', 'ShopController@show')->name('product');
@@ -53,6 +53,7 @@ Route::namespace('Shop')->prefix('shop')->name('shop.')->middleware(['affiliate.
     Route::get('/paystack/callback', 'ShopPaystackController@callback')->name('paystack.callback')->middleware('throttle:20,1');
 
     Route::get('/order/{orderCode}', 'ShopController@orderSuccess')->name('order.success');
+    Route::get('/order/{orderCode}/pay', 'ShopCheckoutController@pay')->name('order.pay');
     Route::get('/order/{orderCode}/invoice', 'ShopController@orderInvoiceDownload')->name('order.invoice');
 });
 
@@ -80,15 +81,15 @@ Route::controller('SiteController')->group( function () {
     Route::get('/cookie/accept', 'cookieAccept')->name('cookie.accept');
  
     Route::middleware(['auth', 'XssSanitizer'])->group(function () {
-        Route::get('/products/{catId?}', 'products')->name('products');
-        Route::get('/product/{id}/{slug}', 'productDetails')->name('product.details');
-        Route::get('/products1/{catId?}', 'products1')->name('products1');
-        Route::get('/product1/{id}/{slug}', 'productDetails1')->name('product.details1');
+        // The member shop lives at user.products; these old public URLs forward there (removed duplicate pages)
+        Route::get('/products/{catId?}', fn ($catId = null) => to_route('user.products', $catId))->name('products');
+        Route::get('/product/{id}/{slug}', fn ($id, $slug) => to_route('user.product.details', [$id, $slug]))->name('product.details');
+        Route::get('/products1/{catId?}', fn ($catId = null) => to_route('user.products', $catId))->name('products1');
+        Route::get('/product1/{id}/{slug}', fn ($id, $slug) => to_route('user.product.details', [$id, $slug]))->name('product.details1');
     });
 
-    Route::post('/check/referral', 'checkUsername')->name('check.referral');
-    Route::post('/check/matrixParent', 'checkParent')->name('check.parentMatrix');
-    Route::post('/get/user/position', 'userPosition')->name('get.user.position');
+    // /check/referral, /check/matrixParent and /get/user/position removed: only the old
+    // register page used them (now GET user/register/check). See notes Step 87.
 
     Route::get('policy/{slug}', 'policyPages')->name('policy.pages');
 

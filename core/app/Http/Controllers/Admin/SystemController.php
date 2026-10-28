@@ -4,244 +4,121 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Artisan;
-use App\Lib\CurlRequest;
-use App\Lib\FileManager;
 use App\Models\UpdateLog;
+use App\Models\Admin;
 use App\Models\AdminActionLog;
-use Illuminate\Support\Facades\DB;
+use App\Support\AdminPresenter;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Illuminate\Support\Str;
-use Laramin\Utility\VugiChugi;
 
 class SystemController extends Controller
 {
-    public function systemInfo(){
-        $laravelVersion = app()->version();
-        $timeZone = config('app.timezone');
-        $pageTitle = 'Application Information';
-        return view('admin.system.info',compact('pageTitle', 'laravelVersion','timeZone'));
+    /**
+     * System Information (Pages/Admin/System/Info.tsx): application and
+     * server details, clear cache, the version and the update log. The old
+     * Application, Server, Clear Cache, Update and Update Log pages were five
+     * small pages (none in the sidebar); their URLs open this one.
+     */
+    public function systemInfo()
+    {
+        $pageTitle = 'System Information';
+        $details   = systemDetails();
+        $server    = request()->server();
+
+        return Inertia::render('Admin/System/Info', [
+            'app' => [
+                ['label' => keyToTitle($details['name']) . ' Version', 'value' => (string) $details['version']],
+                ['label' => 'ViserAdmin Version', 'value' => (string) ($details['build_version'] ?? '')],
+                ['label' => 'Laravel Version', 'value' => app()->version()],
+                ['label' => 'Timezone', 'value' => (string) config('app.timezone')],
+            ],
+            // Only these: $_SERVER can hold environment variables (APP_KEY, DB_PASSWORD ...)
+            'server' => [
+                ['label' => 'PHP Version', 'value' => PHP_VERSION],
+                ['label' => 'Server Software', 'value' => (string) ($server['SERVER_SOFTWARE'] ?? '')],
+                ['label' => 'Server IP Address', 'value' => (string) ($server['SERVER_ADDR'] ?? '')],
+                ['label' => 'Server Protocol', 'value' => (string) ($server['SERVER_PROTOCOL'] ?? '')],
+                ['label' => 'HTTP Host', 'value' => (string) ($server['HTTP_HOST'] ?? '')],
+                ['label' => 'Server Port', 'value' => (string) ($server['SERVER_PORT'] ?? '')],
+            ],
+            'version' => ['current' => (string) $details['version'], 'available' => (string) gs('available_version')],
+            'updates' => UpdateLog::orderBy('id', 'desc')->limit(50)->get()->map(fn (UpdateLog $u) => [
+                'id'      => $u->id,
+                'version' => (string) $u->version,
+                'date'    => $u->created_at?->format('Y-m-d'),
+                'changes' => array_values(array_map('strval', (array) $u->update_log)),
+            ]),
+            'urls' => ['clear' => route('admin.system.optimize.clear')],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
-    public function optimize(){
-        $pageTitle = 'Clear System Cache';
-        return view('admin.system.optimize',compact('pageTitle'));
-    }
-
-    public function optimizeClear(){
+    public function optimizeClear()
+    {
         Artisan::call('optimize:clear');
-        $notify[] = ['success','Cache cleared successfully'];
+        $notify[] = ['success', 'Cache cleared successfully'];
         return back()->withNotify($notify);
     }
 
-    public function systemServerInfo(){
-        $currentPHP = phpversion();
-        $pageTitle = 'Server Information';
-        $serverDetails = $_SERVER;
-        return view('admin.system.server',compact('pageTitle', 'currentPHP', 'serverDetails'));
-    }
-
-    public function systemUpdate() {
-        $pageTitle = 'System Updates';
-        return view('admin.system.update',compact('pageTitle'));
-    }
-
-
-    public function systemUpdateProcess(){
-        if (gs('system_customized')) {
-            return response()->json([
-                'status'=>'error',
-                'message'=>[
-                    'The system already customized. You can\'t update the project'
-                ]
-            ]);
-        }
-
-
-        if (version_compare(systemDetails()['version'],gs('available_version'),'==')) {
-            return response()->json([
-                'status'=>'info',
-                'message'=>[
-                    'The system is currently up to date'
-                ]
-            ]);
-        }
-
-
-        if(!extension_loaded('zip')){
-            return response()->json([
-                'status'=>'error',
-                'message'=>[
-                    'Zip Extension is required to update the system'
-                ]
-            ]);
-        }
-
-        $purchasecode = env('PURCHASECODE');
-        if (!$purchasecode) {
-            return response()->json([
-                'status'=>'error',
-                'message'=>[
-                    'Invalid request. Please contact with support'
-                ]
-            ]);
-        }
-
-        $website = @$_SERVER['HTTP_HOST'] . @$_SERVER['REQUEST_URI'] . ' - ' . env("APP_URL");
-
-        $response = CurlRequest::curlPostContent(VugiChugi::upman(),[
-            'purchasecode'=>$purchasecode,
-            'product'=>systemDetails()['name'],
-            'version'=>systemDetails()['version'],
-            'website'=>$website,
-        ]);
-
-        $response = json_decode($response);
-        if($response->status == 'error'){
-            return response()->json([
-                'status'=>'error',
-                'message'=>$response->message->error
-            ]);
-        }
-
-        if($response->remark == 'already_updated'){
-            return response()->json([
-                'status'=>'info',
-                'message'=>$response->message->success
-            ]);
-        }
-
-        $directory = 'core/temp/';
-        $files = [];
-        foreach($response->data->files as $key => $fileUrl){
-
-            $opts = [
-                "http" => [
-                    "method" => "GET",
-                    "header" => "Purchase-Code: $purchasecode"
-                ]
-            ];
-
-            $context = stream_context_create($opts);
-            $fileContent = file_get_contents($fileUrl,false,$context);
-
-            if(@json_decode($fileContent)->status == 'error'){
-                return response()->json([
-                    'status'=>'error',
-                    'message'=>@json_decode($fileContent)->message->error
-                ]);
-            }
-            file_put_contents($directory.$key.'.zip',$fileContent);
-            $files[$key] = $fileContent;
-        }
-
-        $fileNames = array_keys($files);
-        foreach($fileNames as $fileName){
-            $rand    = Str::random(10);
-            $dir     = base_path('temp/' . $rand);
-            $extract = $this->extractZip(base_path('temp/' . $fileName.'.zip'), $dir);
-
-            if ($extract == false) {
-                $this->removeDir($dir);
-                return response()->json([
-                    'status'=>'error',
-                    'message'=>['Something went wrong while extracting the update']
-                ]);
-            }
-
-            if (!file_exists($dir . '/config.json')) {
-                $this->removeDir($dir);
-                return response()->json([
-                    'status'=>'error',
-                    'message'=>['Config file not found']
-                ]);
-            }
-
-            $getConfig = file_get_contents($dir . '/config.json');
-            $config    = json_decode($getConfig);
-
-            $this->removeFile($directory . '/' . $fileName.'.zip');
-
-            $mainFile = $dir . '/update.zip';
-            if (!file_exists($mainFile)) {
-                $this->removeDir($dir);
-                return response()->json([
-                    'status'=>'error',
-                    'message'=>['Something went wrong while patching the update']
-                ]);
-            }
-
-
-            //move file
-            $extract = $this->extractZip(base_path('temp/' . $rand . '/update.zip'), base_path('../'));
-            if ($extract == false) {
-                return response()->json([
-                    'status'=>'error',
-                    'message'=>['Something went wrong while extracting the update']
-                ]);
-            }
-
-
-
-            //Execute database
-            if (file_exists($dir . '/update.sql')) {
-                $sql = file_get_contents($dir . '/update.sql');
-                DB::unprepared($sql);
-            }
-
-            $updateLog = new UpdateLog();
-            $updateLog->version = $config->version;
-            $updateLog->update_log = $config->changes;
-            $updateLog->save();
-
-            $this->removeDir($dir);
-
-        }
-        Artisan::call('optimize:clear');
-        return response()->json([
-            'status'=>'success',
-            'message'=>['System updated successfully']
-        ]);
-    }
-
-    public function systemUpdateLog(){
-        $pageTitle = 'System Update Log';
-        $updates = UpdateLog::orderBy('id','desc')->paginate(getPaginate());
-        return view('admin.system.update_log',compact('pageTitle','updates'));
-    }
-
-    public function adminActionLog()
+    /**
+     * One-click vendor updates are switched off. They download the vendor's
+     * release and unzip it over the whole site, then run its SQL: on this
+     * heavily customised installation that would overwrite the custom code
+     * and could break the database. Updates go through the repository.
+     */
+    public function systemUpdateProcess()
     {
-        $pageTitle = 'Admin Action Log';
-        $logs = AdminActionLog::with('admin')->latest()->paginate(getPaginate());
-        return view('admin.system.admin_action_log', compact('pageTitle', 'logs'));
+        $notify[] = ['error', 'Automatic updates are disabled: this installation is customised, and a vendor update would overwrite it. Updates are deployed from the code repository.'];
+        return back()->withNotify($notify);
     }
 
-    protected function extractZip($file, $extractTo)
+    /**
+     * Every change an admin made (AdminActionLogMiddleware records each
+     * successful POST / PUT / PATCH / DELETE). Super-admins only.
+     * Pages/Admin/ActionLog.tsx.
+     */
+    public function adminActionLog(Request $request)
     {
-        $zip = new \ZipArchive;
-        $res = $zip->open($file);
-        if ($res != true) {
-            return false;
-        }
+        $logs = AdminActionLog::query()
+            ->when($request->filled('admin'), fn ($q) => $q->where('admin_id', $request->integer('admin')))
+            ->when(in_array($request->query('method'), ['POST', 'PUT', 'PATCH', 'DELETE'], true), fn ($q) => $q->where('method', $request->query('method')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $term = '%' . $request->query('search') . '%';
+                $q->where(fn ($w) => $w->where('route_name', 'like', $term)->orWhere('uri', 'like', $term)->orWhere('description', 'like', $term));
+            })
+            ->dateFilter()
+            ->latest('id')
+            ->paginate(getPaginate())
+            ->withQueryString()
+            ->through(fn (AdminActionLog $log) => [
+                'id'          => $log->id,
+                'date'        => showDateTime($log->created_at, 'd M, Y h:i A'),
+                'admin'       => $log->admin_name ?? $log->admin_username ?? __('Unknown'),
+                'role'        => (string) $log->admin_role,
+                'method'      => (string) $log->method,
+                'action'      => (string) ($log->action ?? $log->method),
+                'resource'    => (string) ($log->route_name ?? $log->uri),
+                // The old page printed "null" when a log had neither.
+                'summary'     => Str::limit((string) ($log->description ?: ($log->meta ? json_encode($log->meta) : '—')), 100),
+                // For the detail dialog: the old page cut everything at 100 characters.
+                'description' => (string) $log->description,
+                'uri'         => (string) $log->uri,
+                'subject'     => $log->subject_type ? $log->subject_type . ' #' . $log->subject_id : null,
+                'meta'        => $log->meta ? json_encode($log->meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,
+                'ip'          => (string) $log->ip_address,
+                'userAgent'   => (string) $log->user_agent,
+            ]);
 
-        for( $i = 0 ; $i < $zip->numFiles ; $i++ ) {
-            if ( $zip->getNameIndex( $i ) != '/' && $zip->getNameIndex( $i ) != '__MACOSX/_' ) {
-                $zip->extractTo( $extractTo, array($zip->getNameIndex($i)) );
-            }
-        }
-
-        $zip->close();
-        return true;
-    }
-
-    protected function removeFile($path)
-    {
-        $fileManager = new FileManager();
-        $fileManager->removeFile($path);
-    }
-
-    protected function removeDir($location)
-    {
-        $fileManager = new FileManager();
-        $fileManager->removeDirectory($location);
+        return Inertia::render('Admin/ActionLog', [
+            'logs'    => $logs,
+            'admins'  => Admin::orderBy('username')->get(['id', 'name', 'username'])
+                ->map(fn (Admin $a) => ['id' => $a->id, 'label' => $a->name ? "{$a->name} ({$a->username})" : $a->username])->values(),
+            'filters' => [
+                'search' => (string) $request->query('search', ''),
+                'admin'  => (string) $request->query('admin', ''),
+                'method' => (string) $request->query('method', ''),
+                'date'   => AdminPresenter::dateRange($request->query('date')),
+            ],
+        ])->withViewData(['pageTitle' => 'Admin Action Log']);
     }
 }

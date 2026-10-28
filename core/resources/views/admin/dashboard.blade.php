@@ -133,19 +133,19 @@
                 icon="las la-key" value="{{ $widget['total_pins'] }}" bg="warning" />
         </div>
         <div class="col-xxl-3 col-md-4 col-sm-6">
-            <x-widget style="6" link="{{ route('admin.pin.index') }}" title="User Generated Pins"
+            <x-widget style="6" link="{{ route('admin.pin.user') }}" title="User Generated Pins"
                 icon="las la-key" value="{{ $widget['total_pins_user'] }}" bg="warning" />
         </div>
         <div class="col-xxl-3 col-md-4 col-sm-6">
-            <x-widget style="6" link="{{ route('admin.pin.index') }}" title="Admin Pins"
+            <x-widget style="6" link="{{ route('admin.pin.generate') }}" title="Admin Pins"
                 icon="las la-key" value="{{ $widget['total_pins_admin'] }}" bg="warning" />
         </div>
         <div class="col-xxl-3 col-md-4 col-sm-6">
-            <x-widget style="6" link="{{ route('admin.pin.used') }}" title="Used Pins (Admin)"
+            <x-widget style="6" link="{{ route('admin.pin.used', ['source' => 'admin']) }}" title="Used Pins (Admin)"
                 icon="las la-key" value="{{ $widget['total_admin_used_pins'] }}" bg="success" />
         </div>
         <div class="col-xxl-3 col-md-4 col-sm-6">
-            <x-widget style="6" link="{{ route('admin.pin.used') }}" title="Used Pins (User)"
+            <x-widget style="6" link="{{ route('admin.pin.used', ['source' => 'user']) }}" title="Used Pins (User)"
                 icon="las la-key" value="{{ $widget['total_user_used_pins'] }}" bg="success" />
         </div>
     </div>
@@ -161,15 +161,15 @@
     <div class="row gy-4">
         <div class="col-xxl-3 col-sm-6">
             <x-widget value="{{ $widget['total_stockist'] }}" title="Total Stockists" style="6"
-                link="{{ route('admin.stockist.index') }}" icon="las la-users" bg="primary" outline=false />
+                link="{{ route('admin.stockist.dashboard') }}" icon="las la-users" bg="primary" outline=false />
         </div>
         <div class="col-xxl-3 col-sm-6">
             <x-widget value="{{ $widget['active_stockist'] }}" title="Active Stockists" style="6"
-                link="{{ route('admin.stockist.activeStockist') }}" icon="las la-user-check" bg="success" outline=false />
+                link="{{ route('admin.stockist.dashboard', ['status' => 'active']) }}" icon="las la-user-check" bg="success" outline=false />
         </div>
         <div class="col-xxl-3 col-sm-6">
-            <x-widget value="{{ $widget['stockist_pending_order'] }}" title="Pending Orders" style="6"
-                link="{{ route('admin.users.email.unverified') }}" icon="lar la-times-circle" bg="danger" outline=false />
+            <x-widget value="{{ $widget['stockist_pending_order'] }}" title="Pending Stock Orders" style="6"
+                link="{{ route('admin.stockist-orders.index', ['status' => 'pending']) }}" icon="lar la-times-circle" bg="danger" outline=false />
         </div>
     </div>
 
@@ -188,7 +188,7 @@
         </div>
         <div class="col-xxl-4 col-lg-4 col-md-6 col-sm-6">
             <x-widget value="{{ showAmount($widget['total_order_sales_pending']) }}" title="Pending Sales Value" style="6"
-                link="{{ route('admin.order.index') }}" icon="las la-hourglass-half" bg="10" outline="true" />
+                link="{{ route('admin.order.index', ['status' => 'pending']) }}" icon="las la-hourglass-half" bg="10" outline="true" />
         </div>
         <div class="col-xxl-4 col-lg-4 col-md-6 col-sm-6">
             <x-widget value="{{ $widget['total_order'] }}" title="Total Orders" style="7"
@@ -196,11 +196,11 @@
         </div>
         <div class="col-xxl-4 col-lg-4 col-md-6 col-sm-6">
             <x-widget value="{{ $widget['total_pending_order'] }}" title="Pending Orders" style="7"
-                link="{{ route('admin.order.index') }}" icon="las la-clock" bg="1" />
+                link="{{ route('admin.order.index', ['status' => 'pending']) }}" icon="las la-clock" bg="1" />
         </div>
         <div class="col-xxl-4 col-lg-4 col-md-6 col-sm-6">
             <x-widget value="{{ $widget['total_cancel_order'] }}" title="Cancelled Orders" style="7"
-                link="{{ route('admin.order.index') }}" icon="las la-times-circle" bg="2" />
+                link="{{ route('admin.order.index', ['status' => 'cancelled']) }}" icon="las la-times-circle" bg="2" />
         </div>
     </div>
 

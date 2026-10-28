@@ -9,7 +9,6 @@ use App\Models\Admin;
 use App\Models\BvLog;
 use App\Models\MatrixStage;
 use App\Models\Order;
-use App\Models\Sorder;
 use App\Models\Stockist;
 use App\Models\Deposit;
 use App\Lib\CurlRequest;
@@ -23,6 +22,9 @@ use App\Rules\FileTypeValidate;
 use App\Models\AdminNotification;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
+use Inertia\Inertia;
+use App\Support\AdminLayout;
 use Spatie\Permission\Models\Role;
 use Psy\Readline\Transient;
 
@@ -63,8 +65,10 @@ class AdminController extends Controller
         $widget['total_pending_order']      = Order::InActive()->count();
 
 
-        $widget['active_stockist']          = Stockist::active()->count();
-        $widget['stockist_pending_order']   = Sorder::InActive()->count();
+        // Active by both flags, as the stockist pages count it.
+        $widget['active_stockist']          = Stockist::active()->where('is_active', true)->count();
+        // Stock orders from stockists waiting for approval (the old count read the retired "sorders" table).
+        $widget['stockist_pending_order']   = \App\Models\StockistOrder::where('status', 'pending')->count();
         
         // User Info
         $widget['total_users']             = User::count();
@@ -298,22 +302,39 @@ class AdminController extends Controller
     }
 
 
+    /**
+     * Profile and password on one page (Pages/Admin/Profile.tsx). They were
+     * two pages with the same profile card, one form each.
+     */
     public function profile()
     {
-        $pageTitle = 'Profile';
         $admin = auth('admin')->user();
-        return view('admin.profile', compact('pageTitle', 'admin'));
-    }
 
+        return Inertia::render('Admin/Profile', [
+            'admin' => [
+                'name'     => (string) $admin->name,
+                'username' => (string) $admin->username,
+                'email'    => (string) $admin->email,
+                'image'    => getImage(getFilePath('adminProfile') . '/' . $admin->image, getFileSize('adminProfile')),
+            ],
+            'imageSize' => getFileSize('adminProfile'),
+            'urls'      => [
+                'profile'  => route('admin.profile.update'),
+                'password' => route('admin.password.update'),
+            ],
+        ])->withViewData(['pageTitle' => 'Profile']);
+    }
 
     public function profileUpdate(Request $request)
     {
-        $request->validate([
-            'name' => 'required',
-            'email' => 'required|email',
-            'image' => ['nullable','image',new FileTypeValidate(['jpg','jpeg','png'])]
-        ]);
         $user = auth('admin')->user();
+
+        $request->validate([
+            'name'  => 'required|string|max:40',
+            // Two admins with one email would share password-reset codes.
+            'email' => 'required|email|max:191|unique:admins,email,' . $user->id,
+            'image' => ['nullable', 'image', new FileTypeValidate(['jpg', 'jpeg', 'png'])],
+        ]);
 
         if ($request->hasFile('image')) {
             try {
@@ -332,37 +353,50 @@ class AdminController extends Controller
         return to_route('admin.profile')->withNotify($notify);
     }
 
+    /** The old Password Setting page: its form is on the profile page now. */
     public function password()
     {
-        $pageTitle = 'Password Setting';
-        $admin = auth('admin')->user(); 
-        return view('admin.password', compact('pageTitle', 'admin'));
+        return to_route('admin.profile');
     }
 
     public function passwordUpdate(Request $request)
     {
         $request->validate([
             'old_password' => 'required',
-            'password' => 'required|min:5|confirmed',
+            // Was min:5. Applies to the next change only; current passwords keep working.
+            'password'     => ['required', 'confirmed', Password::min(8)],
         ]);
 
         $user = auth('admin')->user();
         if (!Hash::check($request->old_password, $user->password)) {
-            $notify[] = ['error', 'Password doesn\'t match!!'];
-            return back()->withNotify($notify);
+            return back()->withErrors(['old_password' => 'The current password is not correct.']);
         }
         $user->password = Hash::make($request->password);
         $user->save();
         $notify[] = ['success', 'Password changed successfully.'];
-        return to_route('admin.password')->withNotify($notify);
+        return to_route('admin.profile')->withNotify($notify);
     }
 
-    public function notifications(){
-        $notifications = AdminNotification::orderBy('id','desc')->with('user')->paginate(getPaginate());
-        $hasUnread = AdminNotification::where('is_read',Status::NO)->exists();
-        $hasNotification = AdminNotification::exists();
-        $pageTitle = 'Notifications';
-        return view('admin.notifications',compact('pageTitle','notifications','hasUnread','hasNotification'));
+    public function notifications()
+    {
+        $notifications = AdminNotification::orderBy('id', 'desc')->paginate(getPaginate())
+            ->through(fn (AdminNotification $n) => [
+                'id'        => $n->id,
+                'title'     => __($n->title),
+                'time'      => diffForHumans($n->created_at),
+                'unread'    => (int) $n->is_read === Status::NO,
+                'url'       => route('admin.notification.read', $n->id),
+                'deleteUrl' => route('admin.notifications.delete.single', $n->id),
+            ]);
+
+        return Inertia::render('Admin/Notifications', [
+            'notifications' => $notifications,
+            'hasUnread'     => AdminNotification::where('is_read', Status::NO)->exists(),
+            'urls'          => [
+                'readAll'   => route('admin.notifications.read.all'),
+                'deleteAll' => route('admin.notifications.delete.all'),
+            ],
+        ])->withViewData(['pageTitle' => 'Notifications']);
     }
 
 
@@ -419,6 +453,12 @@ class AdminController extends Controller
         }
         $notify[] = ['success',$response->message];
         return back()->withNotify($notify);
+    }
+
+    /** Entries for the top-bar search box (Layouts/AdminLayout.tsx), filtered by permission. */
+    public function searchIndex()
+    {
+        return response()->json(AdminLayout::searchIndex(auth('admin')->user()));
     }
 
     public function readAllNotification(){

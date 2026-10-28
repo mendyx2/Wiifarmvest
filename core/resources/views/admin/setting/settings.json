@@ -181,6 +181,20 @@
     },
     
     
+    "frontend_content": {
+        "keyword": ["frontend", "content", "sections", "social icons", "policy pages", "register page", "login page", "faq", "website content"],
+        "title": "Frontend Content",
+        "subtitle": "The texts, pictures and items of each section of the website: social links, policy pages, login and register texts and more.",
+        "icon": "las la-pen-fancy",
+        "route_name": "admin.frontend.index"
+    },
+    "manage_pages": {
+        "keyword": ["pages", "page builder", "sections", "manage pages", "slug", "website pages"],
+        "title": "Manage Pages",
+        "subtitle": "The website's pages, the sections each one shows and their SEO.",
+        "icon": "las la-file-alt",
+        "route_name": "admin.frontend.manage.pages"
+    },
     "kyc_setting": {
         "keyword": [
             "KYC",
@@ -275,5 +289,53 @@
         "subtitle": "Insert the robots.txt content here to enhance bot web crawlers and instruct them on how to interact with certain areas of the website.",
         "icon": "las la-robot",
         "route_name": "admin.setting.robot"
+    },
+    "admin_action_log": {
+        "keyword": [
+            "action log",
+            "audit",
+            "admin activity",
+            "who changed",
+            "history of changes"
+        ],
+        "title": "Admin Action Log",
+        "subtitle": "Every change an admin made: who, what, when and from where.",
+        "icon": "las la-history",
+        "route_name": "admin.system.action.log"
+    },
+    "maintenance_mode": {
+        "keyword": ["maintenance", "maintenance mode", "offline", "down for maintenance", "site offline"],
+        "title": "Maintenance Mode",
+        "subtitle": "Take the site offline for members, with your own message and picture.",
+        "icon": "las la-tools",
+        "route_name": "admin.maintenance.mode"
+    },
+    "gdpr_cookie": {
+        "keyword": ["cookie", "gdpr", "cookie policy", "cookie consent", "privacy"],
+        "title": "GDPR Cookie",
+        "subtitle": "The cookie notice visitors accept, and its policy text.",
+        "icon": "las la-cookie-bite",
+        "route_name": "admin.setting.cookie"
+    },
+    "sitemap": {
+        "keyword": ["sitemap", "sitemap xml", "seo", "search engine", "google"],
+        "title": "Sitemap XML",
+        "subtitle": "The sitemap.xml file search engines read.",
+        "icon": "las la-sitemap",
+        "route_name": "admin.setting.sitemap"
+    },
+    "cron_jobs": {
+        "keyword": ["cron", "cron job", "schedule", "scheduler", "automation", "run now"],
+        "title": "Cron Jobs",
+        "subtitle": "The scheduled jobs (bonuses, payouts, cleanups), their schedules and run logs.",
+        "icon": "las la-clock",
+        "route_name": "admin.cron.index"
+    },
+    "system_information": {
+        "keyword": ["system", "server", "php", "version", "cache", "clear cache", "optimize", "update", "laravel"],
+        "title": "System Information",
+        "subtitle": "Versions, server details, clear cache and the update log.",
+        "icon": "las la-server",
+        "route_name": "admin.system.info"
     }
 }

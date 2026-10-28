@@ -21,7 +21,7 @@ class ShopPaystackController extends Controller
         $order     = $reference ? AffiliateOrder::where('order_code', $reference)->first() : null;
 
         if (!$order) {
-            return redirect()->route('shop.index')->with('error', 'We could not find that order.');
+            return to_route('shop.index')->withNotify([['error', 'We could not find that order.']]);
         }
 
         if ($order->status !== AffiliateOrder::STATUS_PENDING) {
@@ -32,7 +32,7 @@ class ShopPaystackController extends Controller
         $account = $gateway ? json_decode($gateway->gateway_parameter) : null;
 
         if (!$account || empty($account->secret_key)) {
-            return redirect()->route('shop.checkout')->with('error', 'Payment verification is temporarily unavailable.');
+            return to_route('shop.order.success', $order->order_code)->withNotify([['error', 'Payment verification is temporarily unavailable.']]);
         }
 
         $ch = curl_init('https://api.paystack.co/transaction/verify/' . rawurlencode($order->order_code));
@@ -52,6 +52,9 @@ class ShopPaystackController extends Controller
             return redirect()->route('shop.order.success', $order->order_code);
         }
 
-        return redirect()->route('shop.checkout')->with('error', 'We could not verify your payment. If you were charged, contact support with your reference: ' . $order->order_code);
+        // Back to the order's payment page (the checkout is empty by now: the cart was
+        // turned into this order), so the buyer can try again.
+        return to_route('shop.order.pay', $order->order_code)
+            ->withNotify([['error', 'We could not verify your payment. If you were charged, contact support with your reference: ' . $order->order_code]]);
     }
 }

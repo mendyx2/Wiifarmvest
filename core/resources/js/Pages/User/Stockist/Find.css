@@ -1,0 +1,83 @@
+/* Moved from resources/views/templates/basic/user/stockist/find.blade.php (@push('style')),
+   scoped under .page-stockist-find so it only applies to this page. */
+
+.page-stockist-find {
+    .bg-gradient-light {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+
+    .step-icon {
+            transition: transform 0.3s ease;
+        }
+
+    .step-icon:hover {
+            transform: scale(1.1);
+        }
+
+    .stockist-card {
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
+            cursor: pointer;
+        }
+
+    .stockist-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1) !important;
+            border-color: #667eea;
+        }
+
+    .quick-location {
+            transition: all 0.2s ease;
+        }
+
+    .quick-location:hover {
+            transform: translateY(-1px);
+            background-color: #12715d !important;
+            color: white !important;
+            border-color: #667eea !important;
+        }
+
+    .contact-info a {
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+    .contact-info a:hover {
+            color: #667eea !important;
+        }
+
+    .badge {
+            font-weight: 500;
+        }
+
+    /* Animation for search results */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+    .stockist-card {
+            animation: fadeInUp 0.5s ease;
+        }
+
+    /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .display-5 {
+                font-size: 2rem;
+            }
+            
+            .btn-group-sm {
+                flex-wrap: wrap;
+            }
+            
+            .quick-location {
+                margin-bottom: 5px;
+            }
+        }
+}

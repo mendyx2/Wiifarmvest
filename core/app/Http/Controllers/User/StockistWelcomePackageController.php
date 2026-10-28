@@ -3,19 +3,19 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use App\Models\StockistRedemption;
 use App\Models\WelcomePackage;
 use App\Services\WelcomePackageService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use RuntimeException;
 
 /**
  * StockistWelcomePackageController
  *
- * Lets a stockist look up and redeem a customer's Welcome Back Package
- * code in person. Kept separate from StockistController so the redemption
- * workflow (and its own service dependency) stays a single responsibility.
+ * Lets a stockist look up a customer's Welcome Back Package code and see
+ * their redemption history. The package itself is redeemed in the POS, as
+ * goods worth exactly its value taken from the stockist's stock, so stock
+ * and money always move together.
  */
 class StockistWelcomePackageController extends Controller
 {
@@ -23,7 +23,7 @@ class StockistWelcomePackageController extends Controller
     {
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $pageTitle = 'Welcome Package Redemption';
         $stockist  = auth()->user()->stockist;
@@ -32,72 +32,50 @@ class StockistWelcomePackageController extends Controller
             ->redeemed()
             ->where('redeemed_by_stockist_id', $stockist->id)
             ->latest('redeemed_at')
-            ->paginate(10);
+            ->paginate(10)
+            ->withQueryString();
 
         $totalRedeemed = WelcomePackage::redeemed()
             ->where('redeemed_by_stockist_id', $stockist->id)
             ->sum('amount');
 
-        return view('Template::user.stockist.welcome-pack.index', compact(
-            'pageTitle', 'history', 'totalRedeemed'
-        ));
-    }
-
-    public function verify(Request $request): JsonResponse
-    {
-        $request->validate([
-            'code' => 'required|string',
-        ]);
-
-        try {
-            $package = $this->packages->findByCode($request->code)->load('user');
-
-            return response()->json([
-                'success' => true,
-                'package' => [
-                    'code'     => $package->code,
-                    'amount'   => showAmount($package->amount, currencyFormat: false),
-                    'source'   => $package->source,
-                    'username' => $package->user->username,
-                    'fullname' => $package->user->fullname,
-                ],
-            ]);
-        } catch (RuntimeException $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        // "Verify Code" reloads this page with ?code=XXXXXXXXXX.
+        $code    = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $request->query('code', '')));
+        $package = null;
+        $error   = null;
+        if ($code !== '') {
+            try {
+                $found   = $this->packages->findByCode($code)->load('user');
+                $package = [
+                    'code'     => $found->code,
+                    'amount'   => showAmount($found->amount),
+                    'source'   => (string) $found->source,
+                    'username' => (string) @$found->user->username,
+                    'fullname' => (string) @$found->user->fullname,
+                ];
+            } catch (RuntimeException $e) {
+                $error = $e->getMessage();
+            }
         }
-    }
 
-    public function redeem(Request $request): JsonResponse
-    {
-        $request->validate([
-            'code' => 'required|string',
-        ]);
-
-        $stockist = auth()->user()->stockist;
-
-        try {
-            $package = $this->packages->findByCode($request->code);
-            $package = $this->packages->redeem($package, $stockist);
-
-            StockistRedemption::create([
-                'stockist_id'        => $stockist->id,
-                'type'               => StockistRedemption::TYPE_WELCOME_PACK,
-                'trx'                => $package->trx,
-                'reference_code'     => $package->code,
-                'welcome_package_id' => $package->id,
-                'customer_user_id'   => $package->user_id,
-                'items'              => [],
-                'quantity'           => 0,
-                'amount'             => $package->amount,
-                'redeemed_at'        => $package->redeemed_at,
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => showAmount($package->amount) . ' credited to your stockist wallet.',
-            ]);
-        } catch (RuntimeException $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()]);
-        }
+        return Inertia::render('User/Stockist/WelcomePack', [
+            'totalRedeemed' => showAmount($totalRedeemed),
+            'history'       => $history->through(fn ($pkg) => [
+                'id'       => $pkg->id,
+                'fullname' => (string) (@$pkg->user->fullname ?: '—'),
+                'date'     => $pkg->redeemed_at ? showDateTime($pkg->redeemed_at, 'M d, Y') : '',
+                'time'     => $pkg->redeemed_at ? showDateTime($pkg->redeemed_at, 'H:i') : '',
+                'amount'   => showAmount($pkg->amount),
+                'source'   => (string) $pkg->source,
+            ]),
+            'code'     => $code,
+            'package'  => $package,
+            'error'    => $error,
+            'urls'     => [
+                'index' => route('user.stockist.welcome-pack.index'),
+                // A package is always redeemed in the POS, as goods taken from stock.
+                'pos'   => route('user.stockist.pos.index', $package ? ['code' => $package['code']] : []),
+            ],
+        ])->withViewData(compact('pageTitle'));
     }
 }

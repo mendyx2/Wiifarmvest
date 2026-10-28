@@ -50,6 +50,7 @@ return [
         'admin.chart.*',                     // dashboard widgets
         'admin.notifications*',
         'admin.notification.read',
+        'admin.search.index',                // lists only pages the admin may open
         'admin.logout',
     ],
 

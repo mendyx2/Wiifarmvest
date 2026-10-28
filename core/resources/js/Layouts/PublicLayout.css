@@ -1,0 +1,60 @@
+/*
+ * Layouts/PublicLayout.tsx. The shop header, footer and page styles are in
+ * assets/templates/basic/css/custom.css (shophd-*, shopft-*, shop-*); this
+ * file only adds what the Blade version got from Bootstrap's JavaScript.
+ */
+
+.public-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.public-main {
+    flex: 1 0 auto;
+}
+
+/* The account menu. Bootstrap's dropdown script (Popper) used to place it;
+   React opens it with the "show" class, so place it under the button here. */
+.shophd-account {
+    position: relative;
+}
+
+.shophd-account .shophd-dropdown.show {
+    display: block;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: auto;
+}
+
+/* Additions for the React shop pages (Pages/Shop/*.tsx). */
+
+/* Was an inline style="max-width:480px" / 560px on the payment and confirmation pages. */
+.shop-container--narrow {
+    max-width: 560px;
+}
+
+.shop-search-note {
+    color: var(--shop-muted);
+    margin: 0 0 16px;
+}
+
+/* Checkout: each error under its own field (the old page listed them all at the top). */
+.shop-field-error {
+    color: #dc2626;
+    font-size: 0.8rem;
+    margin-top: 4px;
+}
+
+.shop-input[aria-invalid='true'] {
+    border-color: #dc2626;
+}
+
+.shop-pay-hint {
+    font-size: 0.72rem;
+}
+
+.shop-success-icon--pending {
+    background: var(--shop-gold);
+}

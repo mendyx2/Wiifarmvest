@@ -1,0 +1,240 @@
+/* Moved from resources/views/admin/users/detail.blade.php (@push('style')),
+   scoped under .page-user-detail so it only applies to this page. */
+
+.page-user-detail {
+    /* ── Buy Shares Modal ── */
+            .buy-shares-modal {
+                border: none;
+                border-radius: 16px;
+                overflow: hidden;
+                box-shadow: 0 20px 60px rgba(0,0,0,.18);
+            }
+
+    /* Header */
+            .bsm-header {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                padding: 22px 24px 16px;
+                background: linear-gradient(135deg, var(--primary) 0%, #3a56d4 100%);
+                color: #fff;
+            }
+
+    .bsm-header-icon {
+                width: 46px;
+                height: 46px;
+                min-width: 46px;
+                border-radius: 12px;
+                background: rgba(255,255,255,.18);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.5rem;
+            }
+
+    .bsm-title  { color:#fff; font-size:1.1rem; font-weight:700; margin-bottom:2px; }
+
+    .bsm-subtitle { color:rgba(255,255,255,.8); font-size:.82rem; }
+
+    .bsm-close {
+                background: rgba(255,255,255,.15);
+                border: none;
+                color: #fff;
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                font-size: 1rem;
+                transition: background .15s;
+            }
+
+    .bsm-close:hover { background: rgba(255,255,255,.28); }
+
+    /* Balance bar */
+            .bsm-balance-bar {
+                display: flex;
+                align-items: center;
+                background: #f0f4ff;
+                border-bottom: 1px solid #e0e7ff;
+                padding: 10px 24px;
+                font-size: .84rem;
+                color: #444;
+            }
+
+    .bsm-balance-bar strong { color: #2563eb; font-size: .9rem; }
+
+    /* Label */
+            .bsm-label {
+                font-size: .8rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: .06em;
+                color: #666;
+                margin-bottom: 6px;
+                display: block;
+            }
+
+    /* Plan select */
+            .bsm-select {
+                border-radius: 10px;
+                border: 1.5px solid #dde3f0;
+                padding: 10px 14px;
+                font-size: .9rem;
+                transition: border-color .2s;
+            }
+
+    .bsm-select:focus {
+                border-color: var(--primary);
+                box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+            }
+
+    /* Quantity group */
+            .bsm-qty-group {
+                display: flex;
+                align-items: center;
+                gap: 0;
+                border: 1.5px solid #dde3f0;
+                border-radius: 10px;
+                overflow: hidden;
+            }
+
+    .bsm-qty-btn {
+                background: #f0f4ff;
+                border: none;
+                width: 44px;
+                height: 44px;
+                font-size: 1rem;
+                color: #3a56d4;
+                cursor: pointer;
+                transition: background .15s;
+                flex-shrink: 0;
+            }
+
+    .bsm-qty-btn:hover { background: #dde6ff; }
+
+    .bsm-qty-input {
+                border: none;
+                border-left: 1.5px solid #dde3f0;
+                border-right: 1.5px solid #dde3f0;
+                border-radius: 0;
+                font-size: 1.1rem;
+                font-weight: 700;
+                height: 44px;
+            }
+
+    .bsm-qty-input:focus { box-shadow: none; border-color: #dde3f0; }
+
+    /* Total calculator card */
+            .bsm-total-card {
+                background: #f8f9fc;
+                border: 1.5px solid #e0e7ff;
+                border-radius: 12px;
+                padding: 16px 18px;
+            }
+
+    .bsm-calc-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 4px 0;
+            }
+
+    .bsm-calc-label { font-size: .84rem; color: #666; }
+
+    .bsm-calc-value { font-size: .9rem; font-weight: 600; color: #333; }
+
+    .bsm-calc-divider {
+                border-top: 1.5px dashed #d0d8ee;
+                margin: 8px 0;
+            }
+
+    .bsm-calc-total .bsm-calc-label { font-weight: 700; color: #333; font-size: .9rem; }
+
+    .bsm-calc-total .bsm-calc-value { font-size: 1.1rem; }
+
+    /* Balance check */
+            .bsm-balance-check {
+                font-size: .82rem;
+                padding: 7px 12px;
+                border-radius: 7px;
+            }
+
+    .bsm-balance-ok   { background: #d1f5e0; color: #0f5132; border: 1px solid #a3e6c0; }
+
+    .bsm-balance-warn { background: #fff3cd; color: #664d03; border: 1px solid #ffe69c; }
+
+    /* Force-allocate row */
+            .bsm-force-row {
+                background: #fff8ec;
+                border: 1px dashed #f59e0b;
+                border-radius: 7px;
+                padding: 10px 14px;
+                font-size: .83rem;
+            }
+
+    .bsm-force-row .form-check-label { cursor: pointer; color: #78350f; }
+
+    /* Hint text */
+            .bsm-hint { font-size: .78rem; color: #888; }
+
+    /* Responsive */
+            @media (max-width:480px) {
+                .bsm-header { padding: 16px; }
+            }
+
+    .profile-info-top {
+                display: flex;
+                align-items: center;
+                justify-content: flex-start;
+                gap: 16px;
+            }
+
+    .profile-image {
+                flex-shrink: 0;
+            }
+
+    .plan-info {
+                flex: 1;
+            }
+
+    .plan-info-name {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                line-height: 1.3;
+                font-size: 20px;
+            }
+
+    .plan-info-name span {
+                font-size: 24px;
+            }
+
+    .profile-image img {
+                height: 100px;
+                width: 100px;
+                border-radius: 50%;
+                border: 6px solid #00000010;
+            }
+
+    .plan-info{
+                background: #fafafa;
+                padding: 10px;
+                border-radius: 5px;
+            }
+
+    /* Added for the React page: what the Blade view did with inline styles. */
+    .udb-ambassador { font-size: .8rem; padding: 6px 16px; }
+    .udb-ambassador .badge { font-size: .65rem; }
+    .udb-section-label {
+        font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+        margin-bottom: 8px; color: #6c757d; font-weight: 600;
+    }
+    .udb-section-label .badge { font-size: .65rem; }
+    /* The Verified / Unverified switches (were bootstrap-toggle buttons). */
+    .udb-switch { min-height: 45px; display: flex; align-items: center; gap: 10px; padding-left: 3em; }
+    .udb-switch .form-check-input { width: 2.6em; height: 1.4em; cursor: pointer; }
+    .udb-switch .form-check-input:checked { background-color: #28c76f; border-color: #28c76f; }
+}

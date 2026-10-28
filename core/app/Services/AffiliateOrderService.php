@@ -118,8 +118,10 @@ class AffiliateOrderService
             $order->loadMissing('items.product');
 
             foreach ($order->items as $item) {
+                // Locked: a POS sale at the same moment can't use the same units.
                 $stockistStore = Stockist_store::where('user_id', $stockist->user_id)
                     ->where('product_id', $item->product_id)
+                    ->lockForUpdate()
                     ->first();
 
                 if (!$stockistStore) {

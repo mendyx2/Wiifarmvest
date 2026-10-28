@@ -1,371 +1,320 @@
 <?php
 
 namespace App\Http\Controllers\Admin;
-use App\Models\User;  
+
 use App\Constants\Status;
-use App\Models\Stockist;
-use App\Models\State;
-use App\Models\StockistOrder;
-use App\Models\Stockist_store;
-use App\Models\StockistInventory;
-use App\Models\Stockist_store_history;
-use App\Models\Sktransaction;
-use App\Models\StockistRedemption;
-use App\Models\StockTransfer;
-use App\Models\Stransaction;
-use App\Models\ProductStatePrice;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Models\ProductStatePrice;
+use App\Models\Sktransaction;
+use App\Models\State;
+use App\Models\StockTransfer;
+use App\Models\Stockist;
+use App\Models\StockistRedemption;
+use App\Models\Stockist_store;
+use App\Models\Stransaction;
+use App\Models\User;
+use App\Support\AdminPresenter;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 
-
-
+/**
+ * Manage Stockist: the stockist list, activation, one stockist's page
+ * (with wallet top-up and activate / deactivate) and the redemption report.
+ * Pages are in resources/js/Pages/Admin/Stockist/.
+ */
 class StockistController extends Controller
 {
+    /** Old list pages (All / Active / Inactive Stockists): the dashboard lists and filters the same stockists. */
     public function allStockists()
     {
-        $pageTitle = "All Stockists";
-        $stockists = Stockist::with('user')->orderBy('id', 'desc')->paginate(getPaginate());
-         
-        return view('admin.stockist.index', compact('pageTitle', 'stockists'));
-    }
-
-    public function store(Request $request, $id = 0)
-    { 
-        $notify = array();
-        $request->validate([
-            'user_id'     => 'required|numeric|min:0',
-            'activation_fee' => 'required|numeric|min:0',
-        ]);
-        
-
-        $stock = Stockist::where('user_id', $request->user_id)->first();
-
-        
-        if ($stock) {
-
-            $notification = 'User is already a Stockist';
-            $notify[] = ['error', $notification];
-
-        }else {
-           // dd($request);
-           $activation_fee  = $request->activation_fee;
-           $user = User::where('id', $request->user_id)->where('status', Status::ACTIVE)->first();
-
-           if ($user) {
-                if ($user->balance >=  $request->activation_fee) {
-                    $trx          = getTrx();
-                    $amount       = $request->activation_fee;
-
-                    DB::beginTransaction();
-                    try {
-                        
-                       
-                        $user->deductWallet($amount);
-                        // 
-                        $post_balance = $user->balance;
-                        $user_id  = $user->id;
-
-                        $stockist          = new Stockist();
-                        $stockist->user_id = $user_id;
-                        $stockist->wallet = $amount;
-                        $stockist->status  = Status::ACTIVE;
-                        $stockist->save();
-
-
-
-                        // Trans for activation
-                        $details = "Stockist activation";
-                        $remark  = "Stockist_activation_fee";
-
-                        stockistActivation($user_id, $amount, $post_balance, $details, $remark, $trx);
-
-                        // Proposed Compensation Plan: Stockist Setup Bonus across 10 upline generations
-                        try {
-                            app(\App\Services\StockistEnrollmentBonusService::class)->process($stockist, $trx);
-                        } catch (\Throwable $e) {
-                            \Illuminate\Support\Facades\Log::error('[StockistActivation] Failed to disburse setup bonus: ' . $e->getMessage());
-                        }
-
-                        DB::commit();
-                        $notification = 'User Promoted to Stockist successfully';
-                        $notify[] = ['success', $notification];
-                    } catch (\Throwable $e) {
-                        DB::rollBack();
-                        //throw $e;
-                        $notification =$e;
-                        $notify[] = ['error', $notification];
-                    }
-                }else{
-                    $notification = 'User has Insufficient balance';
-                        $notify[] = ['error', $notification];
-                }
-              
-           }
-
-        }
-         return back()->withNotify($notify);
-       
-    }
-
- 
-    public function detail($id)
-    {
-        $stockist = Stockist::with('user')->findOrFail($id);
-        //dd($stockist);
-        $pageTitle = 'Stockist Details  - '. $stockist->user->username . ' ( '.$stockist->user->firstname. ' '.$stockist->user->lastname. ' )';
-        return view('admin.stockist.detail', compact('pageTitle', 'stockist'));
+        return to_route('admin.stockist.dashboard');
     }
 
     public function activeStockist()
     {
-    	$pageTitle = "All Used Pins";
-    	$stockists = Stockist::where('status', Status::ACTIVE)->with('user')->orderBy('id', 'desc')->paginate(getPaginate());
-    	return view('admin.stockist.index', compact('pageTitle', 'stockists'));
+        return to_route('admin.stockist.dashboard', ['status' => 'active']);
     }
 
     public function inactiveStockist()
     {
-    	$pageTitle = "All Inactive Stockist";
-    	$stockists = Stockist::where('status', Status::INACTIVE)->with('user')->orderBy('id', 'desc')->paginate(getPaginate());
-    	return view('admin.stockist.index', compact('pageTitle', 'stockists'));
+        return to_route('admin.stockist.dashboard', ['status' => 'inactive']);
     }
 
-    public function changeUserStockistStatusddd()
+    /** Old stockist page: the details page shows the same and more. */
+    public function detail($id)
     {
-        $pageTitle = 'Banned Users';
-        $users = $this->userData('banned');
-        return view('admin.users.list', compact('pageTitle', 'users'));
+        return to_route('admin.stockist.details', Stockist::findOrFail($id));
     }
 
-
-    public function changeUserStockistStatus(Request $request,$id)
-    {
-        $stockist = Stockist::findOrFail($id);
-        if ($stockist->status == Status::ACTIVE) {
-            $request->validate([
-                'status_reason'=>'required|string|max:255'
-            ]);
-            $stockist->status = Status::INACTIVE;
-            $stockist->status_reason = $request->status_reason;
-            $notify[] = ['success','Stockist is now In Active'];
-        }else{
-            $stockist->status = Status::ACTIVE;
-            $stockist->status_reason  = null;
-            $notify[] = ['success','Stockist is now Active'];
-        }
-        $stockist->save();
-        return back()->withNotify($notify);
-
-    }
-
-
-    // the new stockist starts here
-
-    public function dashboard()
-    {
-        $pageTitle = 'Stockist ';
-        $totalStockists = Stockist::count();
-        $verifiedStockists = Stockist::where('is_verified', true)->count();
-        $activeStockists = Stockist::where('is_active', true)->count();
-        
-        // Calculate total products quantity across all stockists
-        $totalProducts = DB::table('stockist_stores')
-            ->join('stockists', 'stockist_stores.stockist_id', '=', 'stockists.id')
-            ->sum('stockist_stores.quantity');
-
-        $stockists = Stockist::with(['user', 'stockiststore'])
-            ->withCount(['stockiststore as total_products' => function($query) {
-                $query->select(DB::raw('COALESCE(SUM(quantity), 0)'));
-            }])
-            ->latest()
-            ->paginate(10);
-
-        return view('admin.stockist.stockist-dashboard', compact(
-            'totalStockists',
-            'verifiedStockists',
-            'activeStockists',
-            'totalProducts',
-            'stockists',
-            'pageTitle'
-        ));
-    }
-
-    public function activationPage()
-    {   
-        $pageTitle = 'Stockist ';
-        $states = State::orderBy('name')->get();
-    
-        return view('admin.stockist.stockist-activation', compact('pageTitle', 'states'));
-    }
-
+    /** Old wallet top-up page: the top-up is a dialog on the stockist's page now. */
     public function walletTopUpPage(Stockist $stockist)
     {
-        $pageTitle = 'Stockist ';
-        return view('admin.stockist.stockist-wallet-topup', compact('stockist', 'pageTitle'));
+        return to_route('admin.stockist.details', ['stockist' => $stockist, 'topup' => 1]);
     }
 
-    public function topUpWallet(Request $request, Stockist $stockist)
+    /**
+     * Activate or deactivate a stockist (`state=activate|deactivate`; a
+     * reason is needed to deactivate). Both flags change together: the old
+     * toggle set `status` while the pages and the stockist search read
+     * `is_active`, so a deactivated stockist still showed as active.
+     */
+    public function changeUserStockistStatus(Request $request, $id)
     {
         $request->validate([
-            'amount' => 'required|numeric|min:0',
-            'notes' => 'nullable|string|max:500'
-        ]);
+            'state'         => 'required|in:activate,deactivate',
+            'status_reason' => 'required_if:state,deactivate|nullable|string|max:255',
+        ], ['status_reason.required_if' => 'Give a reason for deactivating this stockist.']);
 
-        try {
-            DB::beginTransaction();
-            $amount = $request->amount;
-            $notes = $request->notes;
-            // Update stockist wallet
-            $balanceBefore = $stockist->wallet;
+        $stockist = Stockist::findOrFail($id);
+        $activate = $request->state === 'activate';
+        $isActive = (int) $stockist->status === Status::ACTIVE && $stockist->is_active;
 
-            $stockist->wallet += $amount;
-            $stockist->save();
-
-
-            // Create sktransaction record
-            Sktransaction::create([
-                'stockist_id' => $stockist->id,
-                'type' => 'credit',
-                'amount' => $amount,
-                'balance_before' => $balanceBefore,
-                'balance_after' => $stockist->wallet,
-                'description' => 'Wallet Top-up by Admin',
-                'notes' => $notes,
-                'reference' => Sktransaction::generateReference(),
-                'metadata' => [
-                    'topped_up_by' => auth()->id(),
-                    'topped_up_at' => now()->toDateTimeString(),
-                    'method' => 'manual'
-                ]
-            ]);
-
-
-            
-                $notify[] = ["success","Successfully topped up ₦" . number_format($request->amount) . " to {$stockist->business_name}'s wallet."];
-            DB::commit();
+        if ($activate === $isActive) {
+            $notify[] = ['info', $activate ? 'The stockist is already active.' : 'The stockist is already inactive.'];
             return back()->withNotify($notify);
-            //return redirect()->route('admin.stockist.dashboard')->with('success', "Successfully topped up ₦" . number_format($request->amount) . " to {$stockist->business_name}'s wallet.");
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            $notify[] = ['error', 'Failed to top up wallet: ' . $e->getMessage()];
-            return back()->withNotify($notify);
-            //return back()->with('error', 'Failed to top up wallet: ' . $e->getMessage());
         }
+
+        $stockist->status    = $activate ? Status::ACTIVE : Status::INACTIVE;
+        $stockist->is_active = $activate;
+        if (Schema::hasColumn('stockists', 'status_reason')) {
+            $stockist->status_reason = $activate ? null : $request->status_reason;
+        }
+        $stockist->save();
+
+        $notify[] = ['success', $activate ? 'Stockist is now active' : 'Stockist is now inactive'];
+        return back()->withNotify($notify);
     }
 
+    /** Manage Stockist → Dashboard (Pages/Admin/Stockist/Dashboard.tsx): totals and every stockist. */
+    public function dashboard(Request $request)
+    {
+        $pageTitle = 'Stockist Dashboard';
+        $search    = trim((string) $request->query('search', ''));
+        $status    = in_array($request->query('status'), ['active', 'inactive'], true) ? $request->query('status') : '';
+        $type      = in_array($request->query('type'), ['mega', 'mini'], true) ? $request->query('type') : '';
+        $stateId   = (int) $request->query('state');
+
+        $stockists = Stockist::with(['user:id,username,firstname,lastname', 'state:id,name'])
+            ->withSum('stockiststore as units', 'quantity')
+            ->when($search !== '', fn ($q) => $q->where(fn ($q) => $q
+                ->where('business_name', 'like', "%{$search}%")
+                ->orWhere('business_email', 'like', "%{$search}%")
+                ->orWhere('business_phone', 'like', "%{$search}%")
+                ->orWhereHas('user', fn ($u) => $u->where('username', 'like', "%{$search}%"))))
+            ->when($status === 'active', fn ($q) => $q->where('is_active', true)->where('status', Status::ACTIVE))
+            ->when($status === 'inactive', fn ($q) => $q->where(fn ($q) => $q->where('is_active', false)->orWhere('status', '!=', Status::ACTIVE)))
+            ->when($type === 'mega', fn ($q) => $q->where('store_type', Stockist::STORE_TYPE_MEGA))
+            ->when($type === 'mini', fn ($q) => $q->where('store_type', '!=', Stockist::STORE_TYPE_MEGA))
+            ->when($stateId, fn ($q) => $q->where('state_id', $stateId))
+            ->latest('id')
+            ->paginate(getPaginate())
+            ->withQueryString()
+            ->through(fn (Stockist $s) => $this->row($s) + [
+                'email'    => (string) $s->business_email,
+                'phone'    => (string) $s->business_phone,
+                'units'    => (int) $s->units,
+                'verified' => $s->is_verified ? ($s->verified_at ? showDateTime($s->verified_at, 'd M Y') : true) : false,
+            ]);
+
+        return Inertia::render('Admin/Stockist/Dashboard', [
+            'stats' => [
+                'total'    => Stockist::count(),
+                'active'   => Stockist::where('is_active', true)->where('status', Status::ACTIVE)->count(),
+                'mega'     => Stockist::where('store_type', Stockist::STORE_TYPE_MEGA)->count(),
+                'units'    => number_format((int) Stockist_store::whereNotNull('stockist_id')->sum('quantity')),
+                'wallets'  => showAmount(Stockist::sum('wallet')),
+            ],
+            'stockists' => $stockists,
+            'states'    => State::orderBy('name')->get(['id', 'name'])->map(fn ($s) => ['id' => $s->id, 'name' => (string) $s->name]),
+            'filters'   => ['search' => $search, 'status' => $status, 'type' => $type, 'state' => $stateId ? (string) $stateId : ''],
+            'urls'      => ['activate' => route('admin.stockist.activation-page')],
+        ])->withViewData(['pageTitle' => $pageTitle]);
+    }
+
+    /** The fields every stockist list shows. */
+    private function row(Stockist $s): array
+    {
+        return [
+            'id'     => $s->id,
+            'name'   => $s->business_name ?: 'Stockist #' . $s->id,
+            'user'   => AdminPresenter::user($s->user),
+            'state'  => $s->state?->name,
+            'mega'   => $s->isMega(),
+            'active' => (int) $s->status === Status::ACTIVE && (bool) $s->is_active,
+            'wallet' => showAmount($s->wallet),
+            'url'    => route('admin.stockist.details', $s->id),
+        ];
+    }
+
+    /** Activate New Stockist (Pages/Admin/Stockist/Activate.tsx). */
+    public function activationPage()
+    {
+        return Inertia::render('Admin/Stockist/Activate', [
+            'states' => State::orderBy('name')->get(['id', 'name', 'code'])->map(fn ($s) => ['id' => $s->id, 'name' => (string) $s->name, 'code' => (string) $s->code]),
+            'urls'   => [
+                'search'    => route('admin.stockist.search-user'),
+                'activate'  => route('admin.stockist.activate'),
+                'dashboard' => route('admin.stockist.dashboard'),
+            ],
+        ])->withViewData(['pageTitle' => 'Activate New Stockist']);
+    }
+
+    /** Look up the member to promote (JSON for the activation page). */
     public function searchUser(Request $request)
     {
-        $request->validate([
-            'username' => 'required|string'
-        ]);
+        $request->validate(['username' => 'required|string|max:60']);
 
-        $user = User::where('username', $request->username)->first();
-
+        $user = User::where('username', trim($request->username))->first();
         if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'User not found'
-            ]);
+            return response()->json(['success' => false, 'message' => 'No member with that username.']);
         }
-
-        // Check if user is already a stockist
-        $existingStockist = Stockist::where('user_id', $user->id)->first();
-        
-        if ($existingStockist) {
-            return response()->json([
-                'success' => false,
-                'message' => 'User is already a stockist',
-                'stockist' => $existingStockist
-            ]);
+        if (Stockist::where('user_id', $user->id)->exists()) {
+            // The whole stockist record used to be sent back here.
+            return response()->json(['success' => false, 'message' => 'This member is already a stockist.']);
+        }
+        if ((int) $user->status !== Status::USER_ACTIVE) {
+            return response()->json(['success' => false, 'message' => 'This member is banned.']);
         }
 
         return response()->json([
             'success' => true,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->fullname,
-                'username' => $user->username,
-                'email' => $user->email,
-                'balance' => $user->balance,
-                'created_at' => $user->created_at->format('M d, Y')
-            ]
+            'user'    => [
+                'id'       => $user->id,
+                'name'     => (string) $user->fullname,
+                'username' => (string) $user->username,
+                'email'    => (string) $user->email,
+                'mobile'   => (string) $user->mobileNumber,
+                'balance'  => (float) $user->balance,
+                'balanceLabel' => showAmount($user->balance),
+                'joined'   => showDateTime($user->created_at, 'd M Y'),
+            ],
         ]);
     }
 
+    /**
+     * Make a member a stockist. The activation cost comes out of their Money
+     * Box and opens the stockist wallet (as before). The member row is locked
+     * and the checks run inside the transaction, so a double click can no
+     * longer charge twice or create two stockist records.
+     */
     public function activateStockist(Request $request)
-    { 
-       // dd($request);
-
+    {
         $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'state_id' => 'required|exists:states,id', 
-            'store_type' => 'required|in:1,2',
-            'activation_cost' => 'required|numeric|min:0',
-            'business_name' => 'required|string|max:255',
-            'business_email' => 'required|email',
-            'business_phone' => 'required|string|max:20',
+            'user_id'         => 'required|integer|exists:users,id',
+            'state_id'        => 'required|integer|exists:states,id',
+            'store_type'      => 'required|in:1,2',
+            'activation_cost' => 'required|numeric|min:0|max:100000000',
+            'business_name'   => 'required|string|max:255',
+            'business_email'  => 'required|email|max:255',
+            'business_phone'  => 'required|string|max:20',
         ]);
-        //transaction code
-        $trx = getTrx();
 
         try {
-            DB::beginTransaction();
+            $stockist = DB::transaction(function () use ($request) {
+                $user = User::lockForUpdate()->findOrFail($request->user_id);
 
-            $user = User::findOrFail($request->user_id);
-    
-            // Check if user has sufficient balance
-            if ($user->balance < $request->activation_cost) {
-                $notify[] = ['error', 'User has insufficient balance for activation.'];
-                return back()->withNotify($notify);
-            }
-            $amount =$request->activation_cost;
-            // Deduct activation cost from user's balance
-            $user->balance -=  $amount;
-            $user->save();
-            $post_balance = $user->balance;
-        
+                if (Stockist::where('user_id', $user->id)->exists()) {
+                    throw ValidationException::withMessages(['user_id' => 'This member is already a stockist.']);
+                }
+                if ((int) $user->status !== Status::USER_ACTIVE) {
+                    throw ValidationException::withMessages(['user_id' => 'This member is banned.']);
+                }
 
-            // Create stockist record
+                $amount = (float) $request->activation_cost;
+                if ($user->balance < $amount) {
+                    throw ValidationException::withMessages(['activation_cost' => 'The member has only ' . showAmount($user->balance) . ' in their Money Box.']);
+                }
 
-            $stockist = new Stockist();
-            $stockist->user_id = $user->id;
-            $stockist->store_type = $request->store_type;
-            $stockist->wallet = $amount;
-            $stockist->state_id = $request->state_id;
-            $stockist->business_name = $request->business_name;
-            $stockist->business_email = $request->business_email;
-            $stockist->business_phone = $request->business_phone;
-            $stockist->is_verified = true;
-            $stockist->status = Status::ACTIVE;
-            $stockist->is_active = true;
-            $stockist->verified_at = now();
-            $stockist->save();
+                $user->balance -= $amount;
+                $user->save();
 
-            // Trans for activation
-            $details = "Stockist activation";
-            $remark  = "Stockist_activation_fee";
+                $stockist                 = new Stockist();
+                $stockist->user_id        = $user->id;
+                $stockist->store_type     = (int) $request->store_type;
+                $stockist->wallet         = $amount;
+                $stockist->state_id       = $request->state_id;
+                $stockist->business_name  = trim($request->business_name);
+                $stockist->business_email = trim($request->business_email);
+                $stockist->business_phone = trim($request->business_phone);
+                $stockist->is_verified    = true;
+                $stockist->status         = Status::ACTIVE;
+                $stockist->is_active      = true;
+                $stockist->verified_at    = now();
+                $stockist->save();
 
-            stockistActivation($user->id, $amount, $post_balance, $details, $remark, $trx);
+                stockistActivation($user->id, $amount, $user->balance, 'Stockist activation', 'Stockist_activation_fee', getTrx());
 
-            DB::commit();
-            $notify[] = ['success','Stockist activated successfully!'];
-            return redirect()->route('admin.stockist.dashboard')->withNotify($notify);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            $notify[] = ['error','Failed to activate stockist: ' . $e->getMessage()];
+                return $stockist;
+            });
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            // The exception used to be shown in the toast.
+            report($e);
+            $notify[] = ['error', 'The stockist could not be activated. Nothing was charged; please try again.'];
             return back()->withNotify($notify);
-        
         }
+
+        $notify[] = ['success', 'Stockist activated successfully!'];
+        return to_route('admin.stockist.details', $stockist)->withNotify($notify);
     }
 
-    // In StockistController - update the showDetails method
+    /**
+     * Add money to a stockist wallet. The stockist row is locked: the old
+     * read-then-write could overwrite a sale or rebate credited at the same
+     * moment. The admin who did it is recorded (it used to read the member
+     * guard, so it was always empty).
+     */
+    public function topUpWallet(Request $request, Stockist $stockist)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|gt:0|max:100000000',
+            'notes'  => 'nullable|string|max:500',
+        ]);
+
+        try {
+            $after = DB::transaction(function () use ($request, $stockist) {
+                $locked = Stockist::lockForUpdate()->findOrFail($stockist->id);
+                $before = (float) $locked->wallet;
+                $locked->wallet = $before + (float) $request->amount;
+                $locked->save();
+
+                Sktransaction::create([
+                    'stockist_id'    => $locked->id,
+                    'type'           => 'credit',
+                    'amount'         => $request->amount,
+                    'balance_before' => $before,
+                    'balance_after'  => $locked->wallet,
+                    'description'    => 'Wallet Top-up by Admin',
+                    'notes'          => $request->notes,
+                    'reference'      => Sktransaction::generateReference(),
+                    'metadata'       => [
+                        'topped_up_by' => auth('admin')->id(),
+                        'topped_up_at' => now()->toDateTimeString(),
+                        'method'       => 'manual',
+                    ],
+                ]);
+
+                return $locked->wallet;
+            });
+        } catch (\Throwable $e) {
+            report($e);
+            $notify[] = ['error', 'The wallet could not be topped up. Nothing was changed.'];
+            return back()->withNotify($notify);
+        }
+
+        $notify[] = ['success', 'Added ' . showAmount($request->amount) . " to {$stockist->business_name}'s wallet. New balance: " . showAmount($after) . '.'];
+        return back()->withNotify($notify);
+    }
+
+    /** One stockist (Pages/Admin/Stockist/Details.tsx): overview, inventory, transfers and wallet activity. */
     public function showDetails(Request $request, Stockist $stockist)
     {
-        $pageTitle = 'Stockist Details';
         $stockist->load(['user', 'state']);
+        $user = $stockist->user;
 
         // Inventory, valued at this stockist's state prices (what stockists pay)
         $inventory = Stockist_store::where('user_id', $stockist->user_id)
@@ -375,13 +324,8 @@ class StockistController extends Controller
         $prices = ProductStatePrice::where('state_id', $stockist->state_id)
             ->whereIn('product_id', $inventory->pluck('product_id'))
             ->pluck('price', 'product_id');
+        $level = fn ($row) => $row->quantity <= 0 ? 'out' : ($row->quantity < ($row->min_stock_level ?: 10) ? 'low' : 'ok');
 
-        $inventoryValue = $inventory->sum(fn ($row) => $row->quantity * (float) ($prices[$row->product_id] ?? 0));
-        $unitsOnHand    = (int) $inventory->sum('quantity');
-        $lowStock       = $inventory->filter(fn ($row) => $row->quantity > 0 && $row->quantity < ($row->min_stock_level ?: 10))->count();
-        $outOfStock     = $inventory->where('quantity', '<=', 0)->count();
-
-        // Stock transfers this stockist sent (as a Mega) or received (as a Mini)
         $direction = in_array($request->direction, ['sent', 'received'], true) ? $request->direction : null;
         $transfers = StockTransfer::query()
             ->when($direction === 'sent', fn ($q) => $q->where('seller_stockist_id', $stockist->id))
@@ -391,137 +335,211 @@ class StockistController extends Controller
             ->withCount('items')
             ->latest('id')
             ->paginate(10, ['*'], 'transfers_page')
-            ->withQueryString();
+            ->withQueryString()
+            ->through(function (StockTransfer $t) use ($stockist) {
+                $out   = (int) $t->seller_stockist_id === (int) $stockist->id;
+                $other = $out ? $t->buyer : $t->seller;
+                return [
+                    'id'       => $t->id,
+                    'code'     => (string) $t->code,
+                    'date'     => showDateTime($t->created_at, 'd M Y, h:i A'),
+                    'out'      => $out,
+                    'other'    => ['name' => $other?->business_name ?? '—', 'username' => $other?->user?->username],
+                    'units'    => (int) $t->total_quantity,
+                    'products' => (int) $t->items_count,
+                    'amount'   => showAmount($t->total_amount),
+                    'rebate'   => $out && $t->status === StockTransfer::STATUS_COMPLETED ? showAmount($t->rebate_amount) : null,
+                    'status'   => AdminPresenter::badge(ucfirst($t->status), $t->adminBadge()),
+                    'statusLabel' => $t->statusLabel(),
+                    'url'      => route('admin.stockist.transfers.show', $t->id),
+                ];
+            });
 
-        $transferStats = [
-            'sent'     => StockTransfer::where('seller_stockist_id', $stockist->id)->where('status', StockTransfer::STATUS_COMPLETED)
-                ->selectRaw('COUNT(*) AS n, COALESCE(SUM(total_amount), 0) AS total, COALESCE(SUM(rebate_amount), 0) AS rebate, COALESCE(SUM(total_quantity), 0) AS units')->first(),
-            'received' => StockTransfer::where('buyer_stockist_id', $stockist->id)->where('status', StockTransfer::STATUS_COMPLETED)
-                ->selectRaw('COUNT(*) AS n, COALESCE(SUM(total_amount), 0) AS total, COALESCE(SUM(total_quantity), 0) AS units')->first(),
-            'pending'  => StockTransfer::involving($stockist)->where('status', StockTransfer::STATUS_PENDING)->count(),
-            'all'      => StockTransfer::involving($stockist)->count(),
-            'sentAll'  => StockTransfer::where('seller_stockist_id', $stockist->id)->count(),
-            'recvAll'  => StockTransfer::where('buyer_stockist_id', $stockist->id)->count(),
-        ];
-
+        $sent = StockTransfer::where('seller_stockist_id', $stockist->id)->where('status', StockTransfer::STATUS_COMPLETED)
+            ->selectRaw('COUNT(*) AS n, COALESCE(SUM(total_amount), 0) AS total, COALESCE(SUM(rebate_amount), 0) AS rebate, COALESCE(SUM(total_quantity), 0) AS units')->first();
+        $received = StockTransfer::where('buyer_stockist_id', $stockist->id)->where('status', StockTransfer::STATUS_COMPLETED)
+            ->selectRaw('COUNT(*) AS n, COALESCE(SUM(total_amount), 0) AS total, COALESCE(SUM(total_quantity), 0) AS units')->first();
         $redemptions = StockistRedemption::where('stockist_id', $stockist->id)
             ->selectRaw('COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total, COALESCE(SUM(quantity), 0) AS units')->first();
 
         // Wallet activity: admin top-ups (sktransactions) and the stockist ledger (stransactions)
         $activity = Sktransaction::where('stockist_id', $stockist->id)->latest('id')->take(15)->get()
-            ->map(fn ($row) => (object) [
-                'at'      => $row->created_at,
-                'label'   => $row->description,
-                'sign'    => $row->type === 'credit' ? '+' : '-',
-                'amount'  => (float) $row->amount,
-                'balance' => (float) $row->balance_after,
-                'ref'     => $row->reference,
-                'source'  => 'Top-up',
-            ])
+            ->map(fn ($row) => ['at' => $row->created_at, 'label' => (string) $row->description, 'note' => $row->notes, 'plus' => $row->type === 'credit', 'amount' => (float) $row->amount, 'balance' => (float) $row->balance_after, 'ref' => (string) $row->reference, 'source' => 'Top-up'])
             ->concat(Stransaction::where('user_id', $stockist->user_id)->latest('id')->take(15)->get()
-                ->map(fn ($row) => (object) [
-                    'at'      => $row->created_at,
-                    'label'   => $row->details,
-                    'sign'    => $row->trx_type === '+' ? '+' : '-',
-                    'amount'  => (float) $row->amount,
-                    'balance' => (float) $row->post_balance,
-                    'ref'     => $row->trx,
-                    'source'  => ucwords(str_replace('_', ' ', (string) $row->remark)),
-                ]))
+                ->map(fn ($row) => ['at' => $row->created_at, 'label' => (string) $row->details, 'note' => null, 'plus' => $row->trx_type === '+', 'amount' => (float) $row->amount, 'balance' => (float) $row->post_balance, 'ref' => (string) $row->trx, 'source' => ucwords(str_replace('_', ' ', (string) $row->remark))]))
             ->sortByDesc('at')
             ->take(15)
-            ->values();
+            ->values()
+            ->map(fn ($r) => ['date' => showDateTime($r['at'], 'd M Y, h:i A'), 'amount' => showAmount($r['amount']), 'balance' => showAmount($r['balance'])] + $r)
+            ->map(fn ($r) => array_diff_key($r, ['at' => 1]));
 
-        $tab = $request->has('transfers_page') || $direction ? 'transfers' : 'overview';
+        $active = (int) $stockist->status === Status::ACTIVE && $stockist->is_active;
+        $title  = $stockist->business_name ?: 'Stockist #' . $stockist->id;
 
-        return view('admin.stockist.stockist-details', compact(
-            'pageTitle', 'stockist', 'inventory', 'prices', 'inventoryValue', 'unitsOnHand', 'lowStock', 'outOfStock',
-            'transfers', 'transferStats', 'direction', 'redemptions', 'activity', 'tab'
-        ));
+        return Inertia::render('Admin/Stockist/Details', [
+            'title'    => $title,
+            'stockist' => $this->row($stockist) + [
+                'active'       => $active,
+                'reason'       => $stockist->status_reason ?? null,
+                'storeType'    => $stockist->store_type_name,
+                'phone'        => (string) $stockist->business_phone,
+                'email'        => (string) $stockist->business_email,
+                'registration' => (string) $stockist->business_registration_number,
+                'description'  => (string) $stockist->business_description,
+                'verified'     => $stockist->is_verified ? ($stockist->verified_at ? showDateTime($stockist->verified_at, 'd M Y') : true) : false,
+                'since'        => showDateTime($stockist->created_at, 'M Y'),
+                'walletRaw'    => (float) $stockist->wallet,
+            ],
+            'owner' => $user ? [
+                'fullname' => (string) $user->fullname,
+                'username' => (string) $user->username,
+                'url'      => route('admin.users.detail', $user->id),
+                'email'    => (string) $user->email,
+                'mobile'   => (string) $user->mobileNumber,
+                'joined'   => showDateTime($user->created_at, 'd M Y'),
+                'balance'  => showAmount($user->balance),
+                'rebate'   => showAmount($user->stockist_rebate),
+            ] : null,
+            'numbers' => [
+                'units'      => number_format((int) $inventory->sum('quantity')),
+                'products'   => $inventory->count(),
+                'low'        => $inventory->filter(fn ($row) => $level($row) === 'low')->count(),
+                'out'        => $inventory->filter(fn ($row) => $level($row) === 'out')->count(),
+                'value'      => showAmount($inventory->sum(fn ($row) => $row->quantity * (float) ($prices[$row->product_id] ?? 0))),
+                'redeemed'   => ['total' => showAmount($redemptions->total), 'n' => (int) $redemptions->n, 'units' => (int) $redemptions->units],
+                'sent'       => ['total' => showAmount($sent->total), 'n' => (int) $sent->n, 'units' => (int) $sent->units, 'rebate' => showAmount($sent->rebate)],
+                'received'   => ['total' => showAmount($received->total), 'n' => (int) $received->n, 'units' => (int) $received->units],
+                'pending'    => StockTransfer::involving($stockist)->where('status', StockTransfer::STATUS_PENDING)->count(),
+                'transfers'  => StockTransfer::involving($stockist)->count(),
+                'sentAll'    => StockTransfer::where('seller_stockist_id', $stockist->id)->count(),
+                'receivedAll' => StockTransfer::where('buyer_stockist_id', $stockist->id)->count(),
+            ],
+            'inventory' => $inventory->map(function ($row) use ($prices, $level) {
+                $price = (float) ($prices[$row->product_id] ?? 0);
+                return [
+                    'id'        => $row->id,
+                    'name'      => $row->product?->name ?? 'Product #' . $row->product_id,
+                    'sku'       => $row->product?->sku,
+                    'image'     => getImage(getFilePath('products') . '/' . $row->product?->thumbnail, getFileSize('products')),
+                    'quantity'  => (int) $row->quantity,
+                    'level'     => $level($row),
+                    'min'       => (int) $row->min_stock_level,
+                    'price'     => $price ? showAmount($price) : null,
+                    'value'     => $price ? showAmount($row->quantity * $price) : null,
+                    'restocked' => $row->last_restocked_at ? showDateTime($row->last_restocked_at, 'd M Y') : null,
+                ];
+            })->values(),
+            'transfers' => $transfers,
+            'direction' => $direction ?? '',
+            'activity'  => $activity,
+            // Opens on Transfers when a transfer page or filter was asked for, or the Top-up dialog from the old top-up URL.
+            'tab'       => $request->has('transfers_page') || $direction ? 'transfers' : 'overview',
+            'topup'     => $request->boolean('topup'),
+            'urls'      => [
+                'topup'     => route('admin.stockist.topup-wallet', $stockist),
+                'status'    => route('admin.stockist.changeUserStockistStatus', $stockist->id),
+                'transfers' => route('admin.stockist.transfers.index', ['search' => $user?->username]),
+                'report'    => route('admin.stockist.report.show', $stockist->id),
+                'self'      => route('admin.stockist.details', $stockist),
+                'dashboard' => route('admin.stockist.dashboard'),
+            ],
+        ])->withViewData(['pageTitle' => $title]);
     }
 
     // ── Redemption / accounting report ──────────────────────────────
 
+    /** Redemption Report (Pages/Admin/Stockist/Report.tsx): what every stockist handed over, by channel. */
     public function redemptionReport(Request $request)
     {
         $pageTitle = 'Stockist Redemption Report';
+        $search    = trim((string) $request->query('search', ''));
 
-        $perStockist = StockistRedemption::selectRaw('stockist_id, type, SUM(quantity) as qty, SUM(amount) as amt')
-            ->groupBy('stockist_id', 'type')
-            ->get()
-            ->groupBy('stockist_id');
+        $perStockist = StockistRedemption::selectRaw('stockist_id, SUM(quantity) as qty, SUM(amount) as amt')->groupBy('stockist_id')->get()->keyBy('stockist_id');
+        $overall     = StockistRedemption::selectRaw('type, SUM(quantity) as qty, SUM(amount) as amt, COUNT(*) as cnt')->groupBy('type')->get()->keyBy('type');
 
-        $overall = StockistRedemption::selectRaw('type, SUM(quantity) as qty, SUM(amount) as amt')
-            ->groupBy('type')
-            ->get()
-            ->keyBy('type');
-
-        $totals = [];
-        foreach (StockistRedemption::$types as $type => $label) {
-            $totals[$type] = [
-                'label' => $label,
-                'qty'   => (int) ($overall[$type]->qty ?? 0),
-                'amt'   => (float) ($overall[$type]->amt ?? 0),
-            ];
-        }
-
-        $stockists = Stockist::with('user')
-            ->when($request->search, function ($q) use ($request) {
-                $q->where('business_name', 'like', '%' . $request->search . '%')
-                  ->orWhereHas('user', function ($q) use ($request) {
-                      $q->where('username', 'like', '%' . $request->search . '%');
-                  });
-            })
-            ->orderBy('id', 'desc')
+        $stockists = Stockist::with(['user:id,username,firstname,lastname', 'state:id,name'])
+            ->when($search !== '', fn ($q) => $q->where(fn ($q) => $q
+                ->where('business_name', 'like', "%{$search}%")
+                ->orWhereHas('user', fn ($u) => $u->where('username', 'like', "%{$search}%"))))
+            ->orderByDesc('id')
             ->paginate(getPaginate())
-            ->through(function ($stockist) use ($perStockist) {
-                $rows = $perStockist->get($stockist->id, collect());
-                $stockist->redemption_qty = (int) $rows->sum('qty');
-                $stockist->redemption_amt = (float) $rows->sum('amt');
-                return $stockist;
-            });
+            ->withQueryString()
+            ->through(fn (Stockist $s) => $this->row($s) + [
+                'units'     => (int) ($perStockist[$s->id]->qty ?? 0),
+                'amount'    => showAmount($perStockist[$s->id]->amt ?? 0),
+                'reportUrl' => route('admin.stockist.report.show', $s->id),
+            ]);
 
-        return view('admin.stockist.report-index', compact('pageTitle', 'stockists', 'totals'));
+        return Inertia::render('Admin/Stockist/Report', [
+            'totals'    => $this->channelTotals($overall),
+            'stockists' => $stockists,
+            'search'    => $search,
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
+    /** One stockist's redemptions (Pages/Admin/Stockist/ReportShow.tsx), by channel and date. */
     public function redemptionReportShow(Stockist $stockist, Request $request)
     {
-        $pageTitle = 'Redemption Report - ' . ($stockist->business_name ?? $stockist->user->username ?? $stockist->id);
-
-        $stockist->load('user');
+        $stockist->load(['user', 'state']);
+        $title = 'Redemption Report - ' . ($stockist->business_name ?: $stockist->user?->username ?: $stockist->id);
+        $type  = array_key_exists((string) $request->type, StockistRedemption::$types) ? $request->type : '';
+        // Only real dates: a bad value is ignored instead of breaking the query.
+        $date = fn ($v) => is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) ? $v : '';
+        $from = $date($request->from);
+        $to   = $date($request->to);
 
         $grouped = StockistRedemption::where('stockist_id', $stockist->id)
             ->selectRaw('type, SUM(quantity) as qty, SUM(amount) as amt, COUNT(*) as cnt')
-            ->groupBy('type')
-            ->get()
-            ->keyBy('type');
-
-        $totals = [];
-        foreach (StockistRedemption::$types as $type => $label) {
-            $totals[$type] = [
-                'label' => $label,
-                'qty'   => (int) ($grouped[$type]->qty ?? 0),
-                'amt'   => (float) ($grouped[$type]->amt ?? 0),
-                'cnt'   => (int) ($grouped[$type]->cnt ?? 0),
-            ];
-        }
-        $grandQty = array_sum(array_column($totals, 'qty'));
-        $grandAmt = array_sum(array_column($totals, 'amt'));
-
-        $type = $request->type;
+            ->groupBy('type')->get()->keyBy('type');
+        $totals = $this->channelTotals($grouped);
 
         $redemptions = StockistRedemption::where('stockist_id', $stockist->id)
             ->when($type, fn ($q) => $q->ofType($type))
-            ->when($request->from, fn ($q) => $q->whereDate('redeemed_at', '>=', $request->from))
-            ->when($request->to, fn ($q) => $q->whereDate('redeemed_at', '<=', $request->to))
-            ->with(['customer', 'invoice', 'welcomePackage', 'affiliateOrder'])
+            ->when($from, fn ($q) => $q->whereDate('redeemed_at', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('redeemed_at', '<=', $to))
+            ->with('customer:id,firstname,lastname,username')
             ->latest('redeemed_at')
             ->paginate(15)
-            ->withQueryString();
+            ->withQueryString()
+            ->through(fn (StockistRedemption $r) => [
+                'id'        => $r->id,
+                'type'      => $r->type,
+                'typeLabel' => $r->type_label,
+                'reference' => $r->reference_code ?: ($r->trx ?: '—'),
+                'customer'  => $r->customer?->fullname ?: ($r->buyer_name ?: null),
+                'items'     => collect((array) $r->items)->map(fn ($i) => ['name' => (string) ($i['product_name'] ?? 'Product'), 'quantity' => (int) ($i['quantity'] ?? 0)])->values(),
+                'quantity'  => (int) $r->quantity,
+                'amount'    => showAmount($r->amount),
+                'date'      => $r->redeemed_at ? showDateTime($r->redeemed_at, 'd M Y') : '—',
+                'time'      => $r->redeemed_at ? showDateTime($r->redeemed_at, 'H:i') : '',
+            ]);
 
-        return view('admin.stockist.report-show', compact(
-            'pageTitle', 'stockist', 'totals', 'grandQty', 'grandAmt', 'redemptions', 'type'
-        ));
+        return Inertia::render('Admin/Stockist/ReportShow', [
+            'title'    => $title,
+            'stockist' => $this->row($stockist),
+            'grand'    => ['amount' => showAmount(array_sum(array_column($totals, 'raw'))), 'units' => array_sum(array_column($totals, 'qty'))],
+            'totals'   => $totals,
+            'redemptions' => $redemptions,
+            'filters'  => ['type' => $type, 'from' => $from, 'to' => $to],
+            'urls'     => ['self' => route('admin.stockist.report.show', $stockist->id), 'index' => route('admin.stockist.report')],
+        ])->withViewData(['pageTitle' => $title]);
     }
 
+    /** Units, amount and count per redemption channel, every channel listed. */
+    private function channelTotals($grouped): array
+    {
+        $totals = [];
+        foreach (StockistRedemption::$types as $type => $label) {
+            $totals[] = [
+                'type'   => $type,
+                'label'  => $label,
+                'qty'    => (int) ($grouped[$type]->qty ?? 0),
+                'raw'    => (float) ($grouped[$type]->amt ?? 0),
+                'amount' => showAmount($grouped[$type]->amt ?? 0),
+                'count'  => (int) ($grouped[$type]->cnt ?? 0),
+            ];
+        }
+
+        return $totals;
+    }
 }

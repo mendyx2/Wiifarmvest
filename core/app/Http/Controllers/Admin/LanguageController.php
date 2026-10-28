@@ -10,56 +10,99 @@ use App\Models\Language;
 use App\Rules\FileTypeValidate;
 use Illuminate\Support\Facades\File;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Inertia\Inertia;
 
-
+/**
+ * Language Manager (Pages/Admin/Language/*): the languages members can pick,
+ * and each language's keywords (resources/lang/<code>.json).
+ */
 class LanguageController extends Controller
 {
+    /**
+     * A language code becomes a file name (resources/lang/<code>.json). It
+     * used to be taken as typed, so "../../composer" overwrote
+     * core/composer.json. Now: letters, optionally a region (en, pt-br, zh_cn).
+     */
+    private const CODE = '/^[a-z]{2,3}([_-][a-z0-9]{2,8})?$/i';
 
-    public function langManage($lang = false)
+    private function file(string $code): string
+    {
+        abort_unless(preg_match(self::CODE, $code), 404);
+        return resource_path('lang/') . strtolower($code) . '.json';
+    }
+
+    /** @return array<string, string> */
+    private function keywords(Language $lang): array
+    {
+        $data = json_decode((string) @file_get_contents($this->file($lang->code)), true);
+        return is_array($data) ? $data : [];
+    }
+
+    private function saveKeywords(Language $lang, array $keywords): void
+    {
+        // Written whole, then moved into place, so a crash cannot leave half a file
+        $file = $this->file($lang->code);
+        File::put($file . '.tmp', json_encode($keywords, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        File::move($file . '.tmp', $file);
+    }
+
+    public function langManage()
     {
         $pageTitle = 'Language Manager';
-        $languages = Language::orderBy('is_default', 'desc')->get();
-        return view('admin.language.lang', compact('pageTitle', 'languages'));
+
+        return Inertia::render('Admin/Language/Index', [
+            'languages' => Language::orderBy('is_default', 'desc')->orderBy('name')->get()->map(fn (Language $l) => [
+                'id'        => $l->id,
+                'name'      => (string) $l->name,
+                'code'      => (string) $l->code,
+                'default'   => (int) $l->is_default === Status::YES,
+                'image'     => getImage(getFilePath('language') . '/' . $l->image, getFileSize('language')),
+                // English is the base every new language is copied from
+                'removable' => (int) $l->is_default !== Status::YES && strtolower((string) $l->code) !== 'en',
+            ]),
+            'size' => getFileSize('language'),
+            'urls' => [
+                'store'     => route('admin.language.manage.store'),
+                'update'    => route('admin.language.manage.update', ':id'),
+                'delete'    => route('admin.language.manage.delete', ':id'),
+                'translate' => route('admin.language.key', ':id'),
+                'keys'      => route('admin.language.get.key'),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
     public function langStore(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:40',
-            'code' => 'required|string|max:40|unique:languages',
-            'image' => ['required', 'image', new FileTypeValidate(['jpg', 'jpeg', 'png'])]
-        ]);
+            'name'       => 'required|string|max:40',
+            'code'       => ['required', 'string', 'max:40', 'regex:' . self::CODE, 'unique:languages'],
+            'image'      => ['required', 'image', new FileTypeValidate(['jpg', 'jpeg', 'png'])],
+            'is_default' => 'nullable|boolean',
+        ], ['code.regex' => 'Use a language code such as "fr", "pt-br" or "zh_cn".']);
 
-
-
-        $data = file_get_contents(resource_path('lang/') . 'en.json');
-        $jsonFile = strtolower($request->code) . '.json';
-        $path = resource_path('lang/') . $jsonFile;
-
-        File::put($path, $data);
-
-
-        $language = new  Language();
-
-        if ($request->hasFile('image')) {
-            try {
-                $language->image = fileUploader($request->image, getFilePath('language'), getFileSize('language'));
-            } catch (\Exception $exp) {
-                $notify[] = ['error', 'Couldn\'t upload language image'];
-                return back()->withNotify($notify);
-            }
+        $code = strtolower($request->code);
+        if (is_file($this->file($code))) {
+            return back()->withErrors(['code' => 'A keyword file for this code already exists.']);
         }
 
-        if ($request->is_default) {
-            $lang = $language->where('is_default', Status::YES)->first();
-            if ($lang) {
-                $lang->is_default = Status::NO;
-                $lang->save();
-            }
+        $language = new Language();
+        try {
+            $language->image = fileUploader($request->image, getFilePath('language'), getFileSize('language'));
+        } catch (\Exception $e) {
+            report($e);
+            $notify[] = ['error', 'Couldn\'t upload language image'];
+            return back()->withNotify($notify);
         }
-        $language->name = $request->name;
-        $language->code = strtolower($request->code);
-        $language->is_default = $request->is_default ? Status::YES : Status::NO;
+
+        // A new language starts as a copy of English
+        File::copy(resource_path('lang/en.json'), $this->file($code));
+
+        if ($request->boolean('is_default')) {
+            Language::where('is_default', Status::YES)->update(['is_default' => Status::NO]);
+        }
+        $language->name       = $request->name;
+        $language->code       = $code;
+        $language->is_default = $request->boolean('is_default') ? Status::YES : Status::NO;
         $language->save();
 
         $notify[] = ['success', 'Language added successfully'];
@@ -69,186 +112,183 @@ class LanguageController extends Controller
     public function langUpdate(Request $request, $id)
     {
         $request->validate([
-            'name' => 'required',
-            'image' => ['nullable', 'image', new FileTypeValidate(['jpg', 'jpeg', 'png'])]
+            'name'       => 'required|string|max:40',
+            'image'      => ['nullable', 'image', new FileTypeValidate(['jpg', 'jpeg', 'png'])],
+            'is_default' => 'nullable|boolean',
         ]);
 
         $language = Language::findOrFail($id);
 
-        if (!$request->is_default) {
-            $defaultLang = Language::where('is_default', Status::YES)->where('id', '!=', $id)->exists();
-            if (!$defaultLang) {
-                $notify[] = ['error', 'You\'ve to set another language as default before unset this'];
-                return back()->withNotify($notify);
-            }
+        if (!$request->boolean('is_default') && !Language::where('is_default', Status::YES)->where('id', '!=', $id)->exists()) {
+            $notify[] = ['error', 'You\'ve to set another language as default before unset this'];
+            return back()->withNotify($notify);
         }
 
-        $language->name = $request->name;
-        $language->is_default = $request->is_default ? Status::YES : Status::NO;
         if ($request->hasFile('image')) {
             try {
-                $old = $language->image;
-                $language->image = fileUploader($request->image, getFilePath('language'), getFileSize('language'), $old);
-            } catch (\Exception $exp) {
+                $language->image = fileUploader($request->image, getFilePath('language'), getFileSize('language'), $language->image);
+            } catch (\Exception $e) {
+                report($e);
                 $notify[] = ['error', 'Couldn\'t upload language image'];
                 return back()->withNotify($notify);
             }
         }
+        $language->name       = $request->name;
+        $language->is_default = $request->boolean('is_default') ? Status::YES : Status::NO;
         $language->save();
 
-        if ($request->is_default) {
-            $lang = Language::where('is_default', Status::YES)->where('id', '!=', $language->id)->first();
-            if ($lang) {
-                $lang->is_default = Status::NO;
-                $lang->save();
-            }
+        if ($request->boolean('is_default')) {
+            Language::where('is_default', Status::YES)->where('id', '!=', $language->id)->update(['is_default' => Status::NO]);
         }
 
         $notify[] = ['success', 'Language updated successfully'];
         return back()->withNotify($notify);
     }
 
+    /** Not the default language (members would have none), and not English (the base for new ones). */
     public function langDelete($id)
     {
-        $lang = Language::find($id);
-        fileManager()->removeFile(resource_path('lang/') . $lang->code . '.json');
+        $lang = Language::findOrFail($id);
+
+        if ((int) $lang->is_default === Status::YES || strtolower((string) $lang->code) === 'en') {
+            $notify[] = ['error', (int) $lang->is_default === Status::YES ? 'Set another language as default before removing this one.' : 'English is the base of every language and cannot be removed.'];
+            return back()->withNotify($notify);
+        }
+
+        if (preg_match(self::CODE, (string) $lang->code)) {
+            fileManager()->removeFile($this->file($lang->code));
+        }
         fileManager()->removeFile(getFilePath('language') . '/' . $lang->image);
         $lang->delete();
+
         $notify[] = ['success', 'Language deleted successfully'];
         return back()->withNotify($notify);
     }
 
     public function langEdit($id)
     {
-        $lang = Language::findOrFail($id);
-        $pageTitle = "Update " . $lang->name . " Keywords";
-        $json = file_get_contents(resource_path('lang/') . $lang->code . '.json');
-        $list_lang = Language::all();
+        $lang      = Language::findOrFail($id);
+        $pageTitle = 'Update ' . $lang->name . ' Keywords';
 
-        if (empty($json)) {
+        if (!is_file($this->file($lang->code))) {
             $notify[] = ['error', 'File not found'];
             return back()->withNotify($notify);
         }
 
-        $json = json_decode($json, true);
+        $json   = $this->keywords($lang);
+        $search = trim((string) request()->search);
+        if ($search !== '') {
+            $json = array_filter($json, fn ($value, $key) => stripos((string) $key, $search) !== false || stripos((string) $value, $search) !== false, ARRAY_FILTER_USE_BOTH);
+        }
 
         $perPage = getPaginate(20);
-        $currentPage = request()->get('page', 1);
-        $offset = ($currentPage - 1) * $perPage;
-
-        $search = request()->search;
-        if ($search) {
-            $json = array_filter(
-                $json,
-                function ($key) use ($search) {
-                    return stripos($key, $search) !== false;
-                },
-                ARRAY_FILTER_USE_KEY
-            );
-        }
-
-        $items = array_slice($json, $offset, $perPage, true);
-
-        $json = new LengthAwarePaginator(
-            $items,
+        $page    = max(1, (int) request()->get('page', 1));
+        $items   = array_slice($json, ($page - 1) * $perPage, $perPage, true);
+        $keys    = (new LengthAwarePaginator(
+            collect($items)->map(fn ($value, $key) => ['key' => (string) $key, 'value' => (string) $value])->values(),
             count($json),
             $perPage,
-            $currentPage,
+            $page,
             ['path' => url()->current()]
-        );
+        ))->withQueryString();
 
-        return view('admin.language.edit_lang', compact('pageTitle', 'json', 'lang', 'list_lang'));
+        return Inertia::render('Admin/Language/Keywords', [
+            'language' => ['id' => $lang->id, 'name' => (string) $lang->name, 'code' => (string) $lang->code],
+            'keys'     => $keys,
+            'search'   => $search,
+            'others'   => Language::where('id', '!=', $lang->id)->orderBy('name')->get(['id', 'name'])->map(fn ($l) => ['id' => $l->id, 'name' => (string) $l->name]),
+            'urls'     => [
+                'store'  => route('admin.language.store.key', $lang->id),
+                'update' => route('admin.language.update.key', $lang->id),
+                'delete' => route('admin.language.delete.key', $lang->id),
+                'import' => route('admin.language.import.lang'),
+                'back'   => route('admin.language.manage'),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
+    /**
+     * Add the keywords this language is missing, from another language or
+     * from every keyword the system uses ("999"). Existing translations stay.
+     */
     public function langImport(Request $request)
     {
-        $tolang = Language::findOrFail($request->toLangid);
-        if ($request->id != 999) {
-            $fromLang = Language::findOrFail($request->id);
-            $json = file_get_contents(resource_path('lang/') . $fromLang->code . '.json');
-            $keywords = json_decode($json, true);
+        $request->validate(['toLangid' => 'required|integer', 'id' => 'required|integer']);
+
+        $to = Language::findOrFail($request->toLangid);
+        if ((int) $request->id === 999) {
+            $incoming = array_map('trim', explode("\n", $this->getKeys()));
         } else {
-            $text = $this->getKeys();
-            $keywords = explode("\n", $text);
+            $incoming = array_keys($this->keywords(Language::findOrFail($request->id)));
         }
 
-        $items = file_get_contents(resource_path('lang/') . $tolang->code . '.json');
-        foreach ($keywords as $keyword) {
-            $keyword = trim($keyword);
-            if (!array_key_exists($keyword, json_decode($items, true))) {
-                $newArr[$keyword] = $keyword;
+        $current = $this->keywords($to);
+        $added   = 0;
+        foreach ($incoming as $keyword) {
+            $keyword = trim((string) $keyword);
+            if ($keyword !== '' && !array_key_exists($keyword, $current)) {
+                $current[$keyword] = $keyword;
+                $added++;
             }
         }
-        if (isset($newArr)) {
-            $itemData = json_decode($items, true);
-            $result = array_merge($itemData, $newArr);
-            file_put_contents(resource_path('lang/') . $tolang->code . '.json', json_encode($result));
+        if ($added) {
+            $this->saveKeywords($to, $current);
         }
 
-        return 'success';
+        $notify[] = ['success', $added ? "Imported {$added} new keyword(s)" : 'Nothing to import: every keyword is already there'];
+        return back()->withNotify($notify);
     }
 
     public function storeLanguageJson(Request $request, $id)
     {
         $lang = Language::findOrFail($id);
-        $request->validate([
-            'key' => 'required',
-            'value' => 'required'
-        ]);
+        $request->validate(['key' => 'required|string|max:1000', 'value' => 'required|string|max:5000']);
 
-        $items = file_get_contents(resource_path('lang/') . $lang->code . '.json');
-
-        $reqKey = trim($request->key);
-
-        if (array_key_exists($reqKey, json_decode($items, true))) {
-            $notify[] = ['error', "Key already exist"];
-            return back()->withNotify($notify);
-        } else {
-            $newArr[$reqKey] = trim($request->value);
-            $itemData = json_decode($items, true);
-            $result = array_merge($itemData, $newArr);
-            file_put_contents(resource_path('lang/') . $lang->code . '.json', json_encode($result));
-            $notify[] = ['success', "Language key added successfully"];
-            return back()->withNotify($notify);
+        $keywords = $this->keywords($lang);
+        $key      = trim($request->key);
+        if (array_key_exists($key, $keywords)) {
+            return back()->withErrors(['key' => 'Key already exist']);
         }
+
+        $keywords[$key] = trim($request->value);
+        $this->saveKeywords($lang, $keywords);
+
+        $notify[] = ['success', 'Language key added successfully'];
+        return back()->withNotify($notify);
     }
+
     public function deleteLanguageJson(Request $request, $id)
     {
-        $request->validate([
-            'key' => 'required',
-            'value' => 'required'
-        ]);
+        $request->validate(['key' => 'required|string']);
+        $lang     = Language::findOrFail($id);
+        $keywords = $this->keywords($lang);
 
-        $key = $request->key;
-        $lang = Language::findOrFail($id);
-        $data = file_get_contents(resource_path('lang/') . $lang->code . '.json');
+        if (!array_key_exists($request->key, $keywords)) {
+            $notify[] = ['error', 'This key is not in the file (already removed?)'];
+            return back()->withNotify($notify);
+        }
 
-        $jsonArr = json_decode($data, true);
-        unset($jsonArr[$key]);
+        unset($keywords[$request->key]);
+        $this->saveKeywords($lang, $keywords);
 
-        file_put_contents(resource_path('lang/') . $lang->code . '.json', json_encode($jsonArr));
-        $notify[] = ['success', "Language key deleted successfully"];
+        $notify[] = ['success', 'Language key deleted successfully'];
         return back()->withNotify($notify);
     }
 
     public function updateLanguageJson(Request $request, $id)
     {
-        $request->validate([
-            'key' => 'required',
-            'value' => 'required'
-        ]);
+        $request->validate(['key' => 'required|string', 'value' => 'required|string|max:5000']);
+        $lang     = Language::findOrFail($id);
+        $keywords = $this->keywords($lang);
 
-        $key = trim($request->key);
-        $reqValue = $request->value;
-        $lang = Language::findOrFail($id);
+        // Only an existing key: "update" used to add any key it was given
+        if (!array_key_exists($request->key, $keywords)) {
+            $notify[] = ['error', 'This key is not in the file (it may have been removed)'];
+            return back()->withNotify($notify);
+        }
 
-        $data = file_get_contents(resource_path('lang/') . $lang->code . '.json');
-
-        $jsonArr = json_decode($data, true);
-
-        $jsonArr[$key] = $reqValue;
-
-        file_put_contents(resource_path('lang/') . $lang->code . '.json', json_encode($jsonArr));
+        $keywords[$request->key] = $request->value;
+        $this->saveKeywords($lang, $keywords);
 
         $notify[] = ['success', 'Language key updated successfully'];
         return back()->withNotify($notify);
@@ -261,6 +301,8 @@ class LanguageController extends Controller
         foreach ($this->getAllFiles($dirname) as $file) {
             $langKeys = array_merge($langKeys, $this->getLangKeys($file));
         }
+        // React (Inertia) pages translate with t('...') instead of @lang('...').
+        $langKeys = array_merge($langKeys, $this->getReactLangKeys(resource_path('js')));
         $frontendData = Frontend::where('data_keys', '!=', 'seo.data')->get();
         foreach ($frontendData as $frontend) {
             foreach ($frontend->data_values as $key => $frontendValue) {
@@ -309,6 +351,31 @@ class LanguageController extends Controller
         }
         preg_match_all("/@lang\(\\'(.*)\\'\)/",  $finalcode, $keys);
         return $this->fixMultiIssue($keys[1]);
+    }
+
+    /**
+     * Collect the string literals passed to t('...') / t("...") in the React
+     * pages under resources/js (*.ts, *.tsx).
+     */
+    private function getReactLangKeys($dir)
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+
+        $keys = [];
+        $iter = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS));
+        foreach ($iter as $path => $file) {
+            if (!preg_match('/\.tsx?$/', $path)) {
+                continue;
+            }
+            preg_match_all('/\bt\(\s*([\'"])((?:\\\\.|(?!\1).)*)\1/', file_get_contents($path), $matches);
+            foreach ($matches[2] as $key) {
+                $keys[] = stripslashes($key);
+            }
+        }
+
+        return $keys;
     }
 
     private function fixMultiIssue($arr)

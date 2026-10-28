@@ -29,7 +29,6 @@ use Illuminate\Support\Str;
 use App\Models\Stockist_store;
 use App\Models\Stockist_store_record; 
 use App\Models\GeneralSetting;
-use Laramin\Utility\VugiChugi;
 use App\Lib\GoogleAuthenticator;
 use App\Services\MatrixPlacementService2;
 use App\Models\Transaction;
@@ -444,20 +443,6 @@ function osBrowser()
 }
 
 
-function getTemplates()
-{
-    $param['purchasecode'] = env("PURCHASECODE");
-    $param['website']      = @$_SERVER['HTTP_HOST'] . @$_SERVER['REQUEST_URI'] . ' - ' . env("APP_URL");
-    $url                   = VugiChugi::gttmp() . systemDetails()['name'];
-    $response              = CurlRequest::curlPostContent($url, $param);
-    if ($response) {
-        return $response;
-    } else {
-        return null;
-    }
-}
-
-
 function getPageSections($arr = false)
 {
     $jsonUrl  = resource_path('views/') . str_replace('.', '/', activeTemplate()) . 'sections.json';
@@ -838,7 +823,12 @@ function shortDescription($string, $length = 120)
 
 function updateBV($id, $bv, $details)
 {
-    while ($id != "" || $id != "0") {
+    // Walks the old users.pos_id tree. New members all get pos_id = 1, so a
+    // member whose pos_id points back to someone already visited would loop
+    // forever: stop on a repeat (notes Step 88).
+    $seen = [];
+    while ($id != "" && $id != "0" && !isset($seen[$id])) {
+        $seen[$id] = true;
         if (isUserExists($id)) {
             $posId = getPositionId($id);
             if ($posId == "0") {
@@ -847,7 +837,7 @@ function updateBV($id, $bv, $details)
             $posUser = User::find($posId);
             if ($posUser->plan_id) {
                 $position       = getPositionLocation($id);
-                $extra          = UserExtra::where('user_id', $posId)->first();
+                $extra          = UserExtra::firstOrCreate(['user_id' => $posId]);
                 $bvLog          = new BvLog();
                 $bvLog->user_id = $posId;
 
@@ -949,7 +939,12 @@ function mlmPositions()
 
 function updateFreeCount($id)
 {
-    while ($id != "" || $id != "0") {
+    // Walks the old users.pos_id tree. New members all get pos_id = 1, so a
+    // member whose pos_id points back to someone already visited would loop
+    // forever: stop on a repeat (notes Step 88).
+    $seen = [];
+    while ($id != "" && $id != "0" && !isset($seen[$id])) {
+        $seen[$id] = true;
         if (isUserExists($id)) {
             $posid = getPositionId($id);
             if ($posid == "0") {
@@ -957,7 +952,7 @@ function updateFreeCount($id)
             }
             $position = getPositionLocation($id);
 
-            $extra = UserExtra::where('user_id', $posid)->first();
+            $extra = UserExtra::firstOrCreate(['user_id' => $posid]);
 
             if ($position == 1) {
                 $extra->free_left += 1;
@@ -1325,14 +1320,19 @@ function showSingleUserinTree($user)
 
 function updatePaidCount($id)
 {
-    while ($id != "" || $id != "0") {
+    // Walks the old users.pos_id tree. New members all get pos_id = 1, so a
+    // member whose pos_id points back to someone already visited would loop
+    // forever: stop on a repeat (notes Step 88).
+    $seen = [];
+    while ($id != "" && $id != "0" && !isset($seen[$id])) {
+        $seen[$id] = true;
         if (isUserExists($id)) {
             $posid = getPositionId($id);
             if ($posid == "0") {
                 break;
             }
             $position = getPositionLocation($id);
-            $extra    = UserExtra::where('user_id', $posid)->first();
+            $extra    = UserExtra::firstOrCreate(['user_id' => $posid]);
 
             if ($position == 1) {
                 $extra->free_left -= 1;

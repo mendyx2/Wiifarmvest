@@ -86,38 +86,8 @@ class CronController extends Controller
         } else {
             $crons->where('next_run', '<', now())->where('is_running', Status::YES);
         }
-        $crons = $crons->get();
-        foreach ($crons as $cron) {
-            $cronLog              = new CronJobLog();
-            $cronLog->cron_job_id = $cron->id;
-            $cronLog->start_at    = now();
-            if ($cron->is_default) {
-                $controller = new $cron->action[0];
-                try {
-                    $method = $cron->action[1];
-                    $controller->$method();
-                } catch (\Exception $e) {
-                    $cronLog->error = $e->getMessage();
-                }
-            } else {
-                try {
-                    CurlRequest::curlContent($cron->url);
-                } catch (\Exception $e) {
-                    $cronLog->error = $e->getMessage();
-                }
-            }
-            $cron->last_run = now();
-            $cron->next_run = now()->addSeconds($cron->schedule->interval);
-            $cron->save();
+        $this->runJobs($crons->get());
 
-            $cronLog->end_at = $cron->last_run;
-
-            $startTime         = Carbon::parse($cronLog->start_at);
-            $endTime           = Carbon::parse($cronLog->end_at);
-            $diffInSeconds     = $startTime->diffInSeconds($endTime);
-            $cronLog->duration = $diffInSeconds;
-            $cronLog->save();
-        }
         if (request()->target == 'all') {
             $notify[] = ['success', 'Cron executed successfully'];
             return back()->withNotify($notify);
@@ -125,6 +95,37 @@ class CronController extends Controller
         if (request()->alias) {
             $notify[] = ['success', keyToTitle(request()->alias) . ' executed successfully'];
             return back()->withNotify($notify);
+        }
+    }
+
+    /** Run the given cron jobs now, logging each one (also used by the admin's "Run Now"). */
+    public function runJobs($crons): void
+    {
+        foreach ($crons as $cron) {
+            $cronLog              = new CronJobLog();
+            $cronLog->cron_job_id = $cron->id;
+            $cronLog->start_at    = now();
+            // Built by the container (CronController itself needs a
+            // MatrixPlacementService), and any failure, not only an
+            // Exception, is logged so one job cannot stop the rest
+            try {
+                if ($cron->is_default) {
+                    $method = $cron->action[1];
+                    app($cron->action[0])->$method();
+                } else {
+                    CurlRequest::curlContent($cron->url);
+                }
+            } catch (\Throwable $e) {
+                report($e);
+                $cronLog->error = $e->getMessage();
+            }
+            $cron->last_run = now();
+            $cron->next_run = now()->addSeconds($cron->schedule->interval);
+            $cron->save();
+
+            $cronLog->end_at   = $cron->last_run;
+            $cronLog->duration = Carbon::parse($cronLog->start_at)->diffInSeconds(Carbon::parse($cronLog->end_at));
+            $cronLog->save();
         }
     }
 
@@ -373,24 +374,24 @@ class CronController extends Controller
     private function matchingBound()
     { 
         $generalSetting = gs();
+        // Hours and days compared as numbers: date('H') and date('d') give "01",
+        // and the setting holds "1", so 01:00–09:00, 24:00 and the 1st never matched
         if ($generalSetting->matching_bonus_time == 'daily') {
-            $day = Date('H');
-            if (strtolower($day) != $generalSetting->matching_when) {
+            $hour = (int) $generalSetting->matching_when % 24; // "24:00" is hour 0
+            if ((int) now()->format('G') !== $hour) {
                 return '1';
             }
         }
       
 
         if ($generalSetting->matching_bonus_time == 'weekly') {
-            $day = Date('D');
-            if (strtolower($day) != $generalSetting->matching_when) {
+            if (strtolower(now()->format('D')) != $generalSetting->matching_when) {
                 return '2';
             }
         }
 
         if ($generalSetting->matching_bonus_time == 'monthly') {
-            $day = Date('d');
-            if (strtolower($day) != $generalSetting->matching_when) {
+            if ((int) now()->format('j') !== (int) $generalSetting->matching_when) {
                 return '3';
             }
         }
