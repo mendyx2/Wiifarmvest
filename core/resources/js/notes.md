@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107). Next: 7f-2 notifications and languages, 7f-3 gateways and withdraw methods, 7f-4 frontend and system, 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108). Next: 7f-3 gateways and withdraw methods, 7f-4 frontend and system, 7f-5 staff and support, 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5024,6 +5024,117 @@ gateways.
   rerun; that page was not touched). `route:cache` and `view:cache`
   succeed; the route-name scan shows only the 21 known `ipn.`
   references.
+
+### Step 108: Notification settings and languages in React (7f-2)
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Notification/Global.tsx` | `admin.setting.notification.global.{email,sms,push}` | `global_email_template`, `global_sms_template`, `global_push_template` (+ their nav and short-code partials) |
+| `Notification/Templates.tsx` | `admin.setting.notification.templates` | `template/index.blade.php` |
+| `Notification/TemplateEdit.tsx` | `admin.setting.notification.template.edit` | `template/{email,sms,push,nav,shortcodes}.blade.php` |
+| `Notification/EmailSetting.tsx` | `admin.setting.notification.email` | `email_setting.blade.php` |
+| `Notification/SmsSetting.tsx` | `admin.setting.notification.sms` | `sms_setting.blade.php` |
+| `Notification/PushSetting.tsx` | `admin.setting.notification.push` | `push_setting.blade.php` |
+| `Pages/Admin/Language/Index.tsx` | `admin.language.manage` | `language/lang.blade.php` |
+| `Language/Keywords.tsx` | `admin.language.key` | `language/edit_lang.blade.php` |
+
+`Components/Admin/NotificationNav.tsx` holds the shared pieces:
+
+- the tab bar;
+- the short-code table;
+- the sandboxed email preview;
+- the secret field;
+- the "send a test" box.
+
+**Duplicates removed:**
+
+- The three global-template pages are one page with a `channel`.
+- The three per-notification template editors are one page; email,
+  SMS and push are tabs.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **None of the notification pages opened.** The controller rendered `admin.notification.*`, but the views had been committed under `admin/layouts/notification/`, so every page answered "View not found". | React pages; the misplaced views are deleted. |
+| **Secrets were sent to the browser.** The email and SMS pages put the SMTP password and every gateway's API secret into the form fields. | They are never sent. A field shows "A value is saved"; leaving it blank keeps the stored value (for every SMS gateway, so switching gateway does not wipe the others' keys). |
+| **A language code was used as a file name.** Adding a language with code `../../composer` overwrote `core/composer.json` with the English keywords. | Codes must look like `fr`, `pt-br` or `zh_cn`; anything else is refused before any file is touched. |
+| The default language, or English (the file every new language is copied from), could be deleted; deleting a missing id crashed. | Refused, with a message; a missing id is a 404. |
+| "Update key" added any key it was given. Deleting a key that was already gone said "deleted". | Only existing keys; both now say when the key is not there. |
+| Keyword files were rewritten in place. | Written to a temp file and moved, so a crash cannot leave half a file. Accented text is stored as is (`é`, not `é`). |
+| Import answered a bare "success" to a jQuery call. | A toast that says how many keywords were added ("Nothing to import" when none). Keyword search also matches translations. |
+| Template edit took any `{type}` and loaded the Blade view of that name. | `email`, `sms` or `push`; anything else is a 404. Status switches are explicit booleans; a sender address must be an email. |
+| The email preview loaded admin HTML as a `data:` URL, so its scripts ran. | A sandboxed `srcdoc` iframe: no scripts. |
+| SMTP port, Custom API URL and the Firebase upload were not checked. | Port 1–65535; the URL must be `http(s)` (no `javascript:`); the upload must be a service-account key (`private_key` + `client_email`). |
+| The Firebase browser script was written relative to the working directory, with plain `json_encode`. | Written in the site root; quotes and `<` are escaped. A failed write is reported. |
+| "File not found" on the push key download was a *success* toast. | An error toast. |
+
+**Deleted:**
+
+- `admin/layouts/notification/*` (15 views);
+- `admin/language/{lang,edit_lang}.blade.php`.
+
+**Verification:**
+
+- **Server checks** (`p7f2_check.php`):
+  - **Global templates:** all three channels; a bad sender address is
+    refused.
+  - **Templates:**
+    - the list;
+    - the editor for each channel, with its short codes;
+    - type `index` is a 404 (view and update);
+    - sms status on, email status off;
+    - a bad sender address is refused.
+  - **Email setting:**
+    - the stored password is not in the page;
+    - a blank password keeps it, and a new one replaces it;
+    - port 99999 is refused;
+    - SendGrid without a key is refused;
+    - PHP mail can be selected.
+  - **SMS setting:**
+    - no secret is in the page;
+    - switching to the Custom API keeps the Twilio and Clickatell
+      secrets;
+    - empty header rows are dropped;
+    - a `javascript:` URL is refused.
+  - **Push setting:** a quote in the app id is escaped in the script; a
+    JSON that is not a key is refused.
+  - **Languages:**
+    - `../../composer` is refused and `composer.json` is intact;
+    - French is added, as a copy of `en.json`;
+    - English and the default language cannot be removed;
+    - the default cannot be unset without another;
+    - Bangla is removed, file and all;
+    - a missing id is a 404.
+  - **Keywords:**
+    - list and search;
+    - add, then add again (refused);
+    - update with an accent; updating a missing key is refused;
+    - delete twice;
+    - import from English (translations kept) and from System (2,996
+      keys, including React `t()` keys).
+  - All real files are restored afterwards.
+- **Browser checks** (`e2e/phase7f2.mjs`, 40 checks):
+  - **Global templates:** the tab bar and channel cards as Inertia
+    visits; the preview is sandboxed and follows the editor.
+  - **Templates:** the status ticks; each editor sends only its own
+    fields.
+  - **Email setting:** the blank-password POST; the Mailjet fields; the
+    test mail.
+  - **SMS setting:** the custom API header/body rows (add and remove).
+  - **Push setting:** the help steps; the key upload.
+  - **Languages:**
+    - adding a language (code pattern, flag required);
+    - the keyword list loaded with `fetch`;
+    - remove;
+    - edit a key (the key as text);
+    - import from System.
+  - No sideways scroll at phone width on all ten pages.
+- **Regression:** 34 browser suites, 1120 checks, all pass.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
 
 ## Part 4: Working on the front end
 

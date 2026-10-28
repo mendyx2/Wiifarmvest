@@ -155,6 +155,17 @@ class AdminLayout
         'admin.setting.cookie',
         'admin.maintenance.mode',
         'admin.setting.notice',
+        // 7f-2: notifications and languages
+        'admin.setting.notification.global.email',
+        'admin.setting.notification.global.sms',
+        'admin.setting.notification.global.push',
+        'admin.setting.notification.templates',
+        'admin.setting.notification.template.edit',
+        'admin.setting.notification.email',
+        'admin.setting.notification.sms',
+        'admin.setting.notification.push',
+        'admin.language.manage',
+        'admin.language.key',
     ];
 
     public static function for(Request $request): ?array
