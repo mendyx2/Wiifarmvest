@@ -4873,6 +4873,56 @@ Nothing was changed for either.
   and `view:cache` succeed; the route-name scan shows only the 21 known
   `ipn.` references.
 
+### Step 106: Security fix: the web server handed out private files
+
+Found while starting 7f. This is fixed before any more pages move.
+
+**What was wrong:** the live site runs on PHP's built-in server
+(`php -S 0.0.0.0:$PORT server.php`, from `Procfile` and
+`nixpacks.toml`), with the repository root as the web root. That root
+also holds `core/` (the whole Laravel app) and internal documents.
+`server.php` passed *any* existing file straight to the built-in server.
+The built-in server sends a normal file as it is, and **runs** a `.php`
+file. So anyone on the internet could:
+
+- download `/core/storage/logs/laravel.log`: errors with stack traces,
+  SQL and request data;
+- download `/core/.env` on any server where one exists: the app key,
+  database password and mail/payment keys;
+- download `/core/composer.json`, `/notes.md` and the audit documents
+  (`WIIFARM_Executive_Audit_Summary_Action_Plan.pdf`, ...);
+- run any PHP file under `core/` (including `vendor/`) by its URL.
+
+Checked against a running server: `/core/composer.json`,
+`/core/.env.example` and `/core/storage/logs/laravel.log` answered 200
+with their contents.
+
+**Now:** `server.php` sends a file itself only when **all** of these
+hold:
+
+- it is inside the site root (after resolving `..` and links);
+- no part of its path starts with a dot (`.git`, `.env`);
+- it is under `assets/` or `build/`, or is one of `favicon.ico`,
+  `robots.txt`, `sitemap.xml`;
+- it is not PHP. The one exception is the theme colour stylesheet
+  `assets/templates/<theme>/css/color.php`, which only accepts two hex
+  colours.
+
+Every other path goes to Laravel, which answers with its normal 404 or
+redirect. Re-checked:
+
+- all of the above, plus `/.git/config`, `/index.php` and `/assets/../core/composer.json`, give
+  no content;
+- the CSS, the React build and `color.php` load as before.
+
+**Action for the owner:**
+
+- Treat everything that was in `laravel.log` as seen.
+- If the live server ever had a `core/.env` file, **change the APP_KEY**
+  (members will need to log in again), the database password, and
+  every payment, mail and SMS key in it.
+- Delete or rotate the old log file.
+
 ## Part 4: Working on the front end
 
 ### Run locally
