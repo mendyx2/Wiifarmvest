@@ -13,14 +13,15 @@ class FileInfo
         $data['depositVerify'] = [
             'path'      =>'assets/images/verify/deposit'
         ];
+        // Members' documents: private, outside the public folders (App\Support\PrivateFiles)
         $data['verify'] = [
-            'path'      =>'assets/verify'
+            'path'      => \App\Support\PrivateFiles::folder('verify'),
         ];
         $data['default'] = [
             'path'      => 'assets/images/default.png',
         ];
         $data['ticket'] = [
-            'path'      => 'assets/support',
+            'path'      => \App\Support\PrivateFiles::folder('support'),
         ];
         $data['logoIcon'] = [
             'path'      => 'assets/images/logoIcon',

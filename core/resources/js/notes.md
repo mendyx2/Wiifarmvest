@@ -82,7 +82,7 @@ gets replaced, one page at a time.
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
 | **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115) · 7f-6c awards, projects ✅ (Step 116) · 7f-6d dashboard ✅ (Step 117) · 7g sign-in and password reset; old admin layout and assets removed ✅ (Step 118) | ✅ Done |
-| **8. Clean-up** | Dead Blade views, components and static files deleted; private upload folders no longer served as plain files; Ziggy decided against (Step 119) | ✅ Done |
+| **8. Clean-up** | Dead Blade views, components and static files deleted; private upload folders no longer served as plain files; Ziggy decided against (Step 119) · members' documents moved to private server storage (Step 120) | ✅ Done |
 
 Order within each phase: low-risk, read-only pages first; pages that move
 money last, each with manual QA on staging.
@@ -6449,6 +6449,112 @@ The one HTML view left is the e-mail preview
   all pass).
 
 **Phase 8 is complete.**
+
+### Step 120: Members' documents kept in private server storage
+
+**What moved.** All members' documents, now on the server outside every
+public folder:
+
+| Kind | Was in | Now in |
+|---|---|---|
+| KYC files and ID cards, deposit and withdrawal proofs | `assets/verify/` (public, in git) | `core/storage/app/private/uploads/verify/` |
+| Support-ticket attachments | `assets/support/` (public, in git) | `core/storage/app/private/uploads/support/` |
+
+- **Where:** `core/storage/app` is already ignored by git. The folder can
+  be moved with `PRIVATE_UPLOADS_PATH`, for example to a mounted volume.
+  New rules in `.gitignore` stop the old folders from being committed
+  again.
+- **New uploads:** `FileInfo`'s `verify` and `ticket` paths now point
+  there, so every upload goes to the private folder: the KYC form, the
+  ID card, manual deposit and withdrawal proofs, ticket attachments.
+  - The paths are absolute. The old relative paths only worked because
+    the web server's working folder happens to be the repository root.
+
+**One way in: `App\Support\PrivateFiles`.**
+
+- **`find()`** takes the path a page encrypted into its link and returns
+  the file only if it is inside the private folders. Anything else is a
+  404: `/etc/passwd`, `core/.env`, `../` tricks, a public image.
+  - Until the move has run, it also looks in the old folders, so
+    nothing breaks between the deploy and the move.
+- **`respond()`** sends the file:
+  - **View:** inline only for images and PDFs. Any other type is
+    always a download, so an uploaded HTML or SVG file cannot run in
+    the site's pages.
+  - **Headers:** `Cache-Control: private, no-store` and
+  `X-Content-Type-Options: nosniff`.
+- **Used by every link:**
+  - admin view and download (`admin.view.attachment`,
+    `admin.download.attachment`);
+  - member view and download (`user.view.attachment`,
+    `user.download.attachment`);
+  - the ticket downloads (admin and member).
+
+**Two member bugs fixed on the way:**
+
+| Before | Now |
+|---|---|
+| A member's **"View"** link for their KYC file or ID card opened a route with no method behind it (`UserController::viewAttachment` did not exist): an error page. | It shows the file. |
+| A member's **"Download"** link looked in `core/public`, where the files never were: always refused. | It downloads the file. |
+
+**Moving the existing files: `php artisan uploads:move-private`.**
+
+- **What it does:** moves everything from the old public folders into
+  the private folder. `--dry-run` only lists.
+- **Safe to repeat:**
+  - it never overwrites a file already in the private folder;
+  - it removes a public copy only once the private copy is there with
+    the same size.
+- **When it runs:** the start command (`nixpacks.toml`, `Procfile`)
+  runs it before the web server on every boot. A failure is reported
+  and the site still starts.
+- **The router:** `server.php` still refuses the old folders (Step 119),
+  in case a file is ever left behind.
+
+**For the owner: two hosting steps.**
+
+1. **Give the private folder a persistent disk.** The host rebuilds the
+   app folder on every deploy. Without a volume, uploads made since the
+   last deploy are lost; that was already true for `assets/`.
+   - Mount a volume and set `PRIVATE_UPLOADS_PATH` to it, or mount it
+     at `core/storage/app/private`.
+2. **Then take the 19 documents out of git:**
+   - first deploy, so they are moved into the volume;
+   - then `git rm -r --cached assets/verify assets/support` and commit;
+   - then purge them from the history (`git filter-repo`).
+
+   Untracking them before step 1 would delete them on the next deploy,
+   so this commit leaves them tracked. They are not reachable from the
+   web either way.
+
+**Verification:**
+
+- **Server checks** (`p8pf_check.php`, with `PRIVATE_UPLOADS_PATH` set
+  to a scratch folder):
+  - **Before the move:** the admin's ID-card link still works (it falls
+    back to the old folder).
+  - **The move:**
+    - a dry run lists 19 files;
+    - the move puts 17 in `verify` and 2 in `support`;
+    - the old folders are left empty;
+    - a second run moves 0.
+  - **After the move:**
+    - the same links work: view inline, download as an attachment;
+    - an old-style `assets/verify/…` path works;
+    - six paths outside the private folders, and a value that is not
+      encrypted, all give 404;
+    - every response is `private, no-store`.
+  - **Member:**
+    - the KYC page links to the field file and the ID card;
+    - "View" and "Download" both work (both failed before).
+  - **New uploads:**
+    - a proof and a ticket attachment are stored in the private folder,
+      with no public copy;
+    - a PDF is shown inline, a text file is always a download;
+    - the ticket download works.
+- **Admin ticket check** (`p7f5b_check.php`): output identical to
+  before.
+- **Builds:** `route:cache`, `view:cache` and `config:cache` succeed.
 
 ## Part 4: Working on the front end
 

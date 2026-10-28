@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\User;
 
+use App\Support\PrivateFiles;
 use App\Models\Pin;
 use App\Models\Form;
 use App\Models\User;
@@ -728,32 +729,29 @@ class UserController extends Controller
         return ['success' => true, 'message' => 'Token saved successfully'];
     }
 
+    /**
+     * The member's own documents (KYC files, deposit proofs), from the links
+     * their pages carry. Download looked in core/public, where the files
+     * never were, and "View" had no method behind its route; both failed.
+     */
     public function downloadAttachment($fileHash)
     {
+        return PrivateFiles::respond($this->attachmentPath($fileHash), true);
+    }
+
+    public function viewAttachment($fileHash)
+    {
+        return PrivateFiles::respond($this->attachmentPath($fileHash), false);
+    }
+
+    /** The links carry the file's path, encrypted, so it cannot be changed or guessed. */
+    private function attachmentPath(string $fileHash): string
+    {
         try {
-            $filePath = decrypt($fileHash);
-        } catch (\Exception $e) {
-            abort(403, 'Invalid file reference');
+            return (string) decrypt($fileHash);
+        } catch (\Exception) {
+            abort(404);
         }
-
-        // Resolve relative to public/ (where uploaded assets live)
-        $absolutePath = public_path($filePath);
-        $realPath     = realpath($absolutePath);
-        $allowedBase  = realpath(public_path());
-
-        if (!$realPath || !$allowedBase || !str_starts_with($realPath, $allowedBase . DIRECTORY_SEPARATOR)) {
-            abort(403, 'Access denied');
-        }
-
-        if (!file_exists($realPath)) {
-            $notify[] = ['error', 'File does not exist'];
-            return back()->withNotify($notify);
-        }
-
-        $extension = pathinfo($realPath, PATHINFO_EXTENSION);
-        $filename  = slug(gs('site_name')) . '-attachment.' . $extension;
-
-        return response()->download($realPath, $filename);
     }
 
 

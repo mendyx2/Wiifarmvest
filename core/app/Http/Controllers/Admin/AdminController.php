@@ -377,56 +377,25 @@ class AdminController extends Controller
         return back()->withNotify($notify);
     }
 
+    /** A member's document (KYC file, payment proof), shown in the browser. */
     public function viewAttachment($fileHash)
     {
-        try {
-            $filePath = decrypt($fileHash);
-        } catch (\Exception $e) {
-            abort(403, 'Invalid file reference');
-        }
-
-        $storageRoot  = dirname(base_path());
-        $absolutePath = $storageRoot . DIRECTORY_SEPARATOR . ltrim($filePath, '/\\');
-        $realPath     = realpath($absolutePath);
-        $allowedBase  = realpath($storageRoot . DIRECTORY_SEPARATOR . 'assets');
-
-        if (!$realPath || !$allowedBase || !str_starts_with($realPath, $allowedBase . DIRECTORY_SEPARATOR)) {
-            abort(403, 'Access denied');
-        }
-
-        if (!file_exists($realPath)) {
-            abort(404);
-        }
-
-        return response()->file($realPath);
+        return \App\Support\PrivateFiles::respond($this->attachmentPath($fileHash), false);
     }
 
+    /** A member's document, as a download. */
     public function downloadAttachment($fileHash)
     {
-        try {
-            $filePath = decrypt($fileHash);
-        } catch (\Exception $e) {
-            abort(403, 'Invalid file reference');
-        }
-
-        // Files are stored relative to the project root (parent of core/)
-        $storageRoot  = dirname(base_path());
-        $absolutePath = $storageRoot . DIRECTORY_SEPARATOR . ltrim($filePath, '/\\');
-        $realPath     = realpath($absolutePath);
-        $allowedBase  = realpath($storageRoot . DIRECTORY_SEPARATOR . 'assets');
-
-        if (!$realPath || !$allowedBase || !str_starts_with($realPath, $allowedBase . DIRECTORY_SEPARATOR)) {
-            abort(403, 'Access denied');
-        }
-
-        if (!file_exists($realPath)) {
-            $notify[] = ['error', 'File does not exist'];
-            return back()->withNotify($notify);
-        }
-
-        $filename = slug(gs('site_name')) . '-attachment.' . pathinfo($realPath, PATHINFO_EXTENSION);
-        return response()->download($realPath, $filename);
+        return \App\Support\PrivateFiles::respond($this->attachmentPath($fileHash), true);
     }
 
-
+    /** The links carry the file's path, encrypted, so it cannot be changed or guessed. */
+    private function attachmentPath(string $fileHash): string
+    {
+        try {
+            return (string) decrypt($fileHash);
+        } catch (\Exception) {
+            abort(404);
+        }
+    }
 }

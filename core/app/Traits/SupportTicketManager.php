@@ -343,12 +343,10 @@ trait SupportTicketManager
             }
             abort(404);
         }
-        $file     = $attachment->attachment;
-        $fullPath = getFilePath('ticket') . '/' . $file;
-        // A missing file used to end in a PHP warning and a broken download
-        abort_unless(is_file($fullPath), 404);
+        $file  = $attachment->attachment;
         $title = slug($attachment->supportMessage->ticket->subject) ?: 'attachment';
 
-        return response()->download($fullPath, $title . '.' . pathinfo($file, PATHINFO_EXTENSION));
+        // From the private folder (404 when the file is missing)
+        return \App\Support\PrivateFiles::respond(getFilePath('ticket') . '/' . $file, true, $title . '.' . pathinfo($file, PATHINFO_EXTENSION));
     }
 }
