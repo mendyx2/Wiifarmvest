@@ -1,0 +1,26 @@
+# Not uploaded to Vercel (see notes Step 121)
+
+# Installed or built during the Vercel build
+/core/vendor
+/core/node_modules
+/vendor
+/build
+
+# Members' documents never leave the server they were uploaded to
+/assets/verify
+/assets/support
+/assets/images/verify
+
+# Local state and secrets
+/core/.env
+/core/storage/logs
+/core/storage/framework/cache/data
+/core/storage/framework/sessions
+/core/storage/framework/views
+/core/storage/app/private
+/core/bootstrap/cache/*.php
+
+# Internal documents
+/notes.md
+/WIIFARM_*
+/Wiifarm_*

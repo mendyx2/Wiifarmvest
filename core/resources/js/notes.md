@@ -82,7 +82,7 @@ gets replaced, one page at a time.
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
 | **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114) · 7f-6b unilevel, ACB, autoship, key-in ✅ (Step 115) · 7f-6c awards, projects ✅ (Step 116) · 7f-6d dashboard ✅ (Step 117) · 7g sign-in and password reset; old admin layout and assets removed ✅ (Step 118) | ✅ Done |
-| **8. Clean-up** | Dead Blade views, components and static files deleted; private upload folders no longer served as plain files; Ziggy decided against (Step 119) · members' documents moved to private server storage (Step 120) | ✅ Done |
+| **8. Clean-up** | Dead Blade views, components and static files deleted; private upload folders no longer served as plain files; Ziggy decided against (Step 119) · members' documents moved to private server storage (Step 120) · Vercel demo hosting (Step 121) | ✅ Done |
 
 Order within each phase: low-risk, read-only pages first; pages that move
 money last, each with manual QA on staging.
@@ -6555,6 +6555,151 @@ public folder:
 - **Admin ticket check** (`p7f5b_check.php`): output identical to
   before.
 - **Builds:** `route:cache`, `view:cache` and `config:cache` succeed.
+
+### Step 121: Demo hosting on Vercel
+
+**The decision (owner):** host on Vercel for now, as a **demo only**:
+pages and sign-in work; anything that must keep files or run in the
+background does not.
+
+**Why only a demo.** Vercel runs PHP through the community
+`vercel-php` runtime, as short-lived functions:
+
+| Vercel limit | Effect on this app |
+|---|---|
+| The disk is read-only except `/tmp`, and `/tmp` is wiped between instances | Uploads do not last: KYC files, payment proofs, ticket attachments, logos, product and ad pictures. |
+| No GD extension | Image uploads (resized with Intervention/GD) fail. |
+| No long-running process | No queue worker and no scheduler. Queued jobs run during the request (`QUEUE_CONNECTION=sync`), so a large dividend batch can hit the 60-second limit. The daily and hourly jobs (`payments:dispatch`, `award:check-qualifications`, `acb:process`, `db:backup`) do not run. |
+| No shared cache unless Redis is added | Without `REDIS_URL`, login throttling and the 5-wrong-codes limit reset on every request. |
+| No database | Use an external MySQL database. |
+
+**Files added:**
+
+- **`vercel.json`:**
+  - one function, `api/index.php`, on `vercel-php@0.8.0` (PHP 8.4;
+    0.9.0 ships 8.5, which Laravel 11 does not support yet), with 1 GB
+    and 60 s;
+  - every URL is routed to it;
+  - the build uses `composer.vercel.json`.
+- **`composer.vercel.json`:**
+  - Vercel's PHP runtime only runs Composer from a file at the
+    repository root. This file holds only the build steps:
+    1. install `core/` without dev packages;
+    2. build the React pages (`npm ci && npm run build`);
+    3. delete `core/node_modules`, which must not end up in the
+       function.
+  - It is not called `composer.json`, so other hosts (nixpacks) do not
+    mistake the repository root for a PHP project. `vercel.json` sets
+    `COMPOSER` to it for the build.
+- **`api/index.php`, the entry point:**
+  1. **Public files:** it sends `assets/` and `build/` itself, because
+     this runtime puts everything in the function and Vercel serves no
+     static files for it. It uses the same rules as `server.php`.
+     Vite's hashed files are cached for a year; others for a day at the
+     edge.
+  2. **Disk-free defaults**, each overridable in the Vercel
+     environment:
+     - storage in `/tmp/storage`, Laravel's service cache in `/tmp`,
+       logs to stderr;
+     - **sessions in an encrypted cookie** (`SESSION_ENCRYPT` is forced
+       on), and HTTPS-only;
+     - a sync queue;
+     - `TRUSTED_PROXIES=*`, since Vercel's edge is the only way in.
+  3. **Laravel**, like `index.php`.
+- **`core/bootstrap/public_files.php`:** the public-file rules, moved out
+  of `server.php` so both entry points share them: the allow-list, the
+  private upload folders, no dotfiles, and no PHP except the colour
+  stylesheet.
+- **`core/bootstrap/app.php`:** a new `TRUSTED_PROXIES` setting (a list,
+  or `*`; unset means none, as before). Behind Vercel the app saw plain
+  HTTP and built `http://` links.
+- **`.vercelignore`:** keeps the following out of the upload:
+  - local `vendor/` and `node_modules`, and the build output;
+  - members' documents;
+  - `.env`, logs and caches;
+  - the internal documents.
+
+**Why the session cookie must be encrypted.** The `web` middleware
+group has no `EncryptCookies`, so a plain cookie session could be
+edited by the visitor, for example to sign in as someone else.
+`SESSION_ENCRYPT=true` encrypts and signs the whole session with
+`APP_KEY`; an edited cookie is rejected and the visitor is signed out
+(tested).
+
+**Size: `google/apiclient-services` cut from 164 MB to one service.**
+
+- **The problem:** Vercel functions are limited to 250 MB, and this
+  package alone was 164 MB. The app only uses `Google_Client` for
+  Firebase push notifications.
+- **The fix:** `core/composer.json` runs Google's own clean-up
+  (`Google\Task\Composer::cleanup`, keeping `FirebaseCloudMessaging`).
+  This also helps every other host.
+- **Result:** `vendor` without dev packages is 120 MB; the whole
+  function is about 153 MB.
+- **Lock file:** only its hash changed (and two renamed GitHub URLs for
+  the same commits).
+
+**Deploying:**
+
+1. **Import the repository** in Vercel. Framework preset: Other. Root
+   directory: the repository root. Leave the build and output settings
+   empty (`vercel.json` drives them).
+2. **Set the environment variables:**
+   - `APP_KEY` (from the current server's `.env`, or
+     `php artisan key:generate --show`);
+   - `APP_URL` (the Vercel address), `APP_ENV=production`,
+     `APP_DEBUG=false`;
+   - `PURCHASECODE`: from the current `.env`. Without it the vendor's
+     licence middleware sends every page to `/activate`. The licence
+     file itself ships with the `laramin/utility` package;
+   - `DB_CONNECTION=mysql`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
+     `DB_USERNAME`, `DB_PASSWORD`, for an external MySQL database with
+     a copy of the data. **Use demo data, not real members.**
+   - `MAIL_*` if e-mails should go out;
+   - optional: `REDIS_URL`, so rate limits hold.
+3. **Deploy.**
+4. **Check the admin sign-in.** It still calls the vendor's licence
+   server (Step 118); that server must be reachable from Vercel.
+
+**Verification:** a copy of the repository built exactly as the steps
+above.
+
+- **Build:**
+  - `composer install --no-dev`, with the Google clean-up removing all
+    but one service;
+  - `npm ci && npm run build`;
+  - `node_modules` removed.
+- **The copy, served through `api/index.php`:**
+  - **Pages:** `/admin` and `/user/login` render as React pages.
+  - **Static files:** `/build/manifest.json`, the hashed app script
+    (cached for a year), Bootstrap CSS and the colour stylesheet are
+    served with the right types.
+  - **Refused:** `/core/.env`, `/core/composer.json`,
+    `/composer.vercel.json`, `/vercel.json`, `/api/index.php`,
+    `/core/bootstrap/public_files.php`, a private upload, and
+    `/assets/../core/.env`. Laravel answers each instead.
+  - **Sessions:**
+    - a member signs in; the redirect is `https://`;
+    - the next request is signed in;
+    - an edited session cookie signs them out;
+    - errors survive the redirect in the cookie session.
+  - **Disk:** nothing was written inside the app folder; compiled views
+    went to `/tmp/storage`.
+  - **Admin sign-in:** it stopped at the licence call ("The licence
+    server could not be reached…"), as expected with no internet and a
+    dummy purchase code.
+- **`server.php`, re-tested** on `php -S`: public files served, private
+  and internal paths refused, as before.
+
+**Not done (a real Vercel setup would need them):**
+
+- object storage (S3 or R2) for every upload;
+- Vercel Cron calling the scheduled jobs;
+- an external queue worker.
+
+**For the owner:** `composer audit` reports 69 security advisories in 19
+installed packages. Upgrading them is a separate task, worth doing
+before real members use any host.
 
 ## Part 4: Working on the front end
 

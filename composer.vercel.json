@@ -1,0 +1,14 @@
+{
+    "name": "wiifarm/vercel-build",
+    "description": "Vercel build steps only (vercel.json sets COMPOSER to this file). The app and its real composer.json are in core/; see notes Step 121.",
+    "type": "project",
+    "license": "proprietary",
+    "require": {},
+    "scripts": {
+        "vercel": [
+            "cd core && COMPOSER=composer.json php \"$COMPOSER_BINARY\" install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress",
+            "cd core && npm ci --no-audit --no-fund && npm run build",
+            "rm -rf core/node_modules"
+        ]
+    }
+}
