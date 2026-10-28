@@ -411,47 +411,61 @@ class AdminController extends Controller
         return redirect($url);
     }
 
+    /**
+     * Report & Request (Pages/Admin/VendorReports.tsx): bug reports and
+     * feature requests sent to the script's vendor with the purchase code.
+     * Not linked from the panel. When the vendor's server does not answer,
+     * the page says so (it used to redirect to the dashboard with an error
+     * the React layout does not show).
+     */
     public function requestReport()
     {
         $pageTitle = 'Your Listed Report & Request';
-        $arr['app_name'] = systemDetails()['name'];
-        $arr['app_url'] = env('APP_URL');
+        $arr['app_name']      = systemDetails()['name'];
+        $arr['app_url']       = env('APP_URL');
         $arr['purchase_code'] = env('PURCHASECODE');
-        $url = "https://license.viserlab.com/issue/get?".http_build_query($arr);
-        $response = CurlRequest::curlContent($url);
-        $response = json_decode($response);
+        $response = json_decode((string) CurlRequest::curlContent('https://license.viserlab.com/issue/get?' . http_build_query($arr)));
+
+        $error = null;
         if (!$response || !@$response->status || !@$response->message) {
-            return to_route('admin.dashboard')->withErrors('Something went wrong');
+            $error = 'The vendor\'s server did not answer. Try again later.';
+        } elseif ($response->status == 'error') {
+            $error = is_string($response->message) ? $response->message : 'The vendor\'s server refused the request.';
         }
-        if ($response->status == 'error') {
-            return to_route('admin.dashboard')->withErrors($response->message);
-        }
-        $reports = $response->message[0];
-        return view('admin.reports',compact('reports','pageTitle'));
+
+        return Inertia::render('Admin/VendorReports', [
+            'error'   => $error,
+            'reports' => $error ? [] : collect((array) @$response->message[0])->map(fn ($r) => [
+                'type'    => (string) @$r->req_type,
+                'message' => (string) @$r->message,
+                'status'  => (string) @$r->status_text,
+                'tone'    => preg_replace('/[^a-z]/', '', (string) @$r->status_class) ?: 'dark',
+            ])->values(),
+            'url' => route('admin.request.report'),
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
     public function reportSubmit(Request $request)
     {
         $request->validate([
-            'type'=>'required|in:bug,feature',
-            'message'=>'required',
+            'type'    => 'required|in:bug,feature',
+            'message' => 'required|string|max:5000',
         ]);
-        $url = 'https://license.viserlab.com/issue/add';
 
-        $arr['app_name'] = systemDetails()['name'];
-        $arr['app_url'] = env('APP_URL');
+        $arr['app_name']      = systemDetails()['name'];
+        $arr['app_url']       = env('APP_URL');
         $arr['purchase_code'] = env('PURCHASECODE');
-        $arr['req_type'] = $request->type;
-        $arr['message'] = $request->message;
-        $response = CurlRequest::curlPostContent($url,$arr);
-        $response = json_decode($response);
+        $arr['req_type']      = $request->type;
+        $arr['message']       = $request->message;
+        $response = json_decode((string) CurlRequest::curlPostContent('https://license.viserlab.com/issue/add', $arr));
+
         if (!$response || !@$response->status || !@$response->message) {
-            return to_route('admin.dashboard')->withErrors('Something went wrong');
+            $notify[] = ['error', 'The vendor\'s server did not answer. Try again later.'];
+        } elseif ($response->status == 'error') {
+            $notify[] = ['error', is_string($response->message) ? $response->message : 'The vendor\'s server refused the request.'];
+        } else {
+            $notify[] = ['success', is_string($response->message) ? $response->message : 'Sent'];
         }
-        if ($response->status == 'error') {
-            return back()->withErrors($response->message);
-        }
-        $notify[] = ['success',$response->message];
         return back()->withNotify($notify);
     }
 

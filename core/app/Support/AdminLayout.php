@@ -203,6 +203,16 @@ class AdminLayout
         'admin.ticket.view',
         'admin.notices.index',
         'admin.flashcard.index',
+        // 7f-6a: plans, dividends, vendor reports
+        'admin.plan.index',
+        'admin.plan.userPlan',
+        'admin.dividend.index',
+        'admin.dividend.history',
+        'admin.dividend.create',
+        'admin.dividend.detail',
+        'admin.dividend.investors',
+        'admin.dividend.user.dividends',
+        'admin.request.report',
     ];
 
     public static function for(Request $request): ?array

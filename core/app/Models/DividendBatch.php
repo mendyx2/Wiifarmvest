@@ -66,6 +66,22 @@ class DividendBatch extends Model
     }
 
     /**
+     * The active investments a batch pays: shared by the preview, the
+     * batch totals and the payment job, so the three always agree.
+     */
+    public static function investmentsQuery(string $scope, $startDate = null, $endDate = null, $planId = null)
+    {
+        $query = Rinvestment::where('status', 1);
+        if ($scope === 'date-range') {
+            $query->whereBetween('created_at', [\Carbon\Carbon::parse($startDate)->startOfDay(), \Carbon\Carbon::parse($endDate)->endOfDay()]);
+        }
+        if ($planId) {
+            $query->where('plan_id', $planId);
+        }
+        return $query;
+    }
+
+    /**
      * Helper Methods
      */
     public function canCancel(): bool

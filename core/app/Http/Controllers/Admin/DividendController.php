@@ -2,370 +2,304 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
+use App\Jobs\ProcessDividendPayment;
+use App\Jobs\ReverseDividendPayment;
 use App\Models\DividendBatch;
+use App\Models\Plan;
 use App\Models\Rinvestment;
 use App\Models\Shtransaction;
 use App\Models\User;
-use App\Models\Plan;
-use App\Jobs\ProcessDividendPayment;
-use App\Jobs\ProcessSharePurchase;
-use App\Jobs\ReverseDividendPayment;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
+use Inertia\Inertia;
 
+/**
+ * Manage FFO → dividends (Pages/Admin/Dividend/*): pay an amount per unit to
+ * every active investment (all, a plan, or bought in a date range), follow
+ * the batches, and see each investor's dividends.
+ *
+ * A batch is paid by ProcessDividendPayment on the "dividends" queue, and
+ * reversed by ReverseDividendPayment.
+ */
 class DividendController extends Controller
 {
-    /**
-     * List all pending dividend batches
-     */
+    private const OPEN    = ['pending', 'processing'];
+    private const CLOSED  = ['completed', 'cancelled', 'failed', 'reversed'];
+    private const TONES   = ['pending' => 'warning', 'processing' => 'info', 'completed' => 'success', 'cancelled' => 'dark', 'failed' => 'danger', 'reversed' => 'dark'];
+
     public function index()
     {
-        $pageTitle = 'Dividend Payments - Pending';
-        $batches = DividendBatch::where('status', 'pending')
-            ->orderBy('created_at', 'desc')
-            ->paginate(getPaginate());
-
-        $totalShareholders = User::whereHas('rinvestment', function ($query) {
-            $query->where('status', 1);
-        })->count();
-
-        $totalUnits = Rinvestment::where('status', 1)->sum('units');
-        $totalDistributed = Shtransaction::where('status', 'completed')->sum('amount');
-
-        $users = User::where('balance', '>', 0)
-            ->select('id', 'firstname', 'lastname', 'username', 'balance')
-            ->orderBy('username')
-            ->get();
-
-        $plans = Plan::where('status', 1)
-            ->select('id', 'name', 'price')
-            ->orderBy('name')
-            ->get();
-
-        $shareUsers = $users->map(function ($user) {
-            return [
-                'id' => $user->id,
-                'username' => $user->username,
-                'name' => trim($user->firstname . ' ' . $user->lastname),
-                'balance' => $user->balance,
-            ];
-        });
-
-        $sharePlans = $plans->map(function ($plan) {
-            return [
-                'id' => $plan->id,
-                'name' => $plan->name,
-                'price' => $plan->price,
-            ];
-        });
-
-        return view('admin.dividend.index', compact(
-            'pageTitle',
-            'batches',
-            'totalShareholders',
-            'totalUnits',
-            'totalDistributed',
-            'users',
-            'plans',
-            'shareUsers',
-            'sharePlans'
-        ));
+        return $this->batches('open');
     }
 
-    /**
-     * Queue a share purchase job for a user
-     */
-    public function buyShares(Request $request)
+    public function history()
     {
-        $validated = $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'plan_id' => 'required|exists:plans,id',
-            'units' => 'required|integer|min:1',
-        ]);
-
-        $user = User::findOrFail($validated['user_id']);
-        $plan = Plan::findOrFail($validated['plan_id']);
-        $units = (int) $validated['units'];
-        $totalCost = $plan->price * $units;
-
-        if ($user->balance < $totalCost) {
-            return response()->json([
-                'message' => 'Insufficient balance for this purchase.',
-            ], 422);
-        }
-
-        ProcessSharePurchase::dispatch(
-            $user->id,
-            $plan->id,
-            $units,
-            $plan->price
-        )->onQueue('share-purchases');
-
-        return response()->json([
-            'success' => 'Share purchase has been queued successfully.',
-        ]);
+        return $this->batches('history');
     }
 
     /**
-     * Show form to create new dividend payment
+     * The batches waiting or being paid, and the finished ones. Reversed
+     * batches used to disappear (history listed completed, cancelled and
+     * failed only), and a batch stuck in "processing" was listed nowhere.
      */
+    private function batches(string $tab)
+    {
+        $pageTitle = $tab === 'open' ? 'Dividend Payments' : 'Dividend Payment History';
+        $batches   = DividendBatch::with('creator', 'plan')->whereIn('status', $tab === 'open' ? self::OPEN : self::CLOSED)->orderByDesc('id')->paginate(getPaginate());
+
+        return Inertia::render('Admin/Dividend/Batches', [
+            'title'   => $pageTitle,
+            'tab'     => $tab,
+            'stats'   => [
+                'shareholders' => User::whereHas('rinvestment', fn ($q) => $q->where('status', 1))->count(),
+                'units'        => number_format((float) Rinvestment::where('status', 1)->sum('units')),
+                'distributed'  => showAmount(Shtransaction::where('status', 'completed')->sum('amount')),
+            ],
+            // A batch still pending after 10 minutes means no worker runs the "dividends" queue
+            'stalled' => DividendBatch::where('status', 'pending')->where('created_at', '<', now()->subMinutes(10))->count(),
+            'batches' => $batches->through(fn (DividendBatch $b) => $this->batchRow($b)),
+            'urls'    => [
+                'open'    => route('admin.dividend.index'),
+                'history' => route('admin.dividend.history'),
+                'create'  => route('admin.dividend.create'),
+                'investors' => route('admin.dividend.investors'),
+                'cancel'  => route('admin.dividend.cancel', ':id'),
+                'reverse' => route('admin.dividend.reverse', ':id'),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
+    }
+
+    private function batchRow(DividendBatch $b): array
+    {
+        return [
+            'id'          => $b->id,
+            'by'          => (string) ($b->creator?->name ?: '—'),
+            'scope'       => $b->scope_display,
+            'plan'        => (string) ($b->plan?->name ?: 'All plans'),
+            'perUnit'     => showAmount($b->amount_per_unit),
+            'users'       => (int) $b->total_users,
+            'units'       => number_format((float) $b->total_units),
+            'amount'      => showAmount($b->total_amount),
+            'processed'   => (int) $b->processed_count,
+            'failed'      => (int) $b->failed_count,
+            'status'      => [ucfirst((string) $b->status), self::TONES[$b->status] ?? 'dark'],
+            'canCancel'   => $b->canCancel(),
+            'canReverse'  => $b->canReverse(),
+            'error'       => $b->status === 'failed' ? (string) (($b->metadata['error'] ?? null) ?: ($b->metadata['failure_reason'] ?? '')) : '',
+            'date'        => showDateTime($b->created_at),
+            'url'         => route('admin.dividend.detail', $b->id),
+        ];
+    }
+
     public function create()
     {
         $pageTitle = 'Create Dividend Payment';
 
-        // Get all users with investments
-        $investors = User::whereHas('rinvestment', function($query) {
-            $query->where('status', 1); // Active investments
-        })
-        ->with(['rinvestment' => function($q) {
-            $q->where('status', 1);
-        }])
-        ->paginate(getPaginate(10));
-
-        // Get all active plans
-        $plans = Plan::where('status', 1)->get();
-
-        return view('admin.dividend.create', compact('pageTitle', 'investors', 'plans'));
+        return Inertia::render('Admin/Dividend/Create', [
+            'plans' => Plan::where('status', 1)->orderBy('name')->get()->map(fn (Plan $p) => [
+                'id'    => $p->id,
+                'name'  => (string) $p->name,
+                'units' => number_format((float) Rinvestment::where('status', 1)->where('plan_id', $p->id)->sum('units')),
+            ]),
+            'currency' => gs('cur_sym'),
+            'urls'     => ['store' => route('admin.dividend.store'), 'preview' => route('admin.dividend.preview'), 'back' => route('admin.dividend.index')],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
-    /**
-     * Store new dividend batch and dispatch job
-     */
+    private function rules(): array
+    {
+        return [
+            'amount_per_unit' => 'required|numeric|min:0.01|max:1000000',
+            'scope'           => 'required|in:all-time,date-range',
+            'start_date'      => 'required_if:scope,date-range|nullable|date',
+            'end_date'        => 'required_if:scope,date-range|nullable|date|after_or_equal:start_date',
+            'plan_id'         => 'nullable|integer|exists:plans,id',
+            'notes'           => 'nullable|string|max:1000',
+        ];
+    }
+
+    /** What a batch would pay, before it is created: members, units and total. */
+    public function preview(Request $request)
+    {
+        $data  = $request->validate($this->rules());
+        $query = DividendBatch::investmentsQuery($data['scope'], $data['start_date'] ?? null, $data['end_date'] ?? null, $data['plan_id'] ?? null);
+        $units = (float) (clone $query)->sum('units');
+
+        return response()->json([
+            'investments' => (clone $query)->count(),
+            'users'       => (clone $query)->distinct()->count('user_id'),
+            'units'       => number_format($units),
+            'amount'      => showAmount($units * (float) $data['amount_per_unit']),
+        ]);
+    }
+
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'amount_per_unit' => 'required|numeric|min:0.01',
-            'scope' => 'required|in:all-time,date-range',
-            'start_date' => 'required_if:scope,date-range|nullable|date',
-            'end_date' => 'required_if:scope,date-range|nullable|date|after_or_equal:start_date',
-            'plan_id' => 'nullable|exists:plans,id',
-            'notes' => 'nullable|string|max:1000',
-        ]);
+        $data    = $request->validate($this->rules());
+        $adminId = auth()->guard('admin')->id();
+        $range   = $data['scope'] === 'date-range';
 
-        // Idempotency guard: block duplicate submissions within 2 minutes
-        $adminId = auth()->guard('admin')->user()->id;
-        $recentBatch = DividendBatch::where('created_by_id', $adminId)
-            ->where('amount_per_unit', $validated['amount_per_unit'])
-            ->where('scope', $validated['scope'])
-            ->where('plan_id', $validated['plan_id'] ?? null)
+        // Idempotency guard: a second click within 2 minutes shows the first batch
+        $recent = DividendBatch::where('created_by_id', $adminId)
+            ->where('amount_per_unit', $data['amount_per_unit'])
+            ->where('scope', $data['scope'])
+            ->where('plan_id', $data['plan_id'] ?? null)
             ->where('created_at', '>=', now()->subMinutes(2))
             ->first();
-
-        if ($recentBatch) {
-            return redirect()->route('admin.dividend.detail', $recentBatch->id)
-                ->with('warning', 'A similar dividend batch was already submitted recently. Showing the existing batch to avoid duplicates.');
+        if ($recent) {
+            $notify[] = ['warning', 'A similar dividend batch was submitted a moment ago. This is that batch; nothing new was created.'];
+            return to_route('admin.dividend.detail', $recent->id)->withNotify($notify);
         }
 
-        // Calculate affected investments
-        $query = Rinvestment::where('status', 1);
-
-        if ($validated['scope'] == 'date-range') {
-            $query->whereBetween('created_at', [
-                Carbon::parse($validated['start_date'])->startOfDay(),
-                Carbon::parse($validated['end_date'])->endOfDay(),
-            ]);
-        }
-
-        if (!empty($validated['plan_id'])) {
-            $query->where('plan_id', $validated['plan_id']);
-        }
-
-        $investments = $query->get();
-
+        $investments = DividendBatch::investmentsQuery($data['scope'], $data['start_date'] ?? null, $data['end_date'] ?? null, $data['plan_id'] ?? null)->get(['id', 'user_id', 'units']);
         if ($investments->isEmpty()) {
-            return redirect()->back()->with('error', 'No investments found for the selected criteria.');
+            $notify[] = ['error', 'No investments match these choices.'];
+            return back()->withNotify($notify);
         }
 
-        // Calculate totals
-        $totalUnits = $investments->sum('units');
-        $totalAmount = $totalUnits * $validated['amount_per_unit'];
-        $totalUsers = $investments->pluck('user_id')->unique()->count();
+        $totalUnits  = $investments->sum('units');
+        $totalAmount = $totalUnits * $data['amount_per_unit'];
+        $totalUsers  = $investments->pluck('user_id')->unique()->count();
 
-        // Create batch
         $batch = DividendBatch::create([
-            'created_by_id' => auth()->guard('admin')->user()->id,
-            'amount_per_unit' => $validated['amount_per_unit'],
-            'scope' => $validated['scope'],
-            'start_date' => $validated['scope'] == 'date-range' ? $validated['start_date'] : null,
-            'end_date' => $validated['scope'] == 'date-range' ? $validated['end_date'] : null,
-            'plan_id' => $validated['plan_id'] ?? null,
-            'status' => 'pending',
-            'total_users' => $totalUsers,
-            'total_units' => $totalUnits,
-            'total_amount' => $totalAmount,
-            'notes' => $validated['notes'] ?? null,
+            'created_by_id'   => $adminId,
+            'amount_per_unit' => $data['amount_per_unit'],
+            'scope'           => $data['scope'],
+            'start_date'      => $range ? $data['start_date'] : null,
+            'end_date'        => $range ? $data['end_date'] : null,
+            'plan_id'         => $data['plan_id'] ?? null,
+            'status'          => 'pending',
+            'total_users'     => $totalUsers,
+            'total_units'     => $totalUnits,
+            'total_amount'    => $totalAmount,
+            'notes'           => $data['notes'] ?? null,
         ]);
 
-        // Dispatch job to process dividend payments
         ProcessDividendPayment::dispatch($batch);
 
-        return redirect()->route('admin.dividend.detail', $batch->id)
-            ->with('success', "Dividend batch created successfully. {$totalUsers} users with {$totalUnits} units will receive ₦" . number_format($totalAmount, 2));
+        $notify[] = ['success', "Dividend batch #{$batch->id} created: {$totalUsers} members with " . number_format($totalUnits) . ' units will receive ' . showAmount($totalAmount) . '.'];
+        return to_route('admin.dividend.detail', $batch->id)->withNotify($notify);
     }
 
-    /**
-     * Show dividend batch details
-     */
-    public function detail($batchId)
+    public function detail(Request $request, $batchId)
     {
-        $batch = DividendBatch::findOrFail($batchId);
+        $batch     = DividendBatch::with('creator', 'plan')->findOrFail($batchId);
         $pageTitle = "Dividend Batch #{$batch->id}";
-        $transactions = $batch->shtransactions()->paginate(getPaginate());
+        $search    = trim((string) $request->search);
 
-        return view('admin.dividend.detail', compact('pageTitle', 'batch', 'transactions'));
+        $transactions = $batch->shtransactions()->with('user', 'rinvestment.plan')
+            ->when($search !== '', fn ($q) => $q->whereHas('user', fn ($u) => $u->where('username', 'like', "%{$search}%")))
+            ->orderBy('id')
+            ->paginate(getPaginate())->withQueryString();
+
+        return Inertia::render('Admin/Dividend/Detail', [
+            'batch'        => $this->batchRow($batch) + ['notes' => (string) $batch->notes, 'reversedAt' => $batch->reversed_at ? showDateTime($batch->reversed_at) : null],
+            'search'       => $search,
+            'transactions' => $transactions->through(fn (Shtransaction $t) => [
+                'id'        => $t->id,
+                'reference' => (string) $t->reference,
+                'member'    => $t->user ? ['name' => (string) $t->user->fullname, 'username' => (string) $t->user->username, 'url' => route('admin.dividend.user.dividends', $t->user_id)] : null,
+                'plan'      => (string) ($t->rinvestment?->plan?->name ?: '—'),
+                'units'     => number_format((float) $t->units_held),
+                'perUnit'   => showAmount($t->amount_per_unit),
+                'amount'    => showAmount($t->amount),
+                'status'    => [ucfirst((string) $t->status), self::TONES[$t->status] ?? 'dark'],
+                'date'      => showDateTime($t->created_at),
+            ]),
+            'urls' => [
+                'self'    => route('admin.dividend.detail', $batch->id),
+                'cancel'  => route('admin.dividend.cancel', $batch->id),
+                'reverse' => route('admin.dividend.reverse', $batch->id),
+                'back'    => route(in_array($batch->status, self::OPEN, true) ? 'admin.dividend.index' : 'admin.dividend.history'),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
-    /**
-     * Search transactions by username (AJAX)
-     */
-    public function searchTransactions($batchId, Request $request)
+    /** The old AJAX search of a batch's payments: the page searches with ?search= now. */
+    public function searchTransactions(Request $request, $batchId)
     {
-        $batch = DividendBatch::findOrFail($batchId);
-        $search = $request->query('search', '');
-
-        $transactions = $batch->shtransactions()
-            ->whereHas('user', function ($query) use ($search) {
-                $query->where('username', 'like', "%{$search}%");
-            })
-            ->with('user', 'rinvestment')
-            ->paginate(getPaginate());
-
-        if ($request->ajax()) {
-            $html = view('admin.dividend.partials.transaction-rows', compact('transactions'))->render();
-            return response()->json([
-                'html' => $html,
-                'hasPages' => $transactions->hasPages(),
-                'pagination' => $transactions->links('vendor.pagination.bootstrap-4')->render()
-            ]);
-        }
-
-        return response()->json(['error' => 'Invalid request'], 400);
+        return to_route('admin.dividend.detail', ['batchId' => $batchId, 'search' => $request->query('search')]);
     }
- 
-    /**
-     * Cancel pending dividend batch
-     */
+
     public function cancel($batchId)
     {
         $batch = DividendBatch::findOrFail($batchId);
-
-        if (!$batch->canCancel()) {
-            return redirect()->back()->with('error', 'This batch cannot be cancelled. It may already be processing or completed.');
+        if (!$batch->cancel()) {
+            $notify[] = ['error', 'This batch cannot be cancelled: it is already finished.'];
+            return back()->withNotify($notify);
         }
 
-        $batch->cancel();
-
-        return redirect()->route('admin.dividend.history')
-            ->with('success', 'Dividend batch cancelled successfully.');
+        $notify[] = ['success', "Dividend batch #{$batch->id} cancelled."];
+        return to_route('admin.dividend.history')->withNotify($notify);
     }
 
-    /**
-     * Reverse a completed dividend batch
-     */ 
     public function reverse($batchId)
     {
         $batch = DividendBatch::findOrFail($batchId);
- 
         if (!$batch->canReverse()) {
-            return redirect()->back()->with('error', 'This batch cannot be reversed. Only completed batches can be reversed.');
+            $notify[] = ['error', 'Only a completed batch can be reversed.'];
+            return back()->withNotify($notify);
         }
 
-        $adminId = auth()->guard('admin')->user()->id;
+        ReverseDividendPayment::dispatch($batch, auth()->guard('admin')->id());
 
-        ReverseDividendPayment::dispatch($batch, $adminId);
-
-        return redirect()->route('admin.dividend.history')
-            ->with('success', "Reversal for batch #{$batch->id} has been queued. User balances will be adjusted shortly.");
+        $notify[] = ['success', "Reversal of batch #{$batch->id} queued: the members' balances are reduced shortly."];
+        return to_route('admin.dividend.history')->withNotify($notify);
     }
 
-    /**
-     * View dividend payment history
-     */
-    public function history()
-    {
-        $pageTitle = 'Dividend Payment History';
-        $batches = DividendBatch::whereIn('status', ['completed', 'cancelled', 'failed'])
-            ->orderBy('created_at', 'desc')
-            ->paginate(getPaginate()); 
-
-        return view('admin.dividend.history', compact('pageTitle', 'batches'));
-    }
-
-    /**
-     * List all investors with their shares and dividend history
-     */
     public function investors(Request $request)
     {
         $pageTitle = 'FFO Investors - Shares & Dividends';
+        $search    = trim((string) $request->search);
 
-        $search = $request->query('search');
+        $investors = User::whereHas('rinvestment', fn ($q) => $q->where('status', 1))
+            ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w->where('username', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%")->orWhere('firstname', 'like', "%{$search}%")->orWhere('lastname', 'like', "%{$search}%")))
+            ->withSum(['rinvestment as units' => fn ($q) => $q->where('status', 1)], 'units')
+            ->withCount(['rinvestment as investments' => fn ($q) => $q->where('status', 1)])
+            ->withSum(['shtransactions as paid' => fn ($q) => $q->where('status', 'completed')], 'amount')
+            ->orderBy('username')
+            ->paginate(getPaginate())->withQueryString();
 
-        $investorsQuery = User::whereHas('rinvestment', function($query) {
-            $query->where('status', 1);
-        });
-
-        if ($search) {
-            $investorsQuery->where(function ($q) use ($search) {
-                $q->where('username', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhere('firstname', 'like', "%{$search}%")
-                    ->orWhere('lastname', 'like', "%{$search}%");
-            });
-        }
-
-        $investors = $investorsQuery
-            ->with(['rinvestment' => function($q) {
-                $q->where('status', 1);
-            }])
-            ->select('id', 'firstname', 'lastname', 'username', 'email', 'shares')
-            ->paginate(getPaginate());
-
-        if ($request->ajax()) {
-            $html = view('admin.dividend.partials.investor-rows', compact('investors'))->render();
-            return response()->json(['html' => $html, 'hasPages' => $investors->hasPages(), 'pagination' => $investors->links('vendor.pagination.bootstrap-4')->render()]);
-        }
-
-        return view('admin.dividend.investors', compact('pageTitle', 'investors'));
+        return Inertia::render('Admin/Dividend/Investors', [
+            'search'    => $search,
+            'investors' => $investors->through(fn (User $u) => [
+                'id'          => $u->id,
+                'name'        => (string) $u->fullname,
+                'username'    => (string) $u->username,
+                'email'       => (string) $u->email,
+                'units'       => number_format((float) $u->units),
+                'investments' => (int) $u->investments,
+                'credits'     => showAmount($u->shares ?? 0),
+                'paid'        => showAmount($u->paid ?? 0),
+                'url'         => route('admin.dividend.user.dividends', $u->id),
+                'member'      => route('admin.users.detail', $u->id),
+            ]),
+            'urls' => ['self' => route('admin.dividend.investors'), 'batches' => route('admin.dividend.index')],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
-    /**
-     * View dividends for a specific user
-     */
     public function userDividends($userId)
     {
-        $user = User::findOrFail($userId);
+        $user      = User::findOrFail($userId);
         $pageTitle = "Dividends for {$user->fullname}";
 
-        $dividends = $user->shtransactions()
-            ->with('dividendBatch', 'rinvestment.plan')
-            ->orderBy('created_at', 'desc')
-            ->paginate(getPaginate());
-
-        $totalDividends = $user->shtransactions()
-            ->where('status', 'completed')
-            ->sum('amount');
-
-        return view('admin.dividend.user-dividends', compact('pageTitle', 'user', 'dividends', 'totalDividends'));
-    }
-
-    /**
-     * Helper: Common dividend data retrieval
-     */
-    protected function dividendData($scope = null, $userId = null)
-    {
-        $batches = DividendBatch::query();
-
-        if ($scope) {
-            $batches->where('status', $scope);
-        }
-
-        if ($userId) {
-            $batches->whereHas('shtransactions', function($query) use ($userId) {
-                $query->where('user_id', $userId);
-            });
-        }
-
-        return $batches->orderBy('created_at', 'desc');
+        return Inertia::render('Admin/Dividend/Member', [
+            'title'  => $pageTitle,
+            'member' => ['name' => (string) $user->fullname, 'username' => (string) $user->username, 'email' => (string) $user->email, 'url' => route('admin.users.detail', $user->id)],
+            'total'  => showAmount($user->shtransactions()->where('status', 'completed')->sum('amount')),
+            'dividends' => $user->shtransactions()->with('rinvestment.plan')->orderByDesc('id')->paginate(getPaginate())->through(fn (Shtransaction $t) => [
+                'id'         => $t->id,
+                'reference'  => (string) $t->reference,
+                'investment' => (int) $t->rinvestment_id,
+                'plan'       => (string) ($t->rinvestment?->plan?->name ?: '—'),
+                'units'      => number_format((float) $t->units_held),
+                'perUnit'    => showAmount($t->amount_per_unit),
+                'amount'     => showAmount($t->amount),
+                'status'     => [ucfirst((string) $t->status), self::TONES[$t->status] ?? 'dark'],
+                'batch'      => $t->dividend_batch_id ? route('admin.dividend.detail', $t->dividend_batch_id) : null,
+                'date'       => showDateTime($t->created_at),
+            ]),
+            'urls' => ['back' => route('admin.dividend.investors')],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 }

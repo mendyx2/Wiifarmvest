@@ -37,20 +37,7 @@ class ProcessDividendPayment implements ShouldQueue
 
         try {
             // Fetch all relevant rinvestments based on scope
-            $query = Rinvestment::where('status', 1);
-
-            if ($batch->scope == 'date-range') {
-                $query->whereBetween('created_at', [
-                    Carbon::parse($batch->start_date)->startOfDay(),
-                    Carbon::parse($batch->end_date)->endOfDay(),
-                ]);
-            }
-
-            if ($batch->plan_id) {
-                $query->where('plan_id', $batch->plan_id);
-            }
-
-            $investments = $query->get();
+            $investments = DividendBatch::investmentsQuery($batch->scope, $batch->start_date, $batch->end_date, $batch->plan_id)->with('plan')->get();
             $processedCount = 0;
 
             // Wrap all investment processing in a transaction

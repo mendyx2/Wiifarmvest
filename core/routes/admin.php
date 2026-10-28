@@ -621,7 +621,8 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('/', 'index')->name('index');
         Route::get('create', 'create')->name('create');
         Route::post('store', 'store')->name('store');
-        Route::post('buy-shares', 'buyShares')->name('buy-shares');
+        // "Buy shares" for a member is on the member's page (admin.users.buy.shares)
+        Route::get('preview', 'preview')->name('preview');
         Route::post('cancel/{batchId}', 'cancel')->name('cancel');
         Route::post('reverse/{batchId}', 'reverse')->name('reverse');
         Route::get('history', 'history')->name('history');

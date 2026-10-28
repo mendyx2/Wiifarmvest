@@ -81,7 +81,7 @@ gets replaced, one page at a time.
 | *(ongoing)* **Shared component library** | `Pagination`, `EmptyState`, `TextField`, `PasswordInput`, `Modal` and `DynamicForm` are done, plus the `useCopy`, `visitWithQuery`, `useTrans` and `money` helpers. Still to do: `DataTable`, `StatCard`, `Badge`; move the inline `sl-*`/`bk-*` CSS from `layouts/master.blade.php` into a stylesheet imported by Vite. | Grows with each phase |
 | **5. Layout to React** | 5a sidebar/header as the persistent `Layouts/DashboardLayout.tsx`, bare root view ✅ (Steps 78–79) · 5b dashboard ✅ (Steps 80–81) · 5c remaining member pages ✅ (Steps 82–85) · 5d auth pages ✅ (Steps 86–87) | ✅ Done |
 | **6. Public pages** | Login, register, password reset and authorization moved in 5d. 6a public layout + Terms page ✅ (Step 89) · 6b public shop ✅ (Steps 90–92). Home, blog, FAQ, contact and policy pages stay as they are: the site owner switched them off (they redirect to login). Link previews use server-side meta tags, no SSR (Step 92) | ✅ Done |
-| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113). Next: 7f-6 MLM pages and dashboard · 7g admin login pages | In progress |
+| **7. Admin panel** | 185 views. 7a frame: root view `inertia.admin`, `Layouts/AdminLayout.tsx` (sidebar, top bar, search), Profile and Notifications ✅ (Steps 93–94) · 7b reports and logs ✅ (Steps 95–96) · 7c users ✅ (Steps 97–99) · 7d shop, stockists, affiliate ✅ (Steps 100–102) · 7e-1 deposits and withdrawals ✅ (Step 103) · 7e-2 pins and Stage Twice ✅ (Step 104) · 7e-3 savings and loans ✅ (Step 105) · 7f-1 site settings ✅ (Step 107) · 7f-2 notifications and languages ✅ (Step 108) · 7f-3 gateways, withdraw methods, KYC form ✅ (Step 109) · 7f-4a extensions, cron, system ✅ (Step 110) · 7f-4b frontend content, pages, SEO ✅ (Step 111) · 7f-5a admins, roles, permissions ✅ (Step 112) · 7f-5b tickets, notices, flashcards ✅ (Step 113) · 7f-6a plans and dividends ✅ (Step 114). Next: 7f-6b unilevel, key-in, ACB, autoship · 7f-6c awards, projects · 7f-6d dashboard · 7g admin login pages | In progress |
 | **8. Clean-up** | Delete the migrated Blade views and the jQuery plugins nothing uses any more; add Ziggy for typed `route()` in TypeScript | Final |
 
 Order within each phase: low-risk, read-only pages first; pages that move
@@ -5759,6 +5759,128 @@ list errors.
     - hide (spoofed PATCH with state) and delete.
   - No sideways scroll at phone width on all seven page states.
 - **Regression:** 39 browser suites, 1280 checks, all pass.
+  `route:cache` and `view:cache` succeed; the route-name scan shows only
+  the 21 known `ipn.` references.
+
+### Step 114: Project plans and dividends in React (7f-6a)
+
+7f-6 (the MLM pages and dashboard) is split in four:
+
+- 6a (this step): plans, dividends, and the vendor "Report & Request" page;
+- 6b: unilevel, key-in bonus, ACB, autoship;
+- 6c: awards and projects;
+- 6d: the dashboard.
+
+**Pages:**
+
+| Page | Route | Replaces |
+|---|---|---|
+| `Pages/Admin/Plans/Index.tsx` | `admin.plan.index` | `plan/index.blade.php` (and the unused `plan/index2.blade.php`) |
+| `Plans/Holders.tsx` | `admin.plan.userPlan` | `plan/users.blade.php` |
+| `Pages/Admin/Dividend/Batches.tsx` | `admin.dividend.index`, `admin.dividend.history` | `dividend/index.blade.php`, `dividend/history.blade.php` |
+| `Dividend/Create.tsx` | `admin.dividend.create` | `dividend/create.blade.php` |
+| `Dividend/Detail.tsx` | `admin.dividend.detail` | `dividend/detail.blade.php` and its AJAX rows partial |
+| `Dividend/Investors.tsx` | `admin.dividend.investors` | `dividend/investors.blade.php` and its AJAX rows partial |
+| `Dividend/Member.tsx` | `admin.dividend.user.dividends` | `dividend/user-dividends.blade.php` |
+| `Pages/Admin/VendorReports.tsx` | `admin.request.report` | `reports.blade.php` |
+
+**Duplicates removed:**
+
+- **Two "buy shares for a member" forms.** The dividend page had its
+  own dialog. It loaded every member with a balance into the page,
+  queued the purchase (`ProcessSharePurchase`) and had no "force"
+  option. The member's page already has the same action, with a locked
+  balance check (Step 98). The dialog, its route
+  (`admin.dividend.buy-shares`) and the job are removed.
+- **The pending list and the history** were two copies of one table.
+  They are one page with two tabs. Both routes stay; the sidebar links
+  to them.
+- **The two AJAX search endpoints** returned HTML rows. The pages now
+  search with `?search=`, and `detail/{id}/search` redirects to the
+  detail page with the search.
+
+**Fixes:**
+
+| Before | Now |
+|---|---|
+| **A reversed batch disappeared.** History listed completed, cancelled and failed batches only, and reversing set "reversed". | History lists reversed batches too. |
+| **A batch stuck in "processing" was listed nowhere.** The first page showed "pending" only. | The first tab shows pending and processing batches; both can be cancelled. |
+| **No preview before paying.** The form posted straight away, and the totals appeared only after the money had moved. | The page shows members, holdings, units and the total as you choose, from the same query the payment uses (`DividendBatch::investmentsQuery()`, shared with the job). "Pay" asks for confirmation with the total, and is disabled when nothing matches. |
+| **Messages were lost.** Every result used `with('success' / 'error' / 'warning')`, which the admin layout never showed. A repeated click within 2 minutes was silently sent to the earlier batch. | Toasts. A repeat says it is the earlier batch and that nothing new was created. |
+| **Plan holders defaulted to plan 1** (`users/{id?}` with `$id = 1`), and an unknown id crashed on `$plan->id`. | 404. |
+| **A plan could cost 0**, and the price rule was written three times. | Price must be above 0. `bv` and `tree_com`, which the form sent as hidden zeros, are set to 0 on new plans only. |
+| **The referral commission showed as a bare number**, though it is a fixed amount of money (helpers.php pays `ref_com` as is). | Shown with the currency. |
+| Plan and holding enable/disable flipped blindly. | They take an explicit `state` and answer "already" on a repeat (`GlobalStatus`). |
+
+**For the owner:**
+
+- **The dividend queue:** payments run on the `dividends` queue, but
+  `php artisan queue:work` alone works only the `default` queue. Unless
+  the server's worker runs with `--queue=dividends,default`, a batch
+  stays "pending" and nobody is paid. The page now warns when a batch
+  has been pending for more than 10 minutes.
+- **Reversing a batch** takes the dividend back even if the member has
+  already spent it, so a balance can go below zero. The confirmation
+  says so; whether to stop at zero instead is your call.
+- **"Report & Request"** sends bug reports to the original script's
+  vendor with the purchase code. It is not linked anywhere in the
+  panel. It now shows when the vendor does not answer; before, it
+  redirected to the dashboard with an error the React layout did not
+  show. Remove it if you no longer use the vendor's support.
+
+**Deleted:** `admin/plan/*` (3 views), `admin/dividend/*` (6 views and 2
+partials), `admin/reports.blade.php`, and `app/Jobs/ProcessSharePurchase.php`.
+
+**Verification:**
+
+- **Server checks** (`p7f6a_check.php`):
+  - **Plans:**
+    - list with holders and units;
+    - price 0 is refused; add (bv and tree_com are 0); edit;
+    - disable, then again ("already");
+    - holders; an unknown plan and no id are 404.
+  - **Dividends:**
+    - stats;
+    - **previews:** all plans (4 holdings, 2 members, 15 units, ₦150),
+      one plan, a date range; a range without dates and an amount of 0
+      are refused;
+    - paying a plan with no active holding is refused;
+    - **pay 10 per unit with the real job (sync queue):** completed, 4
+      payments, both balances +70 / +80, "shares" credited, 4
+      transaction logs;
+    - the same again within 2 minutes reuses the batch;
+    - detail with search; the old AJAX URL redirects;
+    - cancelling a completed batch is refused;
+    - **reverse with the real job:** balances back to 1000, status
+      reversed, listed in history; reversing again is refused;
+    - a 30-minute-old pending batch and a processing one are both on
+      the first tab, and "stalled" is 1; cancel the pending one;
+    - investors with units, holdings and dividends paid; search;
+    - a member's dividends, including reversed ones;
+    - the buy-shares route is gone and the member page's route remains.
+  - **Vendor reports:** with no network, the page shows the "did not
+    answer" message.
+- **Browser checks** (`e2e/phase7f6a.mjs`, 35 checks):
+  - **Plans:**
+    - commission and status;
+    - edit with currency and the POST; disable;
+    - Holders as an Inertia visit; disable a holding.
+  - **Batches:**
+    - the stalled warning with the worker command; cancel;
+    - the history tab; reverse asks with the amount and the
+      below-zero warning;
+    - a reversed batch is listed without Reverse.
+  - **Create:**
+    - Pay is off before an amount;
+    - the preview requests and totals;
+    - a date range needs dates; no match keeps Pay off;
+    - the preview follows plan and dates;
+    - the confirmation shows the total before any request; the POST.
+  - **Detail, investors and member:** search; the Inertia link;
+    reversed rows.
+  - **Vendor reports:** the error and the POST.
+  - No sideways scroll at phone width on all nine pages.
+- **Regression:** (results recorded in the next commit.)
   `route:cache` and `view:cache` succeed; the route-name scan shows only
   the 21 known `ipn.` references.
 
