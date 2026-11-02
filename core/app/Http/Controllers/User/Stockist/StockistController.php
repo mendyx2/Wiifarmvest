@@ -1,6 +1,6 @@
 <?php
  //
-namespace App\Http\Controllers\User;
+namespace App\Http\Controllers\User\Stockist;
 use App\Models\User;
 use App\Models\Order;
 use App\Models\Matrix;

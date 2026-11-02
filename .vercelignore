@@ -21,6 +21,4 @@
 /core/bootstrap/cache/*.php
 
 # Internal documents
-/notes.md
-/WIIFARM_*
-/Wiifarm_*
+/docs

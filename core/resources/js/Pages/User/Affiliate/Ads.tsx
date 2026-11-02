@@ -1,6 +1,7 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import Pagination from '@/Components/Pagination';
+import { copyText } from '@/lib/clipboard';
 import { useTrans } from '@/lib/i18n';
 import type { PageProps, Paginated } from '@/types';
 
@@ -76,22 +77,6 @@ async function fileFor(ad: Ad): Promise<File> {
     const file = new File([await response.blob()], ad.fileName, { type: ad.mime });
     files.set(ad.media, file);
     return file;
-}
-
-async function copyText(text: string): Promise<boolean> {
-    try {
-        await navigator.clipboard.writeText(text);
-        return true;
-    } catch {
-        // Older in-app browsers and plain HTTP: fall back to a hidden textarea
-        const area = Object.assign(document.createElement('textarea'), { value: text });
-        area.style.cssText = 'position:fixed;opacity:0';
-        document.body.append(area);
-        area.select();
-        const ok = document.execCommand('copy');
-        area.remove();
-        return ok;
-    }
 }
 
 function download(ad: Ad) {

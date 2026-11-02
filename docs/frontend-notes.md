@@ -4,8 +4,8 @@ This file records every front-end migration change, step by step, in the
 order it was made. Add a new entry at the end each time a page or feature is
 migrated.
 
-The back-end remediation log is a separate file: `/notes.md` at the
-repository root.
+The back-end remediation log is a separate file:
+[`remediation-notes.md`](remediation-notes.md), in this `docs/` folder.
 
 ---
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\User;
+namespace App\Http\Controllers\User\Stockist;
 
 use App\Exceptions\StockTransferException;
 use App\Http\Controllers\Controller;

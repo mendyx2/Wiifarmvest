@@ -2,7 +2,7 @@
 
 This document logs all fixes, architectural changes, code modifications, and database additions performed on the Wiifarmvest Platform.
 
-> Front-end migration to Laravel + Inertia.js + React + TypeScript is logged separately in [`core/resources/js/notes.md`](core/resources/js/notes.md).
+> Front-end migration to Laravel + Inertia.js + React + TypeScript is logged separately in [`frontend-notes.md`](frontend-notes.md).
 
 ---
 
@@ -105,8 +105,8 @@ This document logs all fixes, architectural changes, code modifications, and dat
   5. **Created Console Command `core/app/Console/Commands/ProcessLeadershipBonusCommand.php`:**
      * Artisan signature `leadership:process` to sweep pending matching bonus logs and auto-qualify eligible leaders.
   6. **Created Database Migration & SQL Script:**
-     * Laravel migration: `core/database/migrations/2026_10_13_000001_create_leadership_bonus_tables.php`
-     * Standalone SQL file: `core/database/leadership_bonus_tables.sql` for direct database execution.
+     * Laravel migration: `core/database/sql/migrations/2026_10_13_000001_create_leadership_bonus_tables.php`
+     * Standalone SQL file: `core/database/sql/leadership_bonus_tables.sql` for direct database execution.
 
 ---
 
@@ -199,8 +199,8 @@ This document logs all fixes, architectural changes, code modifications, and dat
 
 ### 3.4 Database Schema Migrations & Scripts
 * **Target Files:**
-  * `core/database/migrations/2026_10_13_000002_phase3_blueprint_features.php` (Laravel Migration)
-  * `core/database/phase3_blueprint_features.sql` (Standalone MySQL Script)
+  * `core/database/sql/migrations/2026_10_13_000002_phase3_blueprint_features.php` (Laravel Migration)
+  * `core/database/sql/phase3_blueprint_features.sql` (Standalone MySQL Script)
 * **Applied Schemas:**
   1. `ALTER TABLE stockists ADD COLUMN sponsor_user_id BIGINT UNSIGNED NULL;`
   2. `ALTER TABLE users ADD COLUMN stockist_sponsor_bonus DECIMAL(12, 2) NOT NULL DEFAULT 0.00;`
@@ -276,8 +276,8 @@ This document logs all fixes, architectural changes, code modifications, and dat
 
 ### 4.4 Database Schema Migrations & Scripts
 * **Target Files:**
-  * `core/database/migrations/2026_10_13_000003_phase4_financial_governance_pools.php` (Laravel Migration)
-  * `core/database/phase4_financial_governance_pools.sql` (Standalone MySQL Script)
+  * `core/database/sql/migrations/2026_10_13_000003_phase4_financial_governance_pools.php` (Laravel Migration)
+  * `core/database/sql/phase4_financial_governance_pools.sql` (Standalone MySQL Script)
 * **Applied Schemas:**
   * Created `company_pool_ledgers` table with indexed `trx`, `source_type`, `created_at`, running balances, and split amounts.
 
@@ -333,8 +333,8 @@ All 4 phases of the Technical Audit & Compensation Blueprint Remediation Plan ha
   * `core/app/Models/OperationalPoolLedger.php` (New)
   * `core/app/Models/CompensationReserveLedger.php` (New)
   * `core/app/Services/RevenueAllocationService.php`
-  * `core/database/migrations/2026_10_14_000001_create_dedicated_multi_pool_ledgers.php`
-  * `core/database/dedicated_multi_pool_ledgers.sql`
+  * `core/database/sql/migrations/2026_10_14_000001_create_dedicated_multi_pool_ledgers.php`
+  * `core/database/sql/dedicated_multi_pool_ledgers.sql`
 * **Architectural Rationale:**
   * Having distinct ledgers completely ring-fences company reserves from member payouts, preventing bonus overages from eroding operating or executive capital.
   * Meets Nigerian Cooperative Societies regulatory accounting mandates for distinct balance-sheet line items.
@@ -351,8 +351,8 @@ All 4 phases of the Technical Audit & Compensation Blueprint Remediation Plan ha
 
 ### 6.2 7 Registration Packages & Matching Caps Seeding
 * **Target Files:**
-  * `core/database/seeders/CompensationPlanProjectsSeeder.php` (New)
-  * `core/database/compensation_plan_projects.sql` (New)
+  * `core/database/sql/seeders/CompensationPlanProjectsSeeder.php` (New)
+  * `core/database/sql/compensation_plan_projects.sql` (New)
 * **Packages Seeded (1 PV = ₦600):**
   1. **Wiifarm-Pre Starter:** ₦15,000 | 15 PV | Direct: ₦2,250 | Match: ₦900 (3%) | Daily Cap: 5 matches (₦4,500)
   2. **Wiifarm-Starter:** ₦30,000 | 30 PV | Direct: ₦4,500 | Match: ₦1,500 (5%) | Daily Cap: 7 matches (₦10,500)
@@ -394,8 +394,8 @@ All 4 phases of the Technical Audit & Compensation Blueprint Remediation Plan ha
 
 ### 7.1 13 Binary Recognition Awards Seeding & Eligibility
 * **Target Files:**
-  * `core/database/seeders/CompensationPlanAwardsSeeder.php` (New)
-  * `core/database/compensation_plan_awards.sql` (New)
+  * `core/database/sql/seeders/CompensationPlanAwardsSeeder.php` (New)
+  * `core/database/sql/compensation_plan_awards.sql` (New)
   * `core/app/Jobs/CheckUserAwardJob.php`
   * `core/app/Http/Controllers/Admin/AwardController.php`
 * **Ranks & Eligibility Seeded:**
@@ -433,8 +433,8 @@ All 4 phases of the Technical Audit & Compensation Blueprint Remediation Plan ha
 
 ### 7.3 15-Generation Unilevel Commission Matrix
 * **Target Files:**
-  * `core/database/seeders/CompensationPlanUnilevelSeeder.php` (New)
-  * `core/database/compensation_plan_unilevel.sql` (New)
+  * `core/database/sql/seeders/CompensationPlanUnilevelSeeder.php` (New)
+  * `core/database/sql/compensation_plan_unilevel.sql` (New)
   * `core/app/Services/UnilevelService.php`
 * **Matrix Seeded ($1 PV = ₦600):**
   * **Level 1:** 6.00% (₦36 / PV)
@@ -479,8 +479,8 @@ All 4 phases of the Technical Audit & Compensation Blueprint Remediation Plan ha
 
 ### 8.1 10-Tier Repurchase Award Seeding
 * **Target Files:**
-  * `core/database/seeders/CompensationPlanRepurchaseAwardsSeeder.php` (New)
-  * `core/database/compensation_plan_repurchase_awards.sql` (New)
+  * `core/database/sql/seeders/CompensationPlanRepurchaseAwardsSeeder.php` (New)
+  * `core/database/sql/compensation_plan_repurchase_awards.sql` (New)
   * `core/app/Http/Controllers/Admin/RepurchaseAwardController.php`
   * `core/app/Jobs/ProcessAcbBonusJob.php`
 * **Cumulative Repurchase PV Awards:**

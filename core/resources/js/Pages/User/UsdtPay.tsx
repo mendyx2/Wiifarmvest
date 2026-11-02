@@ -1,5 +1,6 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { useCopy } from '@/lib/clipboard';
 import { useTrans } from '@/lib/i18n';
 import type { PageProps } from '@/types';
 import './UsdtPay.css';
@@ -26,22 +27,6 @@ type Props = PageProps<{
     urls: { claim: string; history: string; deposit: string };
 }>;
 
-async function copy(text: string): Promise<boolean> {
-    try {
-        await navigator.clipboard.writeText(text);
-        return true;
-    } catch {
-        // Older in-app browsers and plain HTTP: fall back to a hidden textarea
-        const area = Object.assign(document.createElement('textarea'), { value: text });
-        area.style.cssText = 'position:fixed;opacity:0';
-        document.body.append(area);
-        area.select();
-        const ok = document.execCommand('copy');
-        area.remove();
-        return ok;
-    }
-}
-
 function left(expiresAt: string, now: number): string {
     const s = Math.max(0, Math.floor((new Date(expiresAt).getTime() - now) / 1000));
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -57,7 +42,8 @@ export default function UsdtPay({ deposit, status, checkEvery, testNetwork, urls
     const t = useTrans();
     const form = useForm({ txid: '' });
     const [now, setNow] = useState(() => Date.now());
-    const [copied, setCopied] = useState<'' | 'amount' | 'address'>('');
+    const amountCopy = useCopy(2000);
+    const addressCopy = useCopy(2000);
 
     // The clock for the countdown
     useEffect(() => {
@@ -71,13 +57,6 @@ export default function UsdtPay({ deposit, status, checkEvery, testNetwork, urls
         const id = window.setInterval(() => router.reload({ only: ['status', 'deposit'] }), Math.max(5, checkEvery) * 1000);
         return () => window.clearInterval(id);
     }, [status, checkEvery]);
-
-    const doCopy = async (what: 'amount' | 'address', text: string) => {
-        if (await copy(text)) {
-            setCopied(what);
-            window.setTimeout(() => setCopied(''), 2000);
-        }
-    };
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
@@ -149,8 +128,8 @@ export default function UsdtPay({ deposit, status, checkEvery, testNetwork, urls
                         <p className="usdt-label">{t('Send exactly')}</p>
                         <div className="usdt-amount">
                             <span>{deposit.usdt}</span> <small>USDT</small>
-                            <button type="button" className="usdt-copy" onClick={() => doCopy('amount', deposit.usdt)} aria-label={t('Copy amount')}>
-                                <i className={`las ${copied === 'amount' ? 'la-check' : 'la-copy'}`} aria-hidden /> {copied === 'amount' ? t('Copied') : t('Copy')}
+                            <button type="button" className="usdt-copy" onClick={() => amountCopy.copy(deposit.usdt)} aria-label={t('Copy amount')}>
+                                <i className={`las ${amountCopy.copied ? 'la-check' : 'la-copy'}`} aria-hidden /> {amountCopy.copied ? t('Copied') : t('Copy')}
                             </button>
                         </div>
                         <p className="usdt-for">{t('You will receive :amount', { amount: deposit.amount })}</p>
@@ -158,8 +137,8 @@ export default function UsdtPay({ deposit, status, checkEvery, testNetwork, urls
                         <p className="usdt-label mt-3">{t('To this address (TRC20 only)')}</p>
                         <div className="usdt-address">
                             <code>{deposit.address}</code>
-                            <button type="button" className="usdt-copy" onClick={() => doCopy('address', deposit.address)} aria-label={t('Copy address')}>
-                                <i className={`las ${copied === 'address' ? 'la-check' : 'la-copy'}`} aria-hidden /> {copied === 'address' ? t('Copied') : t('Copy')}
+                            <button type="button" className="usdt-copy" onClick={() => addressCopy.copy(deposit.address)} aria-label={t('Copy address')}>
+                                <i className={`las ${addressCopy.copied ? 'la-check' : 'la-copy'}`} aria-hidden /> {addressCopy.copied ? t('Copied') : t('Copy')}
                             </button>
                         </div>
                         <img className="usdt-qr" src={deposit.qr} alt={t('QR code of the address')} width={180} height={180} />

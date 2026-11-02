@@ -331,7 +331,12 @@ trait SupportTicketManager
 
     public function ticketDownload($attachmentId)
     {
-        $attachment = SupportAttachment::find(decrypt($attachmentId));
+        // A link that was changed or made with another app key is "not found", not a server error
+        try {
+            $attachment = SupportAttachment::find(decrypt($attachmentId));
+        } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+            $attachment = null;
+        }
         if (!$attachment) {
             if ($this->apiRequest) {
                 $notify[] = 'Attachment not found';

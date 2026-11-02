@@ -150,7 +150,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
           
             // Stockist routes
-            Route::controller('StockistController')->group(function (){
+            Route::controller('Stockist\StockistController')->group(function (){
               
                 
                 // Invoice redemption is done on the stockist dashboard (the old /redeem page had no view).
@@ -166,7 +166,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
            
 
             // Stockist dashboard routes (protected by auth and stockist middleware)
-            Route::controller('StockistController')->middleware(['stockist'])->prefix('stockist')->name('stockist.')->group(function () {
+            Route::controller('Stockist\StockistController')->middleware(['stockist'])->prefix('stockist')->name('stockist.')->group(function () {
                 //stockist profile
                 Route::get('/profile',  'profile')->name('profile');
                 Route::post('/profile/basic-info', 'updateBasicInfo')->name('profile.basic-info');
@@ -194,7 +194,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
     
             // Product Catalog & Cart
 
-            Route::controller('StockistInventoryController')->middleware(['stockist'])->prefix('stockist')->name('stockist.')->group(function () {
+            Route::controller('Stockist\StockistInventoryController')->middleware(['stockist'])->prefix('stockist')->name('stockist.')->group(function () {
 
                  Route::get('/inventory',  'dashboard')->name('inventory.dashboard');
 
@@ -213,13 +213,13 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             });
 
             // Point of Sale
-            Route::controller('StockistPosController')->middleware(['stockist'])->prefix('stockist/pos')->name('stockist.pos.')->group(function () {
+            Route::controller('Stockist\StockistPosController')->middleware(['stockist'])->prefix('stockist/pos')->name('stockist.pos.')->group(function () {
                 Route::get('/', 'index')->name('index');
                 Route::post('/checkout', 'checkout')->name('checkout');
             });
 
             // Stock transfers: Mini stockists buy from a Mega stockist, who confirms
-            Route::controller('StockTransferController')->middleware(['stockist'])->prefix('stockist/transfers')->name('stockist.transfers.')->group(function () {
+            Route::controller('Stockist\StockTransferController')->middleware(['stockist'])->prefix('stockist/transfers')->name('stockist.transfers.')->group(function () {
                 Route::get('/', 'index')->name('index');
                 Route::get('/new', 'create')->name('create');
                 Route::post('/', 'store')->name('store')->middleware('throttle:10,1');
@@ -230,7 +230,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             });
 
             // Welcome Back Package redemption
-            Route::controller('StockistWelcomePackageController')->middleware(['stockist'])->prefix('stockist/welcome-pack')->name('stockist.welcome-pack.')->group(function () {
+            Route::controller('Stockist\StockistWelcomePackageController')->middleware(['stockist'])->prefix('stockist/welcome-pack')->name('stockist.welcome-pack.')->group(function () {
                 Route::get('/', 'index')->name('index'); // ?code= verifies a code; redeeming happens in the POS
             });
 
@@ -244,7 +244,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
 
             // Redeem Affiliate Products — separate from the internal repurchase
             // redemption flow above (no unilevel/PV logic; single-shot pickup)
-            Route::controller('StockistAffiliateRedemptionController')->middleware(['stockist'])->prefix('stockist/affiliate')->name('stockist.affiliate.')->group(function () { 
+            Route::controller('Stockist\StockistAffiliateRedemptionController')->middleware(['stockist'])->prefix('stockist/affiliate')->name('stockist.affiliate.')->group(function () { 
                 Route::get('/', 'redeemForm')->name('redeem'); // ?code= verifies an order
                 Route::post('/confirm', 'confirm')->name('confirm');
             });
