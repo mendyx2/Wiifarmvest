@@ -21,7 +21,7 @@ class ProfileController extends Controller
             ->get();
 
         // Migrated to React + Inertia (resources/js/Pages/User/ProfileSetting.tsx).
-        // Legacy view: Template::user.profile_setting
+        // Was the Blade view Template::user.profile_setting (deleted)
         return Inertia::render('User/ProfileSetting', [
             'profile' => [
                 'firstname' => (string) $user->firstname,
@@ -121,9 +121,7 @@ class ProfileController extends Controller
     {
         $pageTitle = 'Change Password';
 
-        // Migrated to React + Inertia (resources/js/Pages/User/ChangePassword.tsx).
-        // The legacy Blade view (Template::user.password) is kept until the
-        // React page has been verified in production.
+        // Pages/User/ChangePassword.tsx (was the Blade view Template::user.password, deleted)
         return Inertia::render('User/ChangePassword', [
             'securePassword' => (bool) gs('secure_password'),
             'submitUrl'      => route('user.change.password'),

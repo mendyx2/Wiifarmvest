@@ -23,7 +23,7 @@ class AcbController extends Controller
             ->paginate(20);
 
         // Migrated to React + Inertia (resources/js/Pages/User/Acb.tsx).
-        // Legacy view: Template::user.acb
+        // Was the Blade view Template::user.acb (deleted)
         return Inertia::render('User/Acb', [
             'balance' => showAmount($user->acb ?? 0),
             'history' => $history->through(function ($txn) {

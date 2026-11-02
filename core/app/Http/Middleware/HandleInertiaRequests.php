@@ -23,6 +23,9 @@ class HandleInertiaRequests extends Middleware
     /** Pages drawn by Layouts/AuthLayout.tsx instead of the dashboard. */
     private const GUEST_PAGES = ['user.login', 'user.register', 'user.password.*', 'user.authorization'];
 
+    /** The admin sign-in and password-reset pages (Pages/Admin/Auth/*): no sidebar, nobody signed in. */
+    public const ADMIN_GUEST_PAGES = ['admin.login', 'admin.password.reset', 'admin.password.code.verify', 'admin.password.reset.form'];
+
     /** Admin pages use their own root view (resources/views/inertia/admin.blade.php). */
     public function rootView(Request $request): string
     {
@@ -72,7 +75,7 @@ class HandleInertiaRequests extends Middleware
             // Shop header and footer, for the public pages (Layouts/PublicLayout.tsx).
             'publicLayout' => fn () => $request->routeIs(PublicLayout::ROUTES) ? PublicLayout::for($request) : null,
             // Admin sidebar and top bar (Layouts/AdminLayout.tsx); null outside the admin panel.
-            'adminLayout'  => fn () => $request->routeIs('admin.*') ? AdminLayout::for($request) : null,
+            'adminLayout'  => fn () => $request->routeIs('admin.*') && !$request->routeIs(self::ADMIN_GUEST_PAGES) ? AdminLayout::for($request) : null,
         ]);
     }
 

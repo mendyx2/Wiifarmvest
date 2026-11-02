@@ -1,6 +1,6 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState, type FormEvent } from 'react';
-import AttachmentPicker, { chosenFiles } from '@/Components/AttachmentPicker';
+import AttachmentPicker, { chosenFiles, attachmentError } from '@/Components/AttachmentPicker';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import { useTrans } from '@/lib/i18n';
 import type { PageProps } from '@/types';
@@ -76,7 +76,7 @@ export default function TicketView({ ticket, messages, maxUpload, replyUrl, clos
                                 </div>
                             </div>
                             <div className="col-md-9">
-                                <AttachmentPicker files={form.data.attachments} onChange={(files) => form.setData('attachments', files)} maxUpload={maxUpload} error={form.errors.attachments} />
+                                <AttachmentPicker files={form.data.attachments} onChange={(files) => form.setData('attachments', files)} maxUpload={maxUpload} error={attachmentError(form.errors)} />
                             </div>
                             <div className="col-md-3">
                                 <button className="btn btn--base w-100 my-2" type="submit" disabled={form.processing}>

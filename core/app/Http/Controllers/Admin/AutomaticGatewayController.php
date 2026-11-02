@@ -25,6 +25,9 @@ class AutomaticGatewayController extends Controller
     /** Parameter names that hold a secret (never "public_key"). */
     private const SECRET = '/secret|private|password|passphrase|token|hash|salt|signature|api_?key|access_?key|merchant_?key|ipn/i';
 
+    /** Settings a gateway works without (TronGrid answers without a key, only more slowly) */
+    private const OPTIONAL = ['UsdtTrc20' => ['trongrid_api_key']];
+
     private static function isSecret(string $key): bool
     {
         return !str_contains(strtolower($key), 'public') && (bool) preg_match(self::SECRET, $key);
@@ -128,8 +131,13 @@ class AutomaticGatewayController extends Controller
         $this->gatewayValidator($request)->validate();
         $this->gatewayCurrencyValidator($request, $gateway)->validate();
 
+        // USDT (TRC20): a mistyped address would send members' money somewhere else
+        if ($gateway->alias === \App\Services\Usdt\UsdtPayments::ALIAS && !\App\Services\Usdt\TronAddress::isValid(trim((string) $global['wallet_address']))) {
+            return back()->withErrors(['global.wallet_address' => 'This is not a valid Tron (TRC20) address. It starts with T and has 34 characters; copy it again from the wallet.']);
+        }
+
         foreach ($parameters->where('global', true) as $key => $p) {
-            $parameters[$key]->value = $global[$key];
+            $parameters[$key]->value = (string) ($global[$key] ?? '');
         }
 
         $filename = $gateway->image;
@@ -217,7 +225,7 @@ class AutomaticGatewayController extends Controller
         $supported = array_keys((array) $gateway->supported_currencies);
 
         foreach ($paramList->where('global', true) as $key => $pram) {
-            $validationRule['global.' . $key]   = 'required|string|max:2000';
+            $validationRule['global.' . $key]   = (in_array($key, self::OPTIONAL[$gateway->alias] ?? [], true) ? 'nullable' : 'required') . '|string|max:2000';
             $customAttributes['global.' . $key] = keyToTitle($key);
         }
 

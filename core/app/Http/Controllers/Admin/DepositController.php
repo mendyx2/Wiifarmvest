@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Models\UsdtTransfer;
+use App\Services\Usdt\UsdtPayments;
 use App\Constants\Status;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Gateway\PaymentController;
@@ -132,6 +134,59 @@ class DepositController extends Controller
         };
     }
 
+    /**
+     * Every USDT (TRC20) payment the app has seen at the Wiifarm address, by
+     * status: credited, waiting for an admin, matching no deposit, refused.
+     */
+    public function usdtPayments(Request $request)
+    {
+        $pageTitle = 'USDT Payments';
+        $tabs      = ['all' => 'All', UsdtTransfer::REVIEW => 'Needs checking', UsdtTransfer::UNMATCHED => 'No matching deposit', UsdtTransfer::CREDITED => 'Credited', UsdtTransfer::REJECTED => 'Refused'];
+        $tab       = array_key_exists((string) $request->query('status'), $tabs) ? (string) $request->query('status') : 'all';
+        $search    = trim((string) $request->query('search', ''));
+
+        $payments = UsdtTransfer::with('deposit.user:id,firstname,lastname,username')
+            ->when($tab !== 'all', fn ($q) => $q->where('status', $tab))
+            ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w->where('txid', 'like', '%' . strtolower($search) . '%')->orWhere('from_address', $search)))
+            ->orderByDesc('id')
+            ->paginate(getPaginate())
+            ->withQueryString()
+            ->through(fn (UsdtTransfer $t) => [
+                'id'       => $t->id,
+                'txid'     => $t->txid,
+                'explorer' => UsdtPayments::explorerUrl($t->txid),
+                'from'     => (string) $t->from_address,
+                'amount'   => UsdtPayments::format($t->units) . ' USDT',
+                'sentAt'   => showDateTime(\Carbon\Carbon::createFromTimestampMs($t->block_time_ms)->setTimezone(config('app.timezone'))),
+                'source'   => $t->source === 'txid' ? 'Member sent the ID' : 'Found automatically',
+                'status'   => match ($t->status) {
+                    UsdtTransfer::CREDITED  => AdminPresenter::badge('Credited', 'badge--success'),
+                    UsdtTransfer::REVIEW    => AdminPresenter::badge('Needs checking', 'badge--warning'),
+                    UsdtTransfer::REJECTED  => AdminPresenter::badge('Refused', 'badge--danger'),
+                    default                 => AdminPresenter::badge('No matching deposit', 'badge--dark'),
+                },
+                'note'     => (string) $t->note,
+                'deposit'  => $t->deposit ? ['trx' => (string) $t->deposit->trx, 'url' => route('admin.deposit.details', $t->deposit->id), 'user' => AdminPresenter::user($t->deposit->user)] : null,
+            ]);
+
+        return Inertia::render('Admin/Money/UsdtPayments', [
+            'tab'      => $tab,
+            'tabs'     => collect($tabs)->map(fn ($label, $key) => [
+                'key'   => $key,
+                'label' => $label,
+                'count' => $key === 'all' ? UsdtTransfer::count() : UsdtTransfer::where('status', $key)->count(),
+                'url'   => route('admin.deposit.usdt', $key === 'all' ? [] : ['status' => $key]),
+            ])->values(),
+            'search'   => $search,
+            'payments' => $payments,
+            'settings' => [
+                'address' => UsdtPayments::settings()['address'] ?: null,
+                'network' => config('usdt.network'),
+                'edit'    => route('admin.gateway.automatic.edit', UsdtPayments::ALIAS),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
+    }
+
     public function details($id)
     {
         $deposit   = Deposit::where('id', $id)->with(['user', 'gateway'])->firstOrFail();
@@ -171,6 +226,8 @@ class DepositController extends Controller
             $notify[] = ['error', 'This deposit has already been processed'];
             return back()->withNotify($notify);
         }
+        // A USDT payment that was waiting for this decision
+        UsdtPayments::adminDecided($deposit, true);
 
         $notify[] = ['success', 'Deposit request approved successfully'];
         return to_route('admin.deposit.pending')->withNotify($notify);
@@ -197,6 +254,8 @@ class DepositController extends Controller
         }
 
         $deposit = Deposit::with('user')->find($request->id);
+        // A USDT payment refused here is released, so the member it belongs to can still claim it
+        UsdtPayments::adminDecided($deposit, false);
         notify($deposit->user, 'DEPOSIT_REJECT', [
             'method_name'       => $deposit->methodName(),
             'method_currency'   => $deposit->method_currency,

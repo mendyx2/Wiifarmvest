@@ -12,4 +12,6 @@ cmds = [
 cmds = ["cd core && npm run build"]
 
 [start]
-cmd = "php -S 0.0.0.0:${PORT:-8080} server.php"
+# Members' documents go to private storage first (safe to repeat; see
+# core/app/Console/Commands/MovePrivateUploads.php). A failure does not stop the site.
+cmd = "php core/artisan uploads:move-private --no-interaction; php -S 0.0.0.0:${PORT:-8080} server.php"

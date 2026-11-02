@@ -5,253 +5,159 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\Models\Role;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
- 
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Spatie\Permission\Models\Role;
+
+/**
+ * Staff → Admins (Pages/Admin/Staff/Admins.tsx): the people who can sign in
+ * to the admin panel, their roles and whether they are active.
+ *
+ * Your own account is changed on the Profile page, not here. The first
+ * admin account (id 1) is the owner's: the old list hid it, and it cannot
+ * be changed, deactivated or deleted from this page.
+ */
 class AdminUserController extends Controller
 {
-    public function __construct()
-    {
-        $this->middleware('admin.auth');
-        $this->middleware('admin.role:super-admin');
-    }
+    private const OWNER_ID = 1;
 
     public function index()
     {
-        $currentAdminId = Auth::guard('admin')->id();
-        $pageTitle = 'Manage Admin ';
-        $admins = Admin::with('roles')
-                    ->where('id', '!=', $currentAdminId)
-                    ->orderBy('name')
-                    ->paginate(10); 
-        
-        $roles = Role::where('guard_name', 'admin')->get();
-        
-        return view('admin.admins.index', compact('admins', 'roles', 'pageTitle'));
+        $pageTitle = 'Manage Admins';
+        $me        = Auth::guard('admin')->id();
+
+        return Inertia::render('Admin/Staff/Admins', [
+            'admins' => Admin::with('roles')->orderBy('name')->get()->map(fn (Admin $a) => [
+                'id'          => $a->id,
+                'name'        => (string) $a->name,
+                'username'    => (string) $a->username,
+                'email'       => (string) $a->email,
+                'active'      => $a->is_active !== false,
+                'roles'       => $a->roles->pluck('id')->all(),
+                'roleNames'   => $a->roles->pluck('name')->all(),
+                'permissions' => $a->getAllPermissions()->pluck('name')->sort()->values()->all(),
+                'me'          => $a->id === $me,
+                'owner'       => $a->id === self::OWNER_ID,
+            ]),
+            'roles' => $this->roles()->map(fn (Role $r) => ['id' => $r->id, 'name' => (string) $r->name]),
+            'urls'  => [
+                'store'   => route('admin.admins.store'),
+                'update'  => route('admin.admins.update', ':id'),
+                'destroy' => route('admin.admins.destroy', ':id'),
+                'status'  => route('admin.admins.toggle-status', ':id'),
+                'profile' => route('admin.profile'),
+                'roles'   => route('admin.roles.index'),
+            ],
+        ])->withViewData(['pageTitle' => $pageTitle]);
     }
 
-    public function create()
+    private function roles()
     {
-        $pageTitle = 'Create Admin ';
-        $roles = Role::where('guard_name', 'admin')->get();
-        return view('admin.admins.create', compact('roles', 'pageTitle'));
+        return Role::where('guard_name', 'admin')->orderBy('name')->get();
+    }
+
+    /** An admin this page may change: not yourself, not the owner. */
+    private function editable(Admin $admin): ?string
+    {
+        if ($admin->id === Auth::guard('admin')->id()) {
+            return 'Change your own account on the Profile page.';
+        }
+        if ($admin->id === self::OWNER_ID) {
+            return 'The owner account cannot be changed here.';
+        }
+        return null;
+    }
+
+    private function rules(?Admin $admin): array
+    {
+        return [
+            'name'     => 'required|string|max:255',
+            'username' => ['required', 'string', 'min:3', 'max:40', 'regex:/^[A-Za-z0-9_.-]+$/', Rule::unique('admins', 'username')->ignore($admin?->id)],
+            'email'    => ['nullable', 'email', 'max:255', Rule::unique('admins', 'email')->ignore($admin?->id)],
+            'password' => [$admin ? 'nullable' : 'required', 'string', 'min:8', 'confirmed'],
+            'roles'    => 'required|array|min:1',
+            'roles.*'  => ['integer', Rule::exists('roles', 'id')->where('guard_name', 'admin')],
+        ];
     }
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'username' => 'required|string|unique:admins,username',
-            'email' => 'nullable|email|unique:admins,email',
-            'password' => 'required|string|min:8|confirmed',
-            'roles' => 'required|array',
-            'roles.*' => 'exists:roles,id',
-        ]);
+        $request->validate($this->rules(null));
 
-        try {
-            DB::beginTransaction();
-            $admin =  new Admin();
-            $admin->name        = $validated['name'];
-            $admin->username    = $validated['username'];
-            $admin->password    = Hash::make($validated['password']);
-            $admin->email       = $request->email;
-            $admin->is_active   = 1;
+        DB::transaction(function () use ($request) {
+            $admin            = new Admin();
+            $admin->name      = $request->name;
+            $admin->username  = $request->username;
+            $admin->email     = $request->email ?: null;
+            $admin->password  = Hash::make($request->password);
+            $admin->is_active = true;
             $admin->save();
+            $admin->syncRoles(Role::whereIn('id', $request->roles)->where('guard_name', 'admin')->get());
+        });
 
-
-            // $admin = Admin::create([
-            //     'name' => $validated['name'],
-            //     'username' => $validated['username'],
-            //     'email' => $validated['email'],
-            //     'password' => Hash::make($validated['password']),
-            //     'is_active' => 1,
-            // ]);
-
-            // FIX: Get role objects from IDs and sync
-            $roles = Role::whereIn('id', $validated['roles'])->get();
-            $admin->syncRoles($roles);
-
-            DB::commit();
-
-            return redirect()->route('admin.admins.index')
-            ->with('success', 'Admin user created successfully.');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return redirect()->back()
-                ->with('error', 'Error creating admin user: ' . $e->getMessage())
-                ->withInput();
-        }
-    }
-
-    public function show(Admin $admin)
-    {
-        $pageTitle = 'Manage Admin ';
-        $admin->load('roles', 'permissions');
-        //dd($user);
-
-        return view('admin.admins.show', compact('admin', 'pageTitle'));
-    }
-
-    public function edit(Admin $admin)
-    {
-        $pageTitle = 'Edit Admin ';
-        if ($admin->id == Auth::guard('admin')->id()) {
-            return redirect()->route('admin.admins.index')
-                ->with('error', 'You cannot edit your own account here.');
-        }
-
-        $roles = Role::where('guard_name', 'admin')->get();
-        $adminRoles = $admin->roles->pluck('id')->toArray();
-        
-        return view('admin.admins.edit', compact('admin', 'roles', 'adminRoles', 'pageTitle'));
+        $notify[] = ['success', 'Admin created successfully'];
+        return back()->withNotify($notify);
     }
 
     public function update(Request $request, Admin $admin)
     {
-        if ($admin->id == Auth::guard('admin')->id()) {
-            return redirect()->route('admin.admins.index')
-                ->with('error', 'You cannot edit your own account here.');
+        if ($error = $this->editable($admin)) {
+            $notify[] = ['error', $error];
+            return back()->withNotify($notify);
         }
+        // The e-mail was required here although the form allowed none, and it was never saved
+        $request->validate($this->rules($admin));
 
-        //dd($admin);
-
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'username' => [
-                'required',
-                'string',
-                Rule::unique('admins')->ignore($admin->id)
-            ],
-            'email' => [
-                'required',
-                'email',
-                Rule::unique('admins')->ignore($admin->id)
-            ],
-            'password' => 'nullable|string|min:8|confirmed',
-            'roles' => 'required|array',
-            'roles.*' => 'exists:roles,id'
-            
-        ]);
-        //dd($request);
-
-        try {
-            DB::beginTransaction();
-            $admin->name        = $validated['name'];
-            $admin->username    = $validated['username'];
-            //$admin->email       = $validated['email'];
-            $admin->is_active   = $request->boolean('is_active');
-            
-            
-
-
-            // $updateData = [
-            //     'name' => $validated['name'],
-            //     'username' => $validated['username'],
-            //     'email' => $request->email,
-            //     'is_active' => $request->boolean('is_active'),
-            // ];
-
-            if (!empty($validated['password'])) {
-                $admin->password       =  Hash::make($validated['password']);
-                //$updateData['password'] = Hash::make($validated['password']);
+        DB::transaction(function () use ($request, $admin) {
+            $admin->name     = $request->name;
+            $admin->username = $request->username;
+            $admin->email    = $request->email ?: null;
+            if ($request->filled('password')) {
+                $admin->password = Hash::make($request->password);
             }
             $admin->save();
-            //$admin->update($updateData);
+            $admin->syncRoles(Role::whereIn('id', $request->roles)->where('guard_name', 'admin')->get());
+        });
 
-            // FIX: Get role objects from IDs and sync
-            $roles = Role::whereIn('id', $validated['roles'])->get();
-            $admin->syncRoles($roles);
-
-            DB::commit();
-
-            return redirect()->route('admin.admins.index')
-                ->with('success', 'Admin user updated successfully.');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return redirect()->back()
-                ->with('error', 'Error updating admin user: ' . $e->getMessage())
-                ->withInput();
-        }
-    }
-
-    public function update1(Request $request, Admin $user)
-    {
-        if ($user->id == Auth::guard('admin')->id()) {
-            return redirect()->route('admin.admins.index')
-                ->with('error', 'You cannot edit your own account here.');
-        }
-        ///dd($request);
-
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => [
-                'nullable',
-                'email',
-                Rule::unique('admins')->ignore($user->id)
-            ],
-            'password' => 'nullable|string|min:8|confirmed',
-            'roles' => 'required|array',
-            'roles.*' => 'exists:roles,id'
-            
-        ]);
-
-        $updateData = [
-            'name' => $validated['name'],
-            
-            'email' => $request->email,
-            'is_active' => $request->boolean('is_active'),
-        ];
-        /* 
-        'username' => [
-                'required',
-                'string',
-                Rule::unique('admins')->ignore($user->id)
-            ],
-        'username' => $validated['username'],
-        $request->boolean('is_active');
-            //'is_active' => $validated['is_active'] ?? true,
-
-        */
-        if (!empty($validated['password'])) {
-            $updateData['password'] = Hash::make($validated['password']);
-        }
-
-        $user->update($updateData);
-        $user->syncRoles($validated['roles']);
-
-        return redirect()->route('admin.admins.index')
-            ->with('success', 'Admin user updated successfully.');
+        $notify[] = ['success', 'Admin updated successfully'];
+        return back()->withNotify($notify);
     }
 
     public function destroy(Admin $admin)
     {
-        if ($admin->id == Auth::guard('admin')->id()) {
-            return redirect()->route('admin.admins.index')
-                ->with('error', 'You cannot delete your own account.');
+        if ($error = $this->editable($admin)) {
+            $notify[] = ['error', $error];
+            return back()->withNotify($notify);
         }
 
+        $admin->syncRoles([]);
         $admin->delete();
 
-        return redirect()->route('admin.admins.index')
-            ->with('success', 'Admin user deleted successfully.');
+        $notify[] = ['success', 'Admin deleted successfully'];
+        return back()->withNotify($notify);
     }
 
-    public function toggleStatus(Admin $user)
+    /** Activate (state=enable) or deactivate (state=disable). A deactivated admin is signed out. */
+    public function toggleStatus(Request $request, Admin $user)
     {
-        if ($user->id == Auth::guard('admin')->id()) {
-            return redirect()->route('admin.admins.index')
-                ->with('error', 'You cannot change your own account status.');
+        $request->validate(['state' => 'required|in:enable,disable']);
+        if ($error = $this->editable($user)) {
+            $notify[] = ['error', $error];
+            return back()->withNotify($notify);
         }
 
-        $user->update(['is_active' => !$user->is_active]);
+        $active = $request->state === 'enable';
+        if (($user->is_active !== false) === $active) {
+            $notify[] = ['info', $user->name . ' is already ' . ($active ? 'active' : 'inactive')];
+            return back()->withNotify($notify);
+        }
+        $user->is_active = $active;
+        $user->save();
 
-        $status = $user->is_active ? 'activated' : 'deactivated';
-        return redirect()->route('admin.admins.index')
-            ->with('success', "Admin user {$status} successfully.");
+        $notify[] = ['success', $user->name . ($active ? ' activated' : ' deactivated: they are signed out on their next page')];
+        return back()->withNotify($notify);
     }
 }

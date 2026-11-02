@@ -26,7 +26,7 @@ class PaymentController extends Controller
         $pageTitle = 'Deposit Methods';
 
         // Migrated to React + Inertia (resources/js/Pages/User/Deposit.tsx).
-        // Legacy view: Template::user.payment.deposit
+        // Was the Blade view Template::user.payment.deposit (deleted)
         // Only what the page needs: never the whole model (gateway settings stay on the server).
         return Inertia::render('User/Deposit', [
             'gateways' => $gatewayCurrency->map(fn ($gate) => [
@@ -271,7 +271,7 @@ class PaymentController extends Controller
             $gateway = $method->method;
 
             // Migrated to React + Inertia (resources/js/Pages/User/DepositManual.tsx).
-            // Legacy view: Template::user.payment.manual
+            // Was the Blade view Template::user.payment.manual (deleted)
             return Inertia::render('User/DepositManual', [
                 'amount'       => showAmount($data->amount),
                 'payAmount'    => showAmount($data->final_amount, currencyFormat: false) . ' ' . $data->method_currency,

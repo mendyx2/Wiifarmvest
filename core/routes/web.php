@@ -61,7 +61,7 @@ Route::namespace('Shop')->prefix('shop')->name('shop.')->middleware(['affiliate.
 // User Support Ticket
 
 Route::middleware(['auth', 'XssSanitizer'])->group(function () {
-    Route::controller('TicketController')->prefix('ticket')->name('ticket.')->group( function () { 
+    Route::controller('User\TicketController')->prefix('ticket')->name('ticket.')->group( function () { 
         Route::get('/', 'supportTicket')->name('index');
         Route::get('new', 'openSupportTicket')->name('open');
         Route::post('create', 'storeSupportTicket')->name('store');

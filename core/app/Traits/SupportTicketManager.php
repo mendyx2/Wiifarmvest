@@ -18,42 +18,12 @@ trait SupportTicketManager
     protected $allowedExtension = ['jpg', 'png', 'jpeg', 'pdf', 'doc', 'docx'];
     protected $userType;
     protected $user = null;
-    protected $layout = null;
     protected $column;
     protected $apiRequest = false;
 
-    public function supportTicket()
-    {
-        $user = $this->user;
-        if (!$user) {
-            abort(404);
-        }
-        $pageTitle = "Support Tickets";
-        $supports = SupportTicket::where($this->column, $user->id)->orderBy('id', 'desc')->paginate(getPaginate());
-        if($this->apiRequest){
-            $notify[] = 'Support ticket data';
-            return response()->json([
-                'remark'=>'tickets',
-                'status'=>'success',
-                'message'=>['success'=>$notify],
-                'data'=>[
-                    'tickets'=>$supports
-                ]
-            ]);
-        }
-        return view("Template::$this->userType" . '.support.index', compact('supports', 'pageTitle')); 
-    }
-
-    public function openSupportTicket()
-    {
-        $user = $this->user;
-
-        if (!$user) {
-            return to_route('home');
-        }
-        $pageTitle = "Open Ticket";
-        return view("Template::$this->userType" . '.support.create', compact('pageTitle', 'user'));
-    }
+    // The ticket list, new-ticket and ticket pages are each controller's own
+    // (TicketController for members, Admin\SupportTicketController); the
+    // Blade versions that were here are gone (notes Step 119).
 
     public function storeSupportTicket(Request $request)
     {
@@ -83,7 +53,11 @@ trait SupportTicketManager
         $column             = $this->column;
         $user               = $this->user;
         $ticket->$column    = $user->id;
-        $ticket->ticket     = rand(100000, 999999);
+        // rand() alone could repeat a number, and the member's link opens a ticket by its number
+        do {
+            $number = random_int(100000, 999999);
+        } while (SupportTicket::where('ticket', $number)->exists());
+        $ticket->ticket     = $number;
         $ticket->name       = $user->fullname;
         $ticket->email      = $user->email;
         $ticket->subject    = $request->subject;
@@ -135,75 +109,6 @@ trait SupportTicketManager
 
         return to_route($this->redirectLink, $ticket->ticket)->withNotify($notify);
     }
-
-    public function viewTicket($ticket)
-    {
-        $user      = $this->user;
-        $column    = $this->column;
-        $pageTitle = "View Ticket";
-        $userId    = 0;
-        $layout    = $this->layout;
-
-        $myTicket = SupportTicket::where('ticket', $ticket)->orderBy('id', 'desc')->first();
-
-        if (!$myTicket) {
-            if ($this->apiRequest) {
-                $notify[] = 'Ticket not found';
-                return response()->json([
-                    'remark'=>'ticket_not_found',
-                    'status'=>'error',
-                    'message'=>['error'=>$notify],
-                ]);
-            }
-            abort(404);
-        }
-
-        if ($myTicket->$column > 0) {
-            if ($user) {
-                $userId = $user->id;
-            } else {
-                if ($this->apiRequest) {
-                    $notify[] = 'Unauthorized user';
-                    return response()->json([
-                        'remark'=>'unauthorized_user',
-                        'status'=>'error',
-                        'message'=>['error'=>$notify],
-                    ]);
-                }
-                return to_route($this->userType . '.login');
-            }
-        }
-
-        $myTicket = SupportTicket::where('ticket', $ticket)->where($this->column, $userId)->orderBy('id', 'desc')->first();
-        if (!$myTicket) {
-            if ($this->apiRequest) {
-                $notify[] = 'Ticket not found';
-                return response()->json([
-                    'remark'=>'ticket_not_found',
-                    'status'=>'error',
-                    'message'=>['error'=>$notify],
-                ]);
-            }
-            abort(404);
-        }
-        $messages = SupportMessage::where('support_ticket_id', $myTicket->id)->with('ticket', 'admin', 'attachments')->orderBy('id', 'desc')->get();
-
-        if ($this->apiRequest) {
-            $notify[] = 'Support ticket view';
-            return response()->json([
-                'remark'=>'ticket_view',
-                'status'=>'success',
-                'message'=>['success'=>$notify],
-                'data'=>[
-                    'my_ticket'=>$myTicket,
-                    'messages'=>$messages,
-                ]
-            ]);
-        }
-
-        return view("Template::$this->userType" . '.support.view', compact('myTicket', 'messages', 'pageTitle', 'user', 'layout'));
-    }
-
 
     public function replyTicket(Request $request, $id)
     {
@@ -334,21 +239,26 @@ trait SupportTicketManager
         return 200;
     }
 
+    /** The largest attachment, as shown on the forms: 10 MB, or less when PHP allows less. */
+    protected function attachmentLimit(): string
+    {
+        $php = ini_get('upload_max_filesize');
+        return $php && ini_parse_quantity($php) < 10 * 1024 * 1024 ? convertToReadableSize($php) : '10MB';
+    }
+
     protected function validation($request)
     {
-        $this->files = $request->file('attachments');
+        $this->files = (array) $request->file('attachments');
 
+        // There was no size limit; at most 5 files of 10 MB each
         return [
-            'attachments' => [
-                function ($attribute, $value, $fail) {
-                    foreach ($this->files as $file) {
-                        $ext = strtolower($file->getClientOriginalExtension());
-                        if (!in_array($ext, $this->allowedExtension)) {
-                            return $fail("Only png, jpg, jpeg, pdf, doc, docx files are allowed");
-                        }
-                    }
-                    if (count($this->files) > 5) {
-                        return $fail("Maximum 5 files can be uploaded");
+            'attachments'   => ['nullable', 'array', 'max:5'],
+            'attachments.*' => [
+                'file',
+                'max:10240',
+                function ($attribute, $file, $fail) {
+                    if (!in_array(strtolower($file->getClientOriginalExtension()), $this->allowedExtension, true)) {
+                        $fail('Only png, jpg, jpeg, pdf, doc, docx files are allowed');
                     }
                 },
             ],
@@ -421,7 +331,12 @@ trait SupportTicketManager
 
     public function ticketDownload($attachmentId)
     {
-        $attachment = SupportAttachment::find(decrypt($attachmentId));
+        // A link that was changed or made with another app key is "not found", not a server error
+        try {
+            $attachment = SupportAttachment::find(decrypt($attachmentId));
+        } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+            $attachment = null;
+        }
         if (!$attachment) {
             if ($this->apiRequest) {
                 $notify[] = 'Attachment not found';
@@ -433,14 +348,10 @@ trait SupportTicketManager
             }
             abort(404);
         }
-        $file = $attachment->attachment;
-        $path = getFilePath('ticket');
-        $fullPath = $path . '/' . $file;
-        $title = slug($attachment->supportMessage->ticket->subject);
-        $ext = pathinfo($file, PATHINFO_EXTENSION);
-        $mimetype = mime_content_type($fullPath);
-        header('Content-Disposition: attachment; filename="' . $title . '.' . $ext . '";');
-        header("Content-Type: " . $mimetype);
-        return readfile($fullPath);
+        $file  = $attachment->attachment;
+        $title = slug($attachment->supportMessage->ticket->subject) ?: 'attachment';
+
+        // From the private folder (404 when the file is missing)
+        return \App\Support\PrivateFiles::respond(getFilePath('ticket') . '/' . $file, true, $title . '.' . pathinfo($file, PATHINFO_EXTENSION));
     }
 }

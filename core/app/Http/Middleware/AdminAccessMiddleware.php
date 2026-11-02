@@ -29,6 +29,15 @@ class AdminAccessMiddleware
             return redirect()->route('admin.login');
         }
 
+        // A deactivated admin is signed out on their next request
+        if ($admin->is_active === false) {
+            Auth::guard('admin')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+            $notify[] = ['error', 'Your admin account has been deactivated.'];
+            return redirect()->route('admin.login')->withNotify($notify);
+        }
+
         if (!self::allows($admin, (string) $request->route()?->getName(), $request->method())) {
             abort(403, 'You do not have permission to access this page.');
         }
@@ -65,6 +74,29 @@ class AdminAccessMiddleware
             // route, not crash it
             return false;
         }
+    }
+
+    /**
+     * What a permission opens, from the access map: the route patterns that
+     * need it and with which methods ("view" for GET, "change" for the rest,
+     * "all" when the method does not matter). Empty: granting it opens nothing.
+     *
+     * @return list<array{pattern: string, access: string}>
+     */
+    public static function grantedBy(string $permission): array
+    {
+        $opens = [];
+        foreach (config('admin_access.permissions') as $pattern => $needs) {
+            if (is_array($needs)) {
+                $methods = array_keys(array_filter($needs, fn ($p) => strcasecmp($p, $permission) === 0));
+                if ($methods) {
+                    $opens[] = ['pattern' => $pattern, 'access' => count($methods) === count($needs) ? 'all' : (in_array('GET', $methods, true) ? 'view' : 'change')];
+                }
+            } elseif (strcasecmp($needs, $permission) === 0) {
+                $opens[] = ['pattern' => $pattern, 'access' => 'all'];
+            }
+        }
+        return $opens;
     }
 
     /**

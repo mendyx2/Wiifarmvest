@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\User;
 
+use App\Support\PrivateFiles;
 use App\Models\Pin;
 use App\Models\Form;
 use App\Models\User;
@@ -266,7 +267,7 @@ class UserController extends Controller
         $deposits  = auth()->user()->deposits()->searchable(['trx'])->with(['gateway'])->orderBy('id', 'desc')->paginate(getPaginate())->withQueryString();
 
         // Migrated to React + Inertia (resources/js/Pages/User/DepositHistory.tsx).
-        // Legacy view: Template::user.deposit_history
+        // Was the Blade view Template::user.deposit_history (deleted)
         return Inertia::render('User/DepositHistory', [
             'deposits' => $deposits->through(fn ($deposit) => [
                 'id'            => $deposit->id,
@@ -286,6 +287,14 @@ class UserController extends Controller
             ]),
             'search'     => (string) $request->search,
             'depositUrl' => route('user.deposit.index'),
+            // USDT deposits still waiting for their payment (the list above leaves
+            // initiated deposits out), so a member can get back to the payment page
+            'openUsdt'   => \App\Models\UsdtInvoice::with('deposit:id,trx,status,user_id,created_at')
+                ->whereNull('transfer_id')
+                ->whereHas('deposit', fn ($q) => $q->where('user_id', auth()->id())->where('status', Status::PAYMENT_INITIATE)->where('created_at', '>=', now()->subDays((int) config('usdt.claim_days', 7))))
+                ->latest('id')->take(5)->get()
+                ->map(fn ($i) => ['trx' => $i->deposit->trx, 'usdt' => \App\Services\Usdt\UsdtPayments::format($i->units), 'expired' => $i->expires_at->isPast(), 'url' => route('user.deposit.usdt', $i->deposit->trx)])
+                ->values(),
         ])->withViewData(compact('pageTitle'));
     }
 
@@ -299,7 +308,7 @@ class UserController extends Controller
         $pageTitle = '2FA Security';
 
         // Migrated to React + Inertia (resources/js/Pages/User/TwoFactor.tsx).
-        // Legacy view: Template::user.twofactor
+        // Was the Blade view Template::user.twofactor (deleted)
         return Inertia::render('User/TwoFactor', [
             'enabled'    => (bool) $user->ts,
             'secret'     => $user->ts ? null : $secret,
@@ -364,7 +373,7 @@ class UserController extends Controller
         $transactions = Transaction::where('user_id', auth()->id())->searchable(['trx'])->filter(['trx_type', 'remark'])->orderBy('id', 'desc')->paginate(getPaginate())->withQueryString();
 
         // Migrated to React + Inertia (resources/js/Pages/User/Transactions.tsx).
-        // Legacy view: Template::user.transactions
+        // Was the Blade view Template::user.transactions (deleted)
         return Inertia::render('User/Transactions', [
             'transactions' => $transactions->through(fn ($trx) => [
                 'id'          => $trx->id,
@@ -406,7 +415,7 @@ class UserController extends Controller
         $guarantor        = $guarantorRequest?->guarantor;
 
         // Migrated to React + Inertia (resources/js/Pages/User/KycForm.tsx).
-        // Legacy view: Template::user.kyc.form
+        // Was the Blade view Template::user.kyc.form (deleted)
         return Inertia::render('User/KycForm', [
             'rejectionReason' => $user->kyc_rejection_reason,
             'fields'          => FormPresenter::fields($form?->id),
@@ -457,7 +466,7 @@ class UserController extends Controller
         $guarantor = $guarantorRequest?->guarantor;
 
         // Migrated to React + Inertia (resources/js/Pages/User/KycInfo.tsx).
-        // Legacy view: Template::user.kyc.info
+        // Was the Blade view Template::user.kyc.info (deleted)
         return Inertia::render('User/KycInfo', [
             'state'           => $state,
             'rejectionReason' => $user->kyc_rejection_reason,
@@ -586,7 +595,7 @@ class UserController extends Controller
                         ->paginate(getPaginate());
 
         // Migrated to React + Inertia (resources/js/Pages/User/GuarantorRequests.tsx).
-        // Legacy view: Template::user.kyc.guarantor_requests
+        // Was the Blade view Template::user.kyc.guarantor_requests (deleted)
         return Inertia::render('User/GuarantorRequests', [
             // Only the requester's name and username: never their KYC details.
             'requests' => $incoming->through(fn ($req) => [
@@ -728,32 +737,29 @@ class UserController extends Controller
         return ['success' => true, 'message' => 'Token saved successfully'];
     }
 
+    /**
+     * The member's own documents (KYC files, deposit proofs), from the links
+     * their pages carry. Download looked in core/public, where the files
+     * never were, and "View" had no method behind its route; both failed.
+     */
     public function downloadAttachment($fileHash)
     {
+        return PrivateFiles::respond($this->attachmentPath($fileHash), true);
+    }
+
+    public function viewAttachment($fileHash)
+    {
+        return PrivateFiles::respond($this->attachmentPath($fileHash), false);
+    }
+
+    /** The links carry the file's path, encrypted, so it cannot be changed or guessed. */
+    private function attachmentPath(string $fileHash): string
+    {
         try {
-            $filePath = decrypt($fileHash);
-        } catch (\Exception $e) {
-            abort(403, 'Invalid file reference');
+            return (string) decrypt($fileHash);
+        } catch (\Exception) {
+            abort(404);
         }
-
-        // Resolve relative to public/ (where uploaded assets live)
-        $absolutePath = public_path($filePath);
-        $realPath     = realpath($absolutePath);
-        $allowedBase  = realpath(public_path());
-
-        if (!$realPath || !$allowedBase || !str_starts_with($realPath, $allowedBase . DIRECTORY_SEPARATOR)) {
-            abort(403, 'Access denied');
-        }
-
-        if (!file_exists($realPath)) {
-            $notify[] = ['error', 'File does not exist'];
-            return back()->withNotify($notify);
-        }
-
-        $extension = pathinfo($realPath, PATHINFO_EXTENSION);
-        $filename  = slug(gs('site_name')) . '-attachment.' . $extension;
-
-        return response()->download($realPath, $filename);
     }
 
 
@@ -784,7 +790,7 @@ class UserController extends Controller
         NotificationLog::where('user_id', $user->id)->where('user_read', false)->update(['user_read' => true]);
 
         // Migrated to React + Inertia (resources/js/Pages/User/Notifications.tsx).
-        // Legacy view: Template::user.notifications
+        // Was the Blade view Template::user.notifications (deleted)
         return Inertia::render('User/Notifications', compact('notifications'))->withViewData(compact('pageTitle'));
     }
 

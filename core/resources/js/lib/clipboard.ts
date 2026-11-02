@@ -15,6 +15,19 @@ function copyWithTextarea(text: string): boolean {
 }
 
 /**
+ * Copy text to the clipboard: the Clipboard API (HTTPS only), else
+ * execCommand('copy'). False when neither worked.
+ */
+export async function copyText(text: string): Promise<boolean> {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        return copyWithTextarea(text);
+    }
+}
+
+/**
  * Copy text to the clipboard. `copied` is true for a moment afterwards so
  * the button can show a tick. Uses the Clipboard API (HTTPS only) and falls
  * back to execCommand('copy') like the old jQuery code did.
@@ -25,11 +38,7 @@ export function useCopy(resetAfterMs = 1500) {
 
     const copy = useCallback(
         async (text: string): Promise<boolean> => {
-            try {
-                await navigator.clipboard.writeText(text);
-            } catch {
-                if (!copyWithTextarea(text)) return false;
-            }
+            if (!(await copyText(text))) return false;
             setCopied(true);
             clearTimeout(timer.current);
             timer.current = setTimeout(() => setCopied(false), resetAfterMs);

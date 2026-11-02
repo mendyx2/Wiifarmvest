@@ -28,7 +28,8 @@ Route::namespace('Auth')->group(function () {
 Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->group(function () {
     Route::controller('AdminController')->group(function () {
         Route::get('dashboard', 'dashboard')->name('dashboard');
-        Route::get('dashboard1', 'parnerDashboard')->name('dashboard1');
+        // A second dashboard pointed at a method that does not exist
+        Route::get('dashboard1', fn () => to_route('admin.dashboard'))->name('dashboard1');
         Route::get('chart/deposit-withdraw', 'depositAndWithdrawReport')->name('chart.deposit.withdraw');
         Route::get('chart/transaction', 'transactionReport')->name('chart.transaction');
         Route::get('profile', 'profile')->name('profile');
@@ -84,23 +85,28 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
 
     
 
+    // Staff: one page each, with dialogs (Pages/Admin/Staff/*). The old create / edit / show
+    // pages (and bulk-create for permissions) redirect to the list.
     Route::middleware(['admin.role:super-admin'])->group(function () {
-        Route::resource('admins', \App\Http\Controllers\Admin\AdminUserController::class);
-        Route::post('admins/{user}/toggle-status', [\App\Http\Controllers\Admin\AdminUserController::class, 'toggleStatus'])
-            ->name('admins.toggle-status');
-    
-           
-        Route::resource('roles', \App\Http\Controllers\Admin\RoleController::class);
-        //Route::resource('permissions', \App\Http\Controllers\Admin\PermissionController::class);
-    
+        $toList = fn (string $list) => fn () => to_route($list);
 
-    // Permissions Routes
-   
-        Route::resource('permissions', \App\Http\Controllers\Admin\PermissionController::class);
-        Route::get('permissions/bulk/create', [\App\Http\Controllers\Admin\PermissionController::class, 'bulkCreate'])
-            ->name('permissions.bulk.create');
-        Route::post('permissions/bulk/store', [\App\Http\Controllers\Admin\PermissionController::class, 'bulkStore'])
-            ->name('permissions.bulk.store');
+        Route::resource('admins', \App\Http\Controllers\Admin\AdminUserController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('admins/create', $toList('admin.admins.index'))->name('admins.create');
+        Route::get('admins/{admin}', $toList('admin.admins.index'))->name('admins.show');
+        Route::get('admins/{admin}/edit', $toList('admin.admins.index'))->name('admins.edit');
+        Route::post('admins/{user}/toggle-status', [\App\Http\Controllers\Admin\AdminUserController::class, 'toggleStatus'])->name('admins.toggle-status');
+
+        Route::resource('roles', \App\Http\Controllers\Admin\RoleController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('roles/create', $toList('admin.roles.index'))->name('roles.create');
+        Route::get('roles/{role}', $toList('admin.roles.index'))->name('roles.show');
+        Route::get('roles/{role}/edit', $toList('admin.roles.index'))->name('roles.edit');
+
+        Route::resource('permissions', \App\Http\Controllers\Admin\PermissionController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('permissions/create', $toList('admin.permissions.index'))->name('permissions.create');
+        Route::get('permissions/bulk/create', $toList('admin.permissions.index'))->name('permissions.bulk.create');
+        Route::post('permissions/bulk/store', [\App\Http\Controllers\Admin\PermissionController::class, 'store'])->name('permissions.bulk.store');
+        Route::get('permissions/{permission}', $toList('admin.permissions.index'))->name('permissions.show');
+        Route::get('permissions/{permission}/edit', $toList('admin.permissions.index'))->name('permissions.edit');
     });
 
 
@@ -281,6 +287,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('details/{id}', 'details')->name('details');
         Route::post('reject', 'reject')->name('reject');
         Route::post('approve/{id}', 'approve')->name('approve');
+        Route::get('usdt-payments', 'usdtPayments')->name('usdt');
     });
 
 
@@ -616,7 +623,8 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
         Route::get('/', 'index')->name('index');
         Route::get('create', 'create')->name('create');
         Route::post('store', 'store')->name('store');
-        Route::post('buy-shares', 'buyShares')->name('buy-shares');
+        // "Buy shares" for a member is on the member's page (admin.users.buy.shares)
+        Route::get('preview', 'preview')->name('preview');
         Route::post('cancel/{batchId}', 'cancel')->name('cancel');
         Route::post('reverse/{batchId}', 'reverse')->name('reverse');
         Route::get('history', 'history')->name('history');
@@ -652,7 +660,7 @@ Route::middleware(['admin','admin.access','XssSanitizer','admin.action.log'])->g
     // Direct notices — admin-composed personal notices sent to a single user
     Route::controller(\App\Http\Controllers\Admin\AdminNoticeController::class)->prefix('notices')->name('notices.')->group(function () {
         Route::get('/',        'index')->name('index');
-        Route::get('/create',  'create')->name('create');
+        Route::get('/create',  fn () => to_route('admin.notices.index'))->name('create'); // the form is a dialog on the list
         Route::post('/',       'store')->name('store');
     });
 

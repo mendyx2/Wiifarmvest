@@ -63,7 +63,7 @@ class WithdrawController extends Controller
         $user = auth()->user();
 
         // Migrated to React + Inertia (resources/js/Pages/User/Withdraw.tsx).
-        // Legacy view: Template::user.withdraw.methods
+        // Was the Blade view Template::user.withdraw.methods (deleted)
         return Inertia::render('User/Withdraw', [
             // checkWithdrawalBlock() above already redirects blocked users; the page
             // keeps the notice too, as the Blade view did.
@@ -151,7 +151,7 @@ class WithdrawController extends Controller
         $pageTitle = 'Withdraw Preview';
 
         // Migrated to React + Inertia (resources/js/Pages/User/WithdrawPreview.tsx).
-        // Legacy view: Template::user.withdraw.preview
+        // Was the Blade view Template::user.withdraw.preview (deleted)
         return Inertia::render('User/WithdrawPreview', [
             'amount'      => showAmount($withdraw->amount),
             'charge'      => showAmount($withdraw->charge),
@@ -280,7 +280,7 @@ class WithdrawController extends Controller
         $user   = auth()->user();
 
         // Migrated to React + Inertia (resources/js/Pages/User/WithdrawHistory.tsx).
-        // Legacy view: Template::user.withdraw.log
+        // Was the Blade view Template::user.withdraw.log (deleted)
         return Inertia::render('User/WithdrawHistory', [
             'withdraws' => $withdraws->through(fn ($withdraw) => [
                 'id'            => $withdraw->id,

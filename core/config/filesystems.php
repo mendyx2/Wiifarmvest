@@ -16,6 +16,13 @@ return [
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
+    | Members' documents (KYC files, payment proofs, ticket attachments):
+    | App\Support\PrivateFiles. Never inside a public folder. Point it at a
+    | persistent volume in hosting where the app folder is rebuilt on deploy.
+    */
+    'private_uploads' => env('PRIVATE_UPLOADS_PATH', storage_path('app/private/uploads')),
+
+    /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------

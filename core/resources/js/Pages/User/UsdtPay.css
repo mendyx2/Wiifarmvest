@@ -1,0 +1,44 @@
+/* Pages/User/UsdtPay.tsx — the dep-* frame comes from resources/css/dashboard.css */
+
+.usdt-layout { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; }
+.usdt-pay-card, .usdt-rules { padding: 22px; }
+
+.usdt-label { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #6B7280; margin: 0 0 6px; }
+.usdt-amount { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.usdt-amount span { font-size: 2rem; font-weight: 800; color: #111827; font-variant-numeric: tabular-nums; }
+.usdt-amount small { font-size: 1rem; font-weight: 700; color: #16A34A; }
+.usdt-for { font-size: .82rem; color: #4B5563; margin: 4px 0 0; }
+
+.usdt-address { display: flex; align-items: center; gap: 8px; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 12px; }
+.usdt-address code { flex: 1; min-width: 0; font-size: .9rem; color: #111827; word-break: break-all; background: none; }
+
+.usdt-copy { flex-shrink: 0; border: 1px solid #D1D5DB; background: #fff; color: #166534; border-radius: 8px; padding: 4px 10px; font-size: .78rem; font-weight: 600; }
+.usdt-copy:hover, .usdt-copy:focus-visible { background: #F0FDF4; border-color: #16A34A; outline: none; }
+
+.usdt-qr { display: block; margin: 16px auto 4px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 6px; background: #fff; }
+
+.usdt-timer { margin: 14px 0 0; font-size: .85rem; font-weight: 600; color: #92400E; background: #FFFBEB; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.usdt-timer.usdt-late { color: #7F1D1D; background: #FEF2F2; font-weight: 500; display: block; }
+.usdt-checking { font-weight: 500; color: #4B5563; }
+
+.usdt-rules h6 { font-weight: 700; color: #111827; }
+.usdt-rules ul { list-style: disc; padding-left: 18px; margin: 0; font-size: .85rem; color: #374151; }
+.usdt-rules li { margin-bottom: 6px; line-height: 1.5; }
+.usdt-rules .form-label { font-weight: 600; color: #111827; font-size: .88rem; }
+.usdt-rules small { display: block; line-height: 1.4; margin-top: 4px; }
+.usdt-submit { margin: 12px 0 0; }
+
+.usdt-state { display: flex; gap: 14px; align-items: flex-start; border-radius: 16px; padding: 18px 20px; }
+.usdt-state > i { font-size: 2rem; }
+.usdt-state p { margin: 4px 0; font-size: .88rem; }
+.usdt-ok { background: #F0FDF4; color: #14532D; }
+.usdt-wait { background: #FFFBEB; color: #78350F; }
+.usdt-bad { background: #FEF2F2; color: #7F1D1D; }
+
+@media (max-width: 768px) {
+    .usdt-layout { grid-template-columns: 1fr; }
+    .usdt-amount span { font-size: 1.6rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .usdt-checking .la-spin { animation: none; }
+}
