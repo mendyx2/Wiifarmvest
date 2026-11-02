@@ -7193,6 +7193,69 @@ Both run with `withoutOverlapping()` and log to `storage/logs/`.
 - **Browser:** no front-end code changed. The stockist suites pass
   (`phase7d2`: 51 checks; `phase4e`: 38).
 
+### Step 125: Paying the enrollment bonus to stockists activated before Step 124
+
+**The owner's decision:** pay the stockists activated before the bonus was
+switched on, too.
+
+**This is not done by deploying.** Paying them moves real money, from the
+live database. It is one command, run on the server after `php artisan
+migrate`. The command first shows every payment it will make.
+
+```bash
+php artisan migrate                                       # adds stockists.enrollment_bonus_paid_at (Step 124)
+php artisan stockist:enrollment-bonus --list              # who has not been paid
+php artisan stockist:enrollment-bonus --all --dry-run     # every payee and amount; nothing is paid
+php artisan stockist:enrollment-bonus --all               # shows the same, asks "Pay ₦X now?", then pays
+```
+
+**What `--all` does:**
+
+- Every active stockist without a paid bonus, oldest first, paid exactly
+  as at activation (Step 124): ten generations, Basic or Mega amounts,
+  banned members not paid.
+- **Deactivated stockists are left out.** They may have been reversed or
+  refunded. The command names them; `--include-inactive` adds them.
+- **The upline is today's referral chain**, not the chain at the time the
+  stockist was activated. If a member's referrer was changed since, the
+  new referrer is paid.
+- **The store's PV** goes up the matrix tree now, as at activation. It
+  can complete awards that depend on PV.
+- **Each stockist is paid in one transaction.** A stockist that fails
+  pays nothing; the others go on, and running `--all` again pays only
+  what is left.
+- **Never twice:** a second run pays nothing. `--force` skips the
+  question (for scripts).
+
+**Code:**
+
+- `StockistEnrollmentBonusService::plan()` works out who would be paid
+  what. `process()` pays exactly that plan, so the dry run and the payment
+  cannot differ.
+- `PayStockistEnrollmentBonus` gained `--all`, `--include-inactive`,
+  `--dry-run` and `--force`. A single stockist id also shows its plan and
+  asks before paying.
+
+**Verification** (`p124b_check.php`):
+
+- **The four test stockists:** one Mega, two Basic, and one deactivated.
+  Their upline chain is demo ← bola_ade ← chi ← dan.
+- **`--list`:** all four, with the deactivated one marked.
+- **`--all --dry-run`:** three stockists, six payments, ₦430,000. The
+  deactivated one is named as left out. No balance changed and no
+  transaction was written.
+- **`--all` with the question unanswered:** nothing paid.
+- **`--all --force`:**
+  - paid exactly the dry run: bola_ade +₦150,000, chi +₦150,000
+    (₦100,000 + ₦50,000), dan +₦130,000;
+  - six transactions;
+  - stockists 1, 2 and 4 marked paid; stockist 3 not.
+- **`--all` again:** "No unpaid stockists to pay"; no balance changed.
+- **The deactivated one, previewed:** it has no upline, so ₦0.
+- **Step 124's check passes again** with the refactored service: the same
+  amounts at activation, never twice, the loop, and the failure and retry
+  (now confirmed with `--force`).
+
 ## Part 4: Working on the front end
 
 ### Run locally
