@@ -6942,6 +6942,104 @@ environment):**
   `config:cache` succeed; the route-name scan shows only the 21 known
   `ipn.` references.
 
+### Step 123: Repository structure
+
+**Goal:** every file where a developer would look for it. Nothing about
+how the site behaves changes, apart from three small bug fixes found on
+the way (listed at the end).
+
+**Moved:**
+
+| Was | Now | Why |
+|---|---|---|
+| `notes.md`, `Wiifarm_Remediation_Action_Plan.md`, `WIIFARM_Executive_Audit_Summary_Action_Plan.{docx,html,pdf}` (repository root) | `docs/remediation-notes.md`, `docs/remediation-action-plan.md`, `docs/audit/` | Internal documents next to the deployment files. `docs/` is left out of the Vercel upload as one folder, and never served (the router only serves `assets/` and `build/`). |
+| `core/resources/js/notes.md` (this file) | `docs/frontend-notes.md` | Documentation, not source; the two change logs now sit together and link to each other. |
+| `core/database/*.sql` (8 scripts) | `core/database/sql/`, with a README | Next to `migrations/` and `seeders/`. The README maps each script to the migration or seeder it mirrors. It also warns that the four `compensation_plan_*` scripts insert rows without checking, so they must run once only. |
+| `app/Http/Controllers/User/Stockist*Controller.php`, `StockTransferController.php` (6) | `app/Http/Controllers/User/Stockist/` (namespace `App\Http\Controllers\User\Stockist`) | The stockist area is its own section of the member site, like `User/Auth/`. |
+| `app/Http/Controllers/TicketController.php` | `app/Http/Controllers/User/TicketController.php` | It serves members only; the admin one is `Admin/SupportTicketController`. |
+
+Route names, URLs and React page names did not change; only the class
+names in `routes/user.php` and `routes/web.php` did.
+
+**Removed:**
+
+- **`core/public/assets/`** (34 files): copies of an e-mail template's
+  pictures and one stray flashcard image.
+  - The template links its pictures from its author's website.
+  - The site is served from the repository root, so `core/public` is never
+    served anyway.
+  - The empty `core/public/` folder stays (with `.gitkeep`) for Laravel's
+    tools.
+- **`app/Jobs/ProcessPodcast.php`:** Laravel's empty example job.
+- **`app/Services/MatrixRewardService.php`:** used nowhere, and would have
+  crashed if called (it creates a `UserEarning` record; no such model or
+  table exists).
+
+**Duplicate code merged:**
+
+- `lib/clipboard.ts` now exports `copyText()`: the Clipboard API, then the
+  hidden-textarea fallback. Its existing `useCopy()` hook uses it.
+- The USDT payment page (Step 122) had its own copy of that code, and so
+  did the ads page; both now use the shared one.
+
+**Added:** `README.md` at the root.
+
+- A map of the repository: which files the hosts need at the root, what
+  each folder in `core/` holds, and where uploads live.
+- How to install, build, type-check, test and migrate.
+- That the scheduler must run every minute.
+
+**Bugs found while checking, fixed:**
+
+| Before | Now |
+|---|---|
+| `App\Models\Investment` used the `HasFactory` trait without importing it: loading the class was a fatal error (anything using `User::investment` would crash). | Imported. |
+| `App\Models\Supply` used `Status` and `Attribute` without importing them: its status-badge attribute would crash. | Imported. |
+| A changed or invalid attachment link on a ticket (`/ticket/download/…`, also the admin's) was a server error (`DecryptException`). | "Not found" (404). |
+
+**For the owner:** two services are fully written but never called. They
+were kept, because whether to switch them on is a business decision:
+
+- **`StockistEnrollmentBonusService`:** the compensation plan's stockist
+  enrollment bonuses. Basic store: ₦50,000 for generation 1, ₦30,000 for
+  generation 2, ₦20,000 for generations 3–10. Mega store: ₦150,000,
+  ₦100,000, then ₦50,000. **These are never paid today.**
+- **`MatrixReconnectionService`:** separate from the reconnection job
+  (`ProcessDownlineReconnection`) that `matrix:dispatch-reconnections`
+  runs.
+
+Some console commands are not in the schedule and must be run by hand
+when wanted: `pool:distribute`, `leadership:process`,
+`matrix:dispatch-reconnections`, `matrix:fix-positions`, `ads:previews`.
+Whether the first two should be scheduled is the owner's call.
+
+**How the moves were checked:**
+
+- **Class references:** a script reads every PHP file in `app/` with PHP's
+  own tokenizer. It resolves each class name used with `new`, `::`,
+  `extends`, `implements`, `instanceof` and `catch` through the file's
+  namespace and imports, and fails if the class does not exist. It was
+  checked on a deliberately broken file first: it caught both mistakes.
+  - It found the missing `Controller` import in the moved
+    `TicketController`, and the two model bugs above.
+  - What it still reports are Laravel's facade aliases (`DB`, `URL`,
+    `Session`, `Auth`) and the app's own `Status` alias in
+    `config/app.php`; they exist at run time.
+- **Routes:**
+  - `route:list` shows every stockist and ticket route on the new
+    classes.
+  - Each of the 20 GET routes of the moved controllers was called through
+    the real router as a signed-in stockist: all answered with their
+    React page, a redirect, or 404 for a record that does not exist.
+- **Integration:**
+  - the admin ticket check (`p7f5b_check.php`) gives exactly the same
+    output as before;
+  - the USDT end-to-end check (`p8usdt_check.php`) passes unchanged.
+- **Builds and tests:** `route:cache`, `view:cache` and `config:cache`
+  succeed; the route-name scan shows only the 21 known `ipn.` references;
+  `tsc` passes; `npm run build` succeeds; PHPUnit: 19 tests pass.
+- **Regression:** 45 browser suites, 1430 checks, all pass.
+
 ## Part 4: Working on the front end
 
 ### Run locally
