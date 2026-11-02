@@ -58,8 +58,9 @@ php vendor/bin/phpunit  # tests
 php artisan migrate
 ```
 
-The server must run `php artisan schedule:run` every minute (payments,
-awards, USDT scan, backups: `core/routes/console.php`).
+The server must run `php artisan schedule:run` every minute: payments,
+awards, matching and leadership bonuses, the quarterly Global Share Pool, the
+USDT scan and backups all run from it (`core/routes/console.php`).
 
 ## Where to read more
 

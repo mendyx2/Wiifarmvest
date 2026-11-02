@@ -58,3 +58,18 @@ Schedule::command('usdt:scan')
     ->everyMinute()
     ->withoutOverlapping(5)
     ->appendOutputTo(storage_path('logs/usdt-scan.log'));
+
+// Global Share Pool: on the 1st of January, April, July and October, pay out the
+// quarter that just ended (no more money can come into it after it closes).
+// Re-running is safe: a paid period is never paid again.
+Schedule::command('pool:distribute --previous')
+    ->cron('17 1 1 1,4,7,10 *')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/pool-distribute.log'));
+
+// Leadership bonus: qualify new leaders and pay any matching bonus whose
+// leadership share was not paid at the time (each is paid once).
+Schedule::command('leadership:process')
+    ->hourlyAt(25)
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/leadership-process.log'));

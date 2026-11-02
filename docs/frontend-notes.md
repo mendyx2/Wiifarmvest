@@ -7040,6 +7040,159 @@ Whether the first two should be scheduled is the owner's call.
   `tsc` passes; `npm run build` succeeds; PHPUnit: 19 tests pass.
 - **Regression:** 45 browser suites, 1430 checks, all pass.
 
+### Step 124: Stockist enrollment bonus on; reconnection service; pool and leadership on the schedule
+
+**The owner's decisions:**
+
+1. Switch on the stockist enrollment bonus.
+2. Keep `MatrixReconnectionService`, or make a compatible version.
+3. Schedule `pool:distribute` and `leadership:process`.
+
+#### 1. Stockist enrollment bonus
+
+**What it pays.** When an admin activates a stockist (Admin → Stockists →
+Activate), ten generations of that member's upline are paid once, per the
+compensation plan:
+
+| Generation | Basic store (store type 2) | Mega store (store type 1) |
+|---|---|---|
+| 1 | ₦50,000 | ₦150,000 |
+| 2 | ₦30,000 | ₦100,000 |
+| 3–10, each | ₦20,000 | ₦50,000 |
+| Total if all ten are active | ₦240,000 | ₦650,000 |
+
+**The rules:**
+
+- **Generations:** generation 1 is the stockist's sponsor (`sponsor_user_id`,
+  else the member who referred them); each next one is whoever referred
+  the last.
+- **Banned members** are not paid, and their generation still counts (no
+  compression), as the leadership bonus does.
+- **The chain stops early** if it runs out, or loops back to someone
+  already paid.
+- **The store's PV** (3,000 or 10,000) goes up the matrix tree for
+  recognition awards, as the plan's service already did.
+
+**What changed in the service** (`StockistEnrollmentBonusService`; it
+existed but nothing called it):
+
+| Before | Now |
+|---|---|
+| No record of payment: calling it twice paid twice. | `stockists.enrollment_bonus_paid_at` (new migration) is claimed in the same database transaction as the payments: a stockist is paid once, ever. |
+| Raised `balance` directly and wrote its own transaction rows. | Pays through `WalletService::credit()`, like every other bonus: the member row is locked, one transaction row per payee, all with one `trx`. |
+| Remark `stockist_bonus`, which the financial report already uses for the per-product stockist bonus. | Its own remark, `stockist_enrollment_bonus`, listed in the financial report as "Stockist enrollment bonus (upline)". |
+| Paid banned members. | Skips them (counted in the result). |
+
+**Activation:**
+
+- The bonus is paid right after the activation is saved, and the admin's
+  message says how much was paid and to how many members.
+- If the payment fails, the activation stays. The admin sees a warning with
+  the command to run.
+
+**`php artisan stockist:enrollment-bonus {id}`:**
+
+- pays one stockist by hand, and never twice;
+- `--list` shows every stockist without a paid bonus.
+
+**For the owner: stockists activated before today were not paid**, and are
+not paid automatically. `--list` shows them; paying them is your decision,
+one command per stockist.
+
+#### 2. MatrixReconnectionService: a compatible, working version
+
+**What was there:**
+
+- **The service:** an older draft of the reconnection rules (half commented
+  out, with `dd()` debug lines). Nothing called it.
+- **`ProcessDownlineReconnection` (job):** called a service it never
+  imported, so it failed every time.
+- **`matrix:dispatch-reconnections` (command):** hard-wired to member #37,
+  and called an undefined variable, so it failed every time.
+- **The real rules** live in `MatrixPlacementService::reconnectImediateDownline()`
+  and `::reconnectDownline()`. The cron URLs `/recon/{stage}`,
+  `/reconAll/{stage}` and `/recStart/{stage}` run them.
+
+**Now:**
+
+- **`MatrixReconnectionService`** runs exactly those rules:
+  - `reconnectImmediate($stage)` and `reconnectAll($stage)`: the same loops
+    as the cron URLs;
+  - `reconnectMatrix($matrix)`: one matrix;
+  - `reconnectDownline(User, MatrixStage)`: keeps the old draft's
+    signature.
+- **The cron URLs** call the service, so there is one path.
+- **The job** reconnects one matrix through the service.
+- **The command** needs `--stage=` (and takes `--immediate`); it does what
+  the URLs do.
+
+**Proof that nothing changed for the cron URLs:**
+
+- The test sets up a member whose two stage-1 children both reached stage 2.
+- On copies of the same data, the old `CronController` code (verbatim)
+  and the new service leave **identical** matrix tables.
+- The member's stage-2 left and right are their two children, and the
+  children point back to them.
+- The URL handlers, the job and the command give the same result.
+
+#### 3. On the schedule (`routes/console.php`)
+
+| Command | When | Why then |
+|---|---|---|
+| `pool:distribute --previous` | 01:17 on 1 January, 1 April, 1 July and 1 October | Pays out the quarter that just ended. Run on a quarter's last day, money credited after it would have gone into a fresh pool row that nothing ever paid out. |
+| `leadership:process` | Every hour at :25 | Leadership shares are paid when each matching bonus is paid. This catches any that were missed and qualifies new leaders. Each matching bonus is claimed before paying, so a re-run pays nothing twice. |
+
+Both run with `withoutOverlapping()` and log to `storage/logs/`.
+
+**`pool:distribute` was made safe to run on its own:**
+
+| Before | Now |
+|---|---|
+| It checked "not distributed yet", then paid, without a lock: two runs at once could both pay every leader. | The period's pool row is locked and checked again inside the payment transaction; a second run answers `already_distributed`. |
+| Asking for a past period created an empty pool row. | A named period is only looked up. |
+| No way to say "the quarter that just ended". | `--previous` (what the schedule uses). |
+
+**For the owner (not changed):**
+
+- The pool pays everyone holding a qualifying award, including banned
+  members.
+- If one payment fails, that member's share is not paid to anyone else,
+  and the period is still marked distributed.
+
+#### Verification
+
+- **End-to-end on the database** (`p124_check.php`):
+  1. **Activating a Mega stockist** through the admin action pays, from
+     generation 1:
+     - 150,000, then 100,000;
+     - 0 to the banned generation 3;
+     - 50,000 to each of generations 4–10;
+     - nothing to the 11th.
+
+     That is ₦600,000 in 9 transactions with one `trx`. The message says
+     "₦600,000.00 paid to 9 upline member(s) (1 banned, not paid)".
+  2. **Paying again:** the service returns nothing and the command says
+     "Already paid"; still 9 rows.
+  3. **A Basic stockist with a sponsor, and a referral loop:** 50,000,
+     30,000 and 20,000, then it stops at the loop. `--list` shows the
+     unpaid stockists.
+  4. **A failing payment:** the stockist stays active with a warning; the
+     command pays it afterwards.
+  5. **Reconnection:** as described above.
+  6. **Global Share Pool:** `--previous` pays the last quarter's ₦1,000 to
+     two qualifying leaders (500 each); a second run pays nothing; an old
+     period creates no row.
+  7. **Leadership:** `leadership:process` handles a pending matching bonus
+     once; a second run finds nothing.
+- **Checks:**
+  - every class reference in the changed files resolves;
+  - `route:cache`, `view:cache` and `config:cache` succeed;
+  - the route-name scan shows only the 21 known `ipn.` references;
+  - PHPUnit: 19 tests pass;
+  - `schedule:list` shows both new entries.
+- **Browser:** no front-end code changed. The stockist suites pass
+  (`phase7d2`: 51 checks; `phase4e`: 38).
+
 ## Part 4: Working on the front end
 
 ### Run locally

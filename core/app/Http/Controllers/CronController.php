@@ -20,6 +20,7 @@ use App\Models\UserStageProgress;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use App\Services\MatrixPlacementService;
+use App\Services\MatrixReconnectionService;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -146,21 +147,9 @@ class CronController extends Controller
     }
 
 
+    /** /recStart/{stage}: the whole downline of every active matrix on a stage (same as /reconAll). */
     public function recFire($stage_id){
-        
-
-        $stage_id = (int)$stage_id;
-        //$count = 0;
-        $row =[];
-        $matrix = Matrix::where('stage_id', $stage_id)
-            ->where('is_active', true)->get();
-            foreach($matrix as $mat) {
-                $this->matrixService->reconnectDownline($mat);
-                $row[] = $mat;
-            //$count++;
-           }
-          // dd($row);
- 
+        app(MatrixReconnectionService::class)->reconnectAll((int) $stage_id);
     }
    
     
@@ -190,30 +179,14 @@ class CronController extends Controller
          });    
     
     }
+    /** /recon/{stage}: reconnect the immediate downline of every matrix on a stage. */
     function reconnectImmediate($stage){
-        $stage_id = (int)$stage;
-        Matrix::where('stage_id', $stage_id)
-            ->chunk(50, function($matrix) {
-            foreach($matrix as $mat) {
-                if ($mat) {
-                    $this->matrixService->reconnectImediateDownline($mat);
-                }
-            }
-         });     
+        app(MatrixReconnectionService::class)->reconnectImmediate((int) $stage);
     }
 
+    /** /reconAll/{stage}: reconnect the whole downline of every active matrix on a stage. */
     function reconnectAll($stage){
-        $stage_id = (int)$stage;
-        Matrix::where('stage_id', $stage_id)
-            ->where('is_active', true)
-            ->chunk(50, function($matrix) {
-            foreach($matrix as $mat) { 
-                if ($mat) {
-                    $this->matrixService->reconnectDownline($mat);
-                }
-            }
-         });   
-        //dd($count);
+        app(MatrixReconnectionService::class)->reconnectAll((int) $stage);
     }
 
     /**

@@ -33,6 +33,7 @@ return [
         'affiliate_bonus'           => 'Affiliate bonus',
         'shares_commission'         => 'Shares (land) upline commission',
         'repurchase_award'          => 'Repurchase awards',
+        'stockist_enrollment_bonus' => 'Stockist enrollment bonus (upline)',
         'savings_service_fee'       => 'Commission share locked into savings (10%)',
         'referral_commission'       => 'Referral commission (matrix era)',
         'stageout_commission'       => 'Stage-out commission (matrix era)',

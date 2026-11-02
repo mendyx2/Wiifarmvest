@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
+use App\Constants\Status;
 use App\Models\CompensationReserveLedger;
 use App\Models\Stockist;
-use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\Log;
 /**
  * Stockist Enrollment Bonus Service
  *
- * Proposed Business Compensation Plan (Section 12, Page 7 & 8):
+ * Proposed Business Compensation Plan (Section 12, Page 7 & 8): when a member
+ * becomes a stockist, ten generations of their upline are paid once.
  *
  * BASIC STORE (₦3 Million / 3,000 PV):
  * - Gen 1: ₦50,000
@@ -23,9 +24,19 @@ use Illuminate\Support\Facades\Log;
  * - Gen 1: ₦150,000
  * - Gen 2: ₦100,000
  * - Gen 3 to 10: ₦50,000 each (Total = ₦650,000)
+ *
+ * Generation 1 is the stockist's sponsor (sponsor_user_id, else the member
+ * who referred them); each next generation is the one who referred the last.
+ * A banned member is not paid, and the generation still counts (no
+ * compression). The store's PV goes up the matrix tree for recognition awards.
+ *
+ * Paid once per stockist: stockists.enrollment_bonus_paid_at is claimed in the
+ * same database transaction as the payments (notes Step 124).
  */
 class StockistEnrollmentBonusService
 {
+    public const REMARK = 'stockist_enrollment_bonus';
+
     private const BASIC_SCHEDULE = [
         1  => 50000.00,
         2  => 30000.00,
@@ -52,87 +63,85 @@ class StockistEnrollmentBonusService
         10 => 50000.00,
     ];
 
-    public function process(Stockist $stockist, string $trx): void
+    public function __construct(private readonly WalletService $wallet)
+    {
+    }
+
+    /**
+     * Pay a stockist's enrollment bonuses.
+     *
+     * @return array{paid: int, total: float, skipped: int}|null  null when this
+     *   stockist's bonuses were already paid (nothing is paid twice)
+     */
+    public function process(Stockist $stockist, ?string $trx = null): ?array
     {
         $user = $stockist->user;
         if (!$user) {
-            return;
+            return null;
         }
 
-        $isMega   = $stockist->isMega();
-        $schedule = $isMega ? self::MEGA_SCHEDULE : self::BASIC_SCHEDULE;
+        $isMega    = $stockist->isMega();
+        $schedule  = $isMega ? self::MEGA_SCHEDULE : self::BASIC_SCHEDULE;
         $storeType = $isMega ? 'Mega Store (₦10M)' : 'Basic Store (₦3M)';
         $pvAmount  = $isMega ? 10000.00 : 3000.00;
+        $trx     ??= getTrx();
 
-        DB::transaction(function () use ($stockist, $user, $schedule, $storeType, $pvAmount, $trx) {
-            // First generation is the sponsor who onboarded the stockist
-            $sponsorId = $stockist->sponsor_user_id ?: $user->ref_by;
-            $current = $sponsorId ? User::find($sponsorId) : null;
+        return DB::transaction(function () use ($stockist, $user, $schedule, $storeType, $pvAmount, $trx) {
+            $claimed = Stockist::whereKey($stockist->id)->whereNull('enrollment_bonus_paid_at')
+                ->update(['enrollment_bonus_paid_at' => now()]);
+            if (!$claimed) {
+                return null;
+            }
 
-            for ($gen = 1; $gen <= 10; $gen++) {
-                if (!$current) {
-                    break;
-                }
+            $summary = ['paid' => 0, 'total' => 0.0, 'skipped' => 0];
+            $seen    = [$user->id => true];
+            $current = User::find($stockist->sponsor_user_id ?: $user->ref_by);
 
-                $bonusAmount = $schedule[$gen] ?? 0.00;
+            for ($gen = 1; $gen <= 10 && $current && !isset($seen[$current->id]); $gen++) {
+                $seen[$current->id] = true;
+                $amount             = $schedule[$gen];
 
-                if ($bonusAmount > 0) {
-                    $upline = User::lockForUpdate()->find($current->id);
-                    if ($upline) {
-                        $upline->increment('balance', $bonusAmount);
-                        $upline->refresh();
+                if ((int) $current->status !== Status::USER_ACTIVE) {
+                    $summary['skipped']++;
+                } else {
+                    $this->wallet->credit(
+                        $current,
+                        $amount,
+                        self::REMARK,
+                        sprintf('Stockist %s enrollment bonus, generation %d: %s (%s)', $storeType, $gen, $stockist->business_name ?: $user->username, $user->username),
+                        $trx,
+                    );
+                    $summary['paid']++;
+                    $summary['total'] += $amount;
 
-                        $txn               = new Transaction();
-                        $txn->user_id      = $upline->id;
-                        $txn->amount       = $bonusAmount;
-                        $txn->charge       = 0;
-                        $txn->trx_type     = '+';
-                        $txn->remark       = 'stockist_bonus';
-                        $txn->details      = sprintf(
-                            'Stockist %s Setup Bonus Gen-%d — %s (%s)',
-                            $storeType,
-                            $gen,
-                            $stockist->business_name ?: $user->username,
-                            $user->username
+                    // Debit from isolated Member Compensation Reserve Ledger (Commerce Pool)
+                    try {
+                        app(RevenueAllocationService::class)->disburseCompensation(
+                            $amount,
+                            $trx,
+                            sprintf('Stockist %s enrollment bonus Gen-%d to %s', $storeType, $gen, $current->username),
+                            CompensationReserveLedger::SUB_POOL_CP,
+                            'stockist_setup_bonus',
+                            $current->id
                         );
-                        $txn->trx          = $trx;
-                        $txn->post_balance = $upline->balance;
-                        $txn->save();
-
-                        // Debit from isolated Member Compensation Reserve Ledger (Commerce Pool)
-                        try {
-                            app(RevenueAllocationService::class)->disburseCompensation(
-                                $bonusAmount,
-                                $trx,
-                                sprintf('Stockist %s setup bonus Gen-%d to %s', $storeType, $gen, $upline->username),
-                                CompensationReserveLedger::SUB_POOL_CP,
-                                'stockist_setup_bonus',
-                                $upline->id
-                            );
-                        } catch (\Throwable $e) {
-                            Log::warning('[RevenueAllocation] Failed to debit stockist setup bonus: ' . $e->getMessage());
-                        }
+                    } catch (\Throwable $e) {
+                        Log::warning('[RevenueAllocation] Failed to debit stockist enrollment bonus: ' . $e->getMessage());
                     }
                 }
 
-                $nextId  = $current->ref_by;
-                $current = $nextId ? User::find($nextId) : null;
+                $current = $current->ref_by ? User::find($current->ref_by) : null;
             }
 
             // Distribute store PV up the matrix tree for recognition awards
             try {
-                $pvDetails = sprintf('Stockist %s PV from %s', $storeType, $user->username);
-                updatePV($user, $pvDetails, $pvAmount);
+                updatePV($user, sprintf('Stockist %s PV from %s', $storeType, $user->username), $pvAmount);
             } catch (\Throwable $e) {
                 Log::warning('[StockistEnrollment] Failed to distribute store PV: ' . $e->getMessage());
             }
 
-            Log::info(sprintf(
-                '[StockistEnrollment] %s bonuses disbursed for stockist #%d (%s)',
-                $storeType,
-                $stockist->id,
-                $user->username
-            ));
+            Log::info(sprintf('[StockistEnrollment] %s: %d upline paid ₦%s (%d banned skipped) for stockist #%d (%s)', $storeType, $summary['paid'], number_format($summary['total'], 2), $summary['skipped'], $stockist->id, $user->username));
+
+            return $summary;
         });
     }
 }
