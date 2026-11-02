@@ -6701,6 +6701,247 @@ above.
 installed packages. Upgrading them is a separate task, worth doing
 before real members use any host.
 
+## Part 3i: New features
+
+### Step 122: USDT (TRC20) deposits to one Wiifarm address
+
+**The decision (owner):** members pay USDT into Wiifarm's own single
+address, and the app confirms the payment and credits the deposit
+itself. No payment company stands in between, and there are no fees.
+
+**The problem with one address.**
+
+- Payments into one address look the same: the blockchain shows an
+  amount and a time, not which member sent it.
+- Anyone can see every payment to a public address on a blockchain
+  explorer. So "paste your transaction ID" alone is not safe: a member
+  could paste someone else's payment.
+
+**The design.** Each deposit is asked for an amount that no other
+deposit can be asked for at the same time.
+
+**The amount.**
+
+- The naira amount × the admin's rate, rounded up to the cent, plus a
+  random 0.01–0.99 USDT. Example: ₦100,000 × 0.00065 = 65.00 → asked
+  65.28 USDT.
+- **Unique:** no other deposit whose payment window overlaps (60
+  minutes, plus 5 minutes for clocks) can be given the same amount.
+- **Picked one at a time:** the gateway's row is locked while picking.
+  If all 99 cents are taken for one base amount, the member is asked to
+  wait a few minutes or change the amount slightly.
+- **Kept exact:** amounts are whole units (1 USDT = 1,000,000), never
+  decimals.
+- **The address is saved with the deposit**, so changing the Wiifarm
+  address later does not break open payments.
+
+**When a payment is credited automatically** (all must hold):
+
+| Check | Why |
+|---|---|
+| The token is Tether's official USDT contract (`TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`) | Anyone can create a token named "USDT" |
+| It went to the address this deposit was shown | |
+| The transaction succeeded, and is final: read from TronGrid's *solidity* node, which only answers for confirmed blocks (about a minute) | A failed or reversible transaction moves nothing |
+| The amount is exactly the deposit's amount | One payment fits at most one deposit |
+| It was sent inside the deposit's window (from 5 minutes before it was created to the deadline) | Old payments cannot pay new deposits |
+| The transaction ID was never used before; a unique column makes the database itself refuse a second record | Replay |
+
+**Two ways a payment is found.** Both go through the same checks.
+
+1. **Automatically.**
+   - While the member's payment page is open, it checks every 15
+     seconds (at most one check per deposit per 15 seconds).
+   - `php artisan usdt:scan` runs every minute from the scheduler.
+   - Both list incoming USDT to the address, then read each transaction
+     again on its own before deciding; the list alone is never trusted.
+2. **The member pastes the transaction ID**, for example after closing
+   the page.
+
+**What happens to each kind of payment:**
+
+| Payment | Result |
+|---|---|
+| Exact, in time | Credited at once through `PaymentController::userDataUpdate()`, which credits a deposit once even if called twice. The deposit's admin page shows the transaction ID, sender and time. |
+| Exact, but it fits *another* member's open deposit (someone pasted a payment they saw on the explorer) | Credited to the deposit it fits. The member who pasted it is told it belongs to another deposit. |
+| Wrong amount, or sent after the window, pasted by the member | **Never credited automatically.** The deposit goes to Pending with the expected and received amounts, the sender, the time and a warning: anyone can see payments to a public address, so confirm with the member first. An admin approves or rejects it on the deposit page. |
+| Rejected by the admin | The payment is released (status "No matching deposit"), so the member it really belongs to can still claim it. |
+| Found by the scan, fitting no deposit | Recorded as "No matching deposit" and the admin is notified. The member can still claim it with the transaction ID for up to 7 days; it then goes to an admin. |
+| Not on the chain, not final yet, failed, to another address, another token, or older than the deposit | Refused with a plain reason; nothing is recorded or credited. |
+| TronGrid down or answering nonsense | Nothing is decided. "Your payment is safe; try again in a minute." |
+
+**What was built:**
+
+- **`config/usdt.php`:**
+  - the network (`USDT_TRON_NETWORK`: `mainnet`, or `nile` for Tron's
+    test network);
+  - the official contract and the API address of each network;
+  - the 60-minute window, the 5-minute clock allowance, the 7-day claim
+    limit, and the page's check interval.
+  - None of these can be changed from the admin panel.
+- **Migration `2026_11_02_000001_create_usdt_trc20_payments`** (safe to
+  run twice):
+  - table `usdt_invoices`: the amount, address and deadline of each
+    deposit;
+  - table `usdt_transfers`: every payment seen, one row per
+    transaction ID;
+  - the gateway "USDT (TRC20)" (alias `UsdtTrc20`, the first free code
+    from 540), **switched off**.
+- **`App\Services\Usdt\`:**
+  - `TronAddress`: T-address ↔ hex, with the checksum checked, so a
+    mistyped address is refused;
+  - `TronGrid`: reads a transaction from the final state; lists
+    incoming USDT; sends the API key; 10-second timeouts and two
+    retries;
+  - `UsdtPayments`: the amount, the member's claim, the one place that
+    decides and records a payment, the admin's decision, and the scan.
+- **`Gateway\UsdtTrc20\ProcessController`:** the deposit flow's usual
+  "process" step. It makes the amount and opens the payment page.
+- **Member pages:**
+  - `Pages/User/UsdtPay.tsx` (`user.deposit.usdt`) shows:
+    - the exact amount and the address, each with Copy (it falls back
+      to a hidden text box where the browser has no clipboard access);
+    - a QR code and a countdown;
+    - "we check automatically";
+    - the rules: TRC20 only, exact amount, exchange fees;
+    - the transaction-ID box, limited to 10 tries a minute.
+  - It also has a state for each outcome: paid, waiting for an admin,
+    rejected with the reason, or the time has passed (the ID box
+    stays).
+  - **Deposit history:** a "USDT payment waiting" notice links back to
+    open USDT payments. The history list itself leaves out deposits
+    that were only started.
+- **Admin:**
+  - **Deposits → USDT Payments** (`admin.deposit.usdt`): every payment
+    seen, with tabs (Needs checking, No matching deposit, Credited,
+    Refused), explorer links, notes, and the configured address.
+    Super-admin only, like the other deposit pages.
+  - Approving or rejecting a USDT deposit updates its payment.
+  - The gateway settings refuse an invalid Tron address. The TronGrid
+    API key is optional (TronGrid works without one, more slowly).
+- **`usdt:scan`** is scheduled every minute. It still scans when the
+  gateway is switched off, because deposits started before may still
+  be paid.
+- **Tests:** a PHPUnit setup (`phpunit.xml`, `tests/Unit/Usdt`), the
+  first tests in this repository. `php vendor/bin/phpunit` runs them.
+
+**Setting it up (owner and admin):**
+
+1. **A USDT wallet that only Wiifarm controls.** On an exchange, use
+   the deposit address for USDT on the **TRON (TRC20)** network. The
+   people who hold this wallet hold the money: decide who they are.
+2. **Run the migration:** `php artisan migrate`.
+3. **Admin → Payment Gateways → Automatic → USDT (TRC20):**
+   - paste the wallet address;
+   - optional but recommended: a free TronGrid API key from
+     trongrid.io;
+   - add the currency USDT with the **rate in USDT per ₦1** (for
+     example 0.00065 at ₦1,538 per USDT), and the minimum, maximum and
+     charges;
+   - switch the gateway on.
+4. **Keep the rate up to date.** Members pay naira-amount × rate, and
+   the app credits the naira amount.
+5. **The scheduler:** the server must run `php artisan schedule:run`
+   every minute (a cron entry or a worker). Without it, payments are
+   still found while the member's page is open, or from the
+   transaction ID.
+
+**Must be done before real money (not possible from this
+environment):**
+
+- **The network:** this environment's network policy blocks
+  `api.trongrid.io` and `nile.trongrid.io`, so no live call was made.
+  TronGrid's replies were simulated in their documented format.
+- **A live test on Tron's Nile test network:** set
+  `USDT_TRON_NETWORK=nile`, then pay test USDT from a Nile wallet:
+  1. exact, in time;
+  2. a wrong amount;
+  3. pasting the ID.
+
+  Check the Nile USDT contract address in `config/usdt.php` against
+  nile.tronscan.org first.
+- **Then one small real payment** (a few USDT) on mainnet, before
+  telling members.
+
+**Limits members should know:**
+
+- **Exact amount:** the amount that *arrives* must be exact. Some
+  exchanges take their fee out of the amount sent; the member must
+  then raise the amount so the right amount arrives. A wrong amount is
+  not lost: it goes to an admin.
+- **Extra cents:** members pay up to 0.99 USDT more than the converted
+  amount (the cents that make the amount unique).
+- **Other networks:** USDT sent on another network (ERC20, BEP20) never
+  reaches the Tron address. It cannot be seen or credited.
+
+**Verification:**
+
+- **Unit tests** (`php vendor/bin/phpunit`, 19 tests, 42 assertions):
+  - **Addresses:** both directions on known pairs (the USDT contract,
+    the zero address, the topic form); mistyped, short, Ethereum-style
+    and padded addresses are refused.
+  - **Reading a transaction:**
+    - the official transfer is found;
+    - other tokens and events are ignored;
+    - a reverted transaction moves nothing;
+    - pending and missing are told apart;
+    - an answer about a different transaction is refused;
+    - an HTTP error means "unavailable";
+    - the API key is sent.
+  - **Listing incoming USDT:** only official USDT to our address.
+  - **Amounts:** hex to units (absurd amounts refused) and formatting.
+- **End-to-end on the database** (`p8usdt_check.php`): real deposits
+  through the app's routes, TronGrid simulated, in a non-UTC time zone
+  (Africa/Lagos).
+  1. **The amount:** 65.00 → 65.28; the same amount after a reload;
+     99 deposits of one base get 99 different amounts, and the 100th is
+     refused.
+  2. **Exact payment pasted:**
+     - credited +₦100,000 with one transaction record;
+     - pasting it again changes nothing;
+     - another member pasting it is refused.
+  3. **0.05 short:** to Pending, with the details and an admin notice;
+     approved → credited.
+  4. **Rejected:** the payment is released, and its invoice freed.
+  5. **Refused, each with its reason:**
+     - to another address, a fake token, a failed transaction, not
+       final yet, not found;
+     - sent 5 min 1 s before the deposit.
+
+     Sent 4 min 59 s before is credited (the clock allowance).
+  6. **1 second after the window:** to Pending.
+  7. **Found automatically:**
+     - the page credits it (2 TronGrid calls);
+     - a second view within 15 s makes 0 calls;
+     - the scan records an unknown payment as "No matching deposit" and
+       notifies the admin.
+  8. **Someone pastes another member's exact payment:** it is credited
+     to its owner.
+  9. **The same payment settled twice:** credited once, one row; the
+     database refuses a duplicate row.
+  10. **Ownership and settings:**
+      - another member's payment page gives 404;
+      - with no valid address, a deposit cannot start;
+      - the admin's mistyped address is refused;
+      - saving without the API key works and keeps the stored key.
+  11. **Pages:** the admin list (tabs, counts) and the deposit page
+      showing what paid it; the history notice for open payments.
+- **Browser** (`e2e/phase8usdt.mjs`, 26 checks):
+  - **Payment page:** the amount, address, QR and countdown; Copy puts
+    the exact amount, and the address, on the clipboard.
+  - **ID box:** disabled until 64 hex characters; posts the trimmed
+    ID; the error is tied to the field.
+  - **Waiting:** asks again after 5 s (status and deposit only); "Paid"
+    replaces the payment details and the checks stop.
+  - **Other states:** expired (no checks, the ID box stays), with an
+    admin, and rejected with the reason.
+  - **Phone width:** no sideways scroll.
+  - **History notice:** links, expired wording.
+  - **Admin list:** tabs and counts, rows, explorer links opening in a
+    new tab safely, the address card, notes.
+- **Regression:** 45 browser suites, 1430 checks, all pass. Two older suites first failed: their recorded history pages predate the new "open USDT" list, and the page read its length. The page now treats a missing list as empty. `route:cache`, `view:cache` and
+  `config:cache` succeed; the route-name scan shows only the 21 known
+  `ipn.` references.
+
 ## Part 4: Working on the front end
 
 ### Run locally
