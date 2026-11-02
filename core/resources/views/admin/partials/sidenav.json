@@ -570,6 +570,18 @@
                 "params": {
                     "user_id": ""
                 }
+            },
+            {
+                "keyword": [
+                    "USDT Payments",
+                    "USDT",
+                    "TRC20",
+                    "Crypto payments",
+                    "Deposits"
+                ],
+                "title": "USDT Payments",
+                "route_name": "admin.deposit.usdt",
+                "menu_active": "admin.deposit.usdt"
             }
         ]
     },

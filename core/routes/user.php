@@ -375,5 +375,11 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
             Route::get('manual1', fn () => to_route('user.deposit.manual.confirm', request()->query()))->name('manual.confirm1'); // removed duplicate flow
             Route::post('manual', 'manualDepositUpdate')->name('manual.update');
         });
+
+        // USDT (TRC20) to the Wiifarm address: the payment page and the transaction-ID box
+        Route::prefix('deposit/usdt')->name('deposit.usdt')->controller('User\\UsdtDepositController')->group(function () {
+            Route::get('{trx}', 'show')->name('');
+            Route::post('{trx}/txid', 'claim')->name('.claim')->middleware('throttle:10,1');
+        });
     });
 });

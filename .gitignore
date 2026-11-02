@@ -17,3 +17,6 @@ Thumbs.db
 /assets/verify/
 /assets/support/
 /assets/images/verify/
+
+# PHPUnit
+/core/.phpunit.result.cache

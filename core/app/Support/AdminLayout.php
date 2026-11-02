@@ -115,6 +115,7 @@ class AdminLayout
         'admin.ads.edit',
         'admin.welcome-pack.index',
         // 7e-1: deposits and withdrawals
+        'admin.deposit.usdt',
         'admin.deposit.list',
         'admin.deposit.pending',
         'admin.deposit.rejected',

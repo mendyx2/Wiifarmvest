@@ -28,10 +28,12 @@ type Deposit = {
 type Props = PageProps<{
     deposits: Paginated<Deposit>;
     search: string;
+    /** USDT deposits still waiting for their payment (not in the list below) */
+    openUsdt: { trx: string; usdt: string; expired: boolean; url: string }[];
     depositUrl: string;
 }>;
 
-export default function DepositHistory({ deposits, search, depositUrl }: Props) {
+export default function DepositHistory({ deposits, search, depositUrl, openUsdt = [] }: Props) {
     const t = useTrans();
     const { url } = usePage();
     const [query, setQuery] = useState(search);
@@ -45,6 +47,20 @@ export default function DepositHistory({ deposits, search, depositUrl }: Props) 
     return (
         <div className="dph-page">
             <Head title={t('Deposit History')} />
+
+            {openUsdt.length > 0 && (
+                <div className="alert alert-warning mb-0" role="status">
+                    <strong>{t('USDT payment waiting')}</strong>
+                    <ul className="mb-0 mt-1 ps-3">
+                        {openUsdt.map((u) => (
+                            <li key={u.trx}>
+                                {u.usdt} USDT ({u.trx}) {u.expired ? t('— time to pay has passed') : ''}{' '}
+                                <a href={u.url}>{u.expired ? t('Already paid? Enter the transaction ID') : t('Continue payment')}</a>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             <div className="dph-header-card">
                 <div className="dph-header-left">

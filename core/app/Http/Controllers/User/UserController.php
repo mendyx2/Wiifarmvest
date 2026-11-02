@@ -287,6 +287,14 @@ class UserController extends Controller
             ]),
             'search'     => (string) $request->search,
             'depositUrl' => route('user.deposit.index'),
+            // USDT deposits still waiting for their payment (the list above leaves
+            // initiated deposits out), so a member can get back to the payment page
+            'openUsdt'   => \App\Models\UsdtInvoice::with('deposit:id,trx,status,user_id,created_at')
+                ->whereNull('transfer_id')
+                ->whereHas('deposit', fn ($q) => $q->where('user_id', auth()->id())->where('status', Status::PAYMENT_INITIATE)->where('created_at', '>=', now()->subDays((int) config('usdt.claim_days', 7))))
+                ->latest('id')->take(5)->get()
+                ->map(fn ($i) => ['trx' => $i->deposit->trx, 'usdt' => \App\Services\Usdt\UsdtPayments::format($i->units), 'expired' => $i->expires_at->isPast(), 'url' => route('user.deposit.usdt', $i->deposit->trx)])
+                ->values(),
         ])->withViewData(compact('pageTitle'));
     }
 

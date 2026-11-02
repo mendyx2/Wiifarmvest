@@ -52,3 +52,9 @@ Schedule::command('autoship:sweep')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/autoship-sweep.log'));
+
+// USDT (TRC20) payments members did not report (App\Services\Usdt\UsdtPayments::scan)
+Schedule::command('usdt:scan')
+    ->everyMinute()
+    ->withoutOverlapping(5)
+    ->appendOutputTo(storage_path('logs/usdt-scan.log'));
