@@ -7040,6 +7040,443 @@ Whether the first two should be scheduled is the owner's call.
   `tsc` passes; `npm run build` succeeds; PHPUnit: 19 tests pass.
 - **Regression:** 45 browser suites, 1430 checks, all pass.
 
+### Step 124: Stockist enrollment bonus on; reconnection service; pool and leadership on the schedule
+
+**The owner's decisions:**
+
+1. Switch on the stockist enrollment bonus.
+2. Keep `MatrixReconnectionService`, or make a compatible version.
+3. Schedule `pool:distribute` and `leadership:process`.
+
+#### 1. Stockist enrollment bonus
+
+**What it pays.** When an admin activates a stockist (Admin → Stockists →
+Activate), ten generations of that member's upline are paid once, per the
+compensation plan:
+
+| Generation | Basic store (store type 2) | Mega store (store type 1) |
+|---|---|---|
+| 1 | ₦50,000 | ₦150,000 |
+| 2 | ₦30,000 | ₦100,000 |
+| 3–10, each | ₦20,000 | ₦50,000 |
+| Total if all ten are active | ₦240,000 | ₦650,000 |
+
+**The rules:**
+
+- **Generations:** generation 1 is the stockist's sponsor (`sponsor_user_id`,
+  else the member who referred them); each next one is whoever referred
+  the last.
+- **Banned members** are not paid, and their generation still counts (no
+  compression), as the leadership bonus does.
+- **The chain stops early** if it runs out, or loops back to someone
+  already paid.
+- **The store's PV** (3,000 or 10,000) goes up the matrix tree for
+  recognition awards, as the plan's service already did.
+
+**What changed in the service** (`StockistEnrollmentBonusService`; it
+existed but nothing called it):
+
+| Before | Now |
+|---|---|
+| No record of payment: calling it twice paid twice. | `stockists.enrollment_bonus_paid_at` (new migration) is claimed in the same database transaction as the payments: a stockist is paid once, ever. |
+| Raised `balance` directly and wrote its own transaction rows. | Pays through `WalletService::credit()`, like every other bonus: the member row is locked, one transaction row per payee, all with one `trx`. |
+| Remark `stockist_bonus`, which the financial report already uses for the per-product stockist bonus. | Its own remark, `stockist_enrollment_bonus`, listed in the financial report as "Stockist enrollment bonus (upline)". |
+| Paid banned members. | Skips them (counted in the result). |
+
+**Activation:**
+
+- The bonus is paid right after the activation is saved, and the admin's
+  message says how much was paid and to how many members.
+- If the payment fails, the activation stays. The admin sees a warning with
+  the command to run.
+
+**`php artisan stockist:enrollment-bonus {id}`:**
+
+- pays one stockist by hand, and never twice;
+- `--list` shows every stockist without a paid bonus.
+
+**For the owner: stockists activated before today were not paid**, and are
+not paid automatically. `--list` shows them; paying them is your decision,
+one command per stockist.
+
+#### 2. MatrixReconnectionService: a compatible, working version
+
+**What was there:**
+
+- **The service:** an older draft of the reconnection rules (half commented
+  out, with `dd()` debug lines). Nothing called it.
+- **`ProcessDownlineReconnection` (job):** called a service it never
+  imported, so it failed every time.
+- **`matrix:dispatch-reconnections` (command):** hard-wired to member #37,
+  and called an undefined variable, so it failed every time.
+- **The real rules** live in `MatrixPlacementService::reconnectImediateDownline()`
+  and `::reconnectDownline()`. The cron URLs `/recon/{stage}`,
+  `/reconAll/{stage}` and `/recStart/{stage}` run them.
+
+**Now:**
+
+- **`MatrixReconnectionService`** runs exactly those rules:
+  - `reconnectImmediate($stage)` and `reconnectAll($stage)`: the same loops
+    as the cron URLs;
+  - `reconnectMatrix($matrix)`: one matrix;
+  - `reconnectDownline(User, MatrixStage)`: keeps the old draft's
+    signature.
+- **The cron URLs** call the service, so there is one path.
+- **The job** reconnects one matrix through the service.
+- **The command** needs `--stage=` (and takes `--immediate`); it does what
+  the URLs do.
+
+**Proof that nothing changed for the cron URLs:**
+
+- The test sets up a member whose two stage-1 children both reached stage 2.
+- On copies of the same data, the old `CronController` code (verbatim)
+  and the new service leave **identical** matrix tables.
+- The member's stage-2 left and right are their two children, and the
+  children point back to them.
+- The URL handlers, the job and the command give the same result.
+
+#### 3. On the schedule (`routes/console.php`)
+
+| Command | When | Why then |
+|---|---|---|
+| `pool:distribute --previous` | 01:17 on 1 January, 1 April, 1 July and 1 October | Pays out the quarter that just ended. Run on a quarter's last day, money credited after it would have gone into a fresh pool row that nothing ever paid out. |
+| `leadership:process` | Every hour at :25 | Leadership shares are paid when each matching bonus is paid. This catches any that were missed and qualifies new leaders. Each matching bonus is claimed before paying, so a re-run pays nothing twice. |
+
+Both run with `withoutOverlapping()` and log to `storage/logs/`.
+
+**`pool:distribute` was made safe to run on its own:**
+
+| Before | Now |
+|---|---|
+| It checked "not distributed yet", then paid, without a lock: two runs at once could both pay every leader. | The period's pool row is locked and checked again inside the payment transaction; a second run answers `already_distributed`. |
+| Asking for a past period created an empty pool row. | A named period is only looked up. |
+| No way to say "the quarter that just ended". | `--previous` (what the schedule uses). |
+
+**For the owner (not changed):**
+
+- The pool pays everyone holding a qualifying award, including banned
+  members.
+- If one payment fails, that member's share is not paid to anyone else,
+  and the period is still marked distributed.
+
+#### Verification
+
+- **End-to-end on the database** (`p124_check.php`):
+  1. **Activating a Mega stockist** through the admin action pays, from
+     generation 1:
+     - 150,000, then 100,000;
+     - 0 to the banned generation 3;
+     - 50,000 to each of generations 4–10;
+     - nothing to the 11th.
+
+     That is ₦600,000 in 9 transactions with one `trx`. The message says
+     "₦600,000.00 paid to 9 upline member(s) (1 banned, not paid)".
+  2. **Paying again:** the service returns nothing and the command says
+     "Already paid"; still 9 rows.
+  3. **A Basic stockist with a sponsor, and a referral loop:** 50,000,
+     30,000 and 20,000, then it stops at the loop. `--list` shows the
+     unpaid stockists.
+  4. **A failing payment:** the stockist stays active with a warning; the
+     command pays it afterwards.
+  5. **Reconnection:** as described above.
+  6. **Global Share Pool:** `--previous` pays the last quarter's ₦1,000 to
+     two qualifying leaders (500 each); a second run pays nothing; an old
+     period creates no row.
+  7. **Leadership:** `leadership:process` handles a pending matching bonus
+     once; a second run finds nothing.
+- **Checks:**
+  - every class reference in the changed files resolves;
+  - `route:cache`, `view:cache` and `config:cache` succeed;
+  - the route-name scan shows only the 21 known `ipn.` references;
+  - PHPUnit: 19 tests pass;
+  - `schedule:list` shows both new entries.
+- **Browser:** no front-end code changed. The stockist suites pass
+  (`phase7d2`: 51 checks; `phase4e`: 38).
+
+### Step 125: Paying the enrollment bonus to stockists activated before Step 124
+
+**The owner's decision:** pay the stockists activated before the bonus was
+switched on, too.
+
+**This is not done by deploying.** Paying them moves real money, from the
+live database. It is one command, run on the server after `php artisan
+migrate`. The command first shows every payment it will make.
+
+```bash
+php artisan migrate                                       # adds stockists.enrollment_bonus_paid_at (Step 124)
+php artisan stockist:enrollment-bonus --list              # who has not been paid
+php artisan stockist:enrollment-bonus --all --dry-run     # every payee and amount; nothing is paid
+php artisan stockist:enrollment-bonus --all               # shows the same, asks "Pay ₦X now?", then pays
+```
+
+**What `--all` does:**
+
+- Every active stockist without a paid bonus, oldest first, paid exactly
+  as at activation (Step 124): ten generations, Basic or Mega amounts,
+  banned members not paid.
+- **Deactivated stockists are left out.** They may have been reversed or
+  refunded. The command names them; `--include-inactive` adds them.
+- **The upline is today's referral chain**, not the chain at the time the
+  stockist was activated. If a member's referrer was changed since, the
+  new referrer is paid.
+- **The store's PV** goes up the matrix tree now, as at activation. It
+  can complete awards that depend on PV.
+- **Each stockist is paid in one transaction.** A stockist that fails
+  pays nothing; the others go on, and running `--all` again pays only
+  what is left.
+- **Never twice:** a second run pays nothing. `--force` skips the
+  question (for scripts).
+
+**Code:**
+
+- `StockistEnrollmentBonusService::plan()` works out who would be paid
+  what. `process()` pays exactly that plan, so the dry run and the payment
+  cannot differ.
+- `PayStockistEnrollmentBonus` gained `--all`, `--include-inactive`,
+  `--dry-run` and `--force`. A single stockist id also shows its plan and
+  asks before paying.
+
+**Verification** (`p124b_check.php`):
+
+- **The four test stockists:** one Mega, two Basic, and one deactivated.
+  Their upline chain is demo ← bola_ade ← chi ← dan.
+- **`--list`:** all four, with the deactivated one marked.
+- **`--all --dry-run`:** three stockists, six payments, ₦430,000. The
+  deactivated one is named as left out. No balance changed and no
+  transaction was written.
+- **`--all` with the question unanswered:** nothing paid.
+- **`--all --force`:**
+  - paid exactly the dry run: bola_ade +₦150,000, chi +₦150,000
+    (₦100,000 + ₦50,000), dan +₦130,000;
+  - six transactions;
+  - stockists 1, 2 and 4 marked paid; stockist 3 not.
+- **`--all` again:** "No unpaid stockists to pay"; no balance changed.
+- **The deactivated one, previewed:** it has no upline, so ₦0.
+- **Step 124's check passes again** with the refactored service: the same
+  amounts at activation, never twice, the loop, and the failure and retry
+  (now confirmed with `--force`).
+
+### Step 126: Binary tree fixes (queues, taken slots, simultaneous updates, wrong leg)
+
+**Why:** the binary-system review found four defects that could stop or
+misdirect payouts. The mechanics themselves (1 PV = ₦600, 50 PV per match,
+package rates and daily caps, carry-forward, spillover, awards) were right.
+
+**1. Matching bonuses (and other queued jobs) could never run.**
+
+- **Before:** the jobs go on named queues: `matching`, `payments`,
+  `bonuses`, `dividends`, `savings_transfer` and `farm_maturity`.
+  `php artisan queue:work` alone works only `default`, and the server had
+  no worker listening to the others. The 01:30 `matching:dispatch` queued
+  the jobs, and they waited forever.
+- **Now:**
+  - `config/queue.php` lists every queue in `app_queues`, most urgent
+    first.
+  - The scheduler works all of them every minute, until they are empty
+    (`queue:work --queue=<all> --stop-when-empty --max-time=55`, logged
+    to `storage/logs/queue-work.log`).
+  - So the one cron entry (`schedule:run`) is enough. It is skipped when
+    `QUEUE_CONNECTION=sync`, since jobs already run at once then.
+  - A permanent worker is faster and can run beside it. It must use the
+    same list (README).
+- **Correction:** the advice in Step 114 (`--queue=dividends,default`) was
+  too narrow. Use the full list.
+
+**2. A taken slot at payment time left the new member stuck or outside the tree.**
+
+- **Before:** a new member chooses a parent and a leg at sign-up, and is
+  placed when payment completes (`complete_registration_pin()`). If
+  someone else had taken that slot meanwhile:
+  - `$position` was never set, and the registration stopped with an
+    error; or
+  - the member was made a root, with no upline.
+- **Now:** a new service, `App\Services\BinaryTree::placeNewMember()`,
+  places members:
+  - **The chosen slot**, if it is still free.
+  - **Taken:** the first free slot further down that same leg, so the
+    member stays on the side chosen for them.
+  - **No choice, or the chosen parent is not in the tree:** the first free
+    slot under the sponsor, level by level, left first (spillover, as
+    before).
+  - **Root:** only when there is no tree to join, and that is logged if a
+    tree exists.
+- The `$user_parent_mat` argument is kept for the Paystack caller, but no
+  longer used: the search runs inside the registration, after any slot
+  was taken.
+
+**3. Simultaneous registrations or purchases could overwrite each other.**
+
+- **Placement:** a slot is now taken with one conditional UPDATE ("set
+  left = me where left is still 0"). Two members can never get the same
+  slot. The loser searches again (up to 5 times, then a clear error),
+  and the registration transaction rolls back cleanly.
+- **PV:** each upline's PV was read, added to in PHP and saved. Two
+  purchases at the same moment could lose one of them. Each credit is now
+  one SQL increment:
+  ```sql
+  pv_left = pv_left + 100, pv_left_pairing = pv_left_pairing + 100
+  ```
+
+**4. PV went to the right leg when the tree did not say which leg.**
+
+- **Before:** "if the parent's left is me → left, otherwise → right".
+  When a member's parent named neither leg (a broken link), the PV went
+  to the parent's right leg and counted towards right-leg matches.
+- **Now:** `BinaryTree::creditPv()` credits a leg only when the parent
+  names the member on it. A broken link is logged (`[BinaryPV]` in
+  `laravel.log`) and that upline is skipped. The climb goes on above it,
+  on the correct leg.
+- A loop in the tree now ends the climb, instead of running forever.
+
+**One place for all of it:**
+
+- `updatePV()` (registration, upgrades, stockist store PV),
+  `updateProductPV()` and `upLinePvOnUpgrade()` (one level) now call
+  `BinaryTree::creditPv()`.
+- The three copies of the climb in helpers.php are gone.
+- `ProjectController::propagatePv()`, a fourth copy that nothing called,
+  is removed.
+
+**Two more bugs found on the way:**
+
+- **The stockist repurchase PV share walked the wrong records.**
+  - `shareRepurchasePvUpline()` looked up the upline with
+    `Matrix::find($matrix->parent_id)`. That treats the parent's member id
+    as a tree-record id, so it credited unrelated members, or stopped.
+  - It now walks member ids (`BinaryTree::matrixOf()`), takes the leg from
+    `legOf()` (a broken link is logged and skipped), and stops on a loop.
+  - The 10-level limit and the RepurchasePv locking are unchanged.
+- **Completing a registration always stopped with an error.**
+  - In `complete_registration_pin()`, the indirect bonus was given `$trx`
+    a few lines before `$trx` was set. The resulting "Undefined
+    variable" error rolled back the whole registration.
+  - It now uses `$user->trx`, which the next lines already used for the
+    cash back.
+  - **For the owner:** members who paid but could not complete
+    registration this way may be waiting. Check for paid registrations
+    whose members are still inactive.
+
+**Verification** (`p126_check.php`, 26 checks, on a test tree):
+
+- **PV:**
+  - lands on the correct leg at each level;
+  - the update SQL is an in-place increment;
+  - a member whose parent does not name them gives that parent nothing
+    (before: the right leg), the upline above still gets it on the left,
+    and the error is logged;
+  - pv_logs show the left leg;
+  - a two-member loop ends;
+  - `upLinePvOnUpgrade` credits one level only.
+- **Placement:**
+  - chosen free slot → that slot;
+  - chosen slot taken → the free slot down the same leg;
+  - no choice → spillover under the sponsor;
+  - no tree → root.
+- **Race:** a slot taken between the search and the claim is kept by the
+  other member; this one searches again and gets the next slot.
+- **Repurchase share:** both real uplines get it, on the left leg.
+- **Full registration:**
+  - the chosen slot was taken before payment completed;
+  - the registration completes, and the member is active;
+  - the member is placed down the chosen leg;
+  - their package PV climbs four levels on the correct legs;
+  - there is one matrix row.
+- **Schedule:**
+  - the queue run lists all seven queues;
+  - it is skipped with `sync` and runs with `database`.
+- **Also:**
+  - Steps 124 and 125's checks pass again;
+  - class resolve-check, the route, view and config caches, and PHPUnit
+    (19) pass.
+
+### Step 127: Owner's decisions on the daily cap and sponsors
+
+**The owner's decisions:**
+
+- PV above the daily matching cap is **carried forward**.
+- A member does **not** need a personal sponsor (their own referral) on
+  each leg to earn the matching bonus.
+
+**The code already did both.** Nothing in the payout logic changed.
+
+- **Carry forward:** `MatchingBonusService::processMatrix()` takes from
+  each leg's pairing PV only what it pays: 50 PV per match. When the
+  day's cap (`max_pairing_slots`) is reached, it pays nothing more and
+  takes nothing. The rest waits for the next days. No code anywhere
+  resets pairing PV to zero.
+- **No sponsor needed:** matching looks only at the two legs' pairing PV,
+  not at who referred whom.
+
+**Labels fixed, so the admin panel says this:**
+
+- **Member detail:** "PV Left/Right (Matched)" showed `pv_*_pairing`.
+  That is the PV still **waiting** to be matched, not what was matched.
+  The tiles now read "PV Left/Right (Waiting to Match)". The member pages
+  already said this.
+- **Projects form:** the hint "0 = unlimited" was on "Pairing per day".
+  That field is the amount paid per match, and 0 there means no matching
+  bonus at all. The fields now read:
+  - "Matching bonus per match": paid for each 50 PV matched on both legs;
+    0 = no matching bonus.
+  - "Max matches per day": 0 = no daily cap; PV above the cap is carried
+    forward.
+
+**Verification** (`p127_check.php`): a member with 1,000 PV on the left,
+400 on the right and a cap of 2 matches a day. Neither leg holds one of
+their own referrals.
+
+- **Day 1:**
+  - 8 matches are possible; 2 are paid.
+  - Only 100 PV per leg is used: 900 and 300 are carried.
+  - A second run the same day pays nothing and takes nothing.
+- **Days 2 to 4:** 2 matches a day from the carried PV. The right leg
+  reaches 0.
+- **The left leg's 600 PV** keeps waiting when there is nothing to pair it
+  with. It is not lost.
+- **Total:** 8 matches over 4 days.
+- **Also:** `tsc` passes.
+
+**Still open:** banned members still earn matching bonuses (decided in
+Step 128), and the award ladder in the code differs from the remediation
+notes.
+
+### Step 128: Banned members earn no matching bonus
+
+**The owner's decision:** banned members should not earn the matching
+bonus. Before, they were paid like anyone else.
+
+**Code:**
+
+- **`MatchingBonusService::processMatrix()`:** once the member's record
+  is locked, a member who is not active (`Status::USER_ACTIVE`) is paid
+  nothing. This is logged as `[MatchingBonus] Member is banned`. The
+  check runs at payout, so it holds even for a member banned after their
+  job was queued.
+- **`matching:dispatch`:** no longer queues jobs for banned members.
+- **Leadership bonuses** already skipped banned leaders, and the stockist
+  enrollment bonus already skipped banned uplines (Step 124).
+
+**Their pairing PV is left as it is:** nothing is paid, and nothing is
+taken from their legs.
+
+- PV from their downline still collects on their legs while they are
+  banned.
+- **If a member is unbanned, matching resumes from that waiting PV.** They
+  are paid for it then, still within the daily cap. So a ban pauses the
+  bonus; it does not cancel it.
+- **For the owner:** if a ban should forfeit the bonus for good, the PV
+  can instead be cleared, either at the ban or at each run. That is your
+  call; ask if you want it.
+
+**Verification** (`p128_check.php`):
+
+- **A banned member with 600 / 200 pairing PV:** nothing paid, no log, no
+  balance change, the PV still 600 / 200, and the skip logged.
+- **`matching:dispatch`:** queues the active members, not the banned one.
+- **Unbanned:** matching resumes (2 matches, within the cap of 2).
+- **Also:** the class resolve-check and PHPUnit (19) pass.
+
+
 ## Part 4: Working on the front end
 
 ### Run locally

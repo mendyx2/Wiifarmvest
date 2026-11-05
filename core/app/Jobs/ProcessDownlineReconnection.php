@@ -2,47 +2,28 @@
 
 namespace App\Jobs;
 
-use App\Models\User;
 use App\Models\Matrix;
-use App\Models\MatrixStage;
-use App\Models\UserStageProgress;
-
+use App\Services\MatrixReconnectionService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
+/**
+ * Reconnect one matrix's downline in the background (MatrixReconnectionService).
+ * It used to call a service it never imported, so it failed every time.
+ */
 class ProcessDownlineReconnection implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * Create a new job instance.
-     */
-    public function __construct(
-       
-        public Matrix $matrix
-    ) {}
-
-    public function handle(MatrixPlacementService $matrixService)
+    public function __construct(public Matrix $matrix)
     {
-        /*Matrix::where('stage_id', 2)
-            ->where('is_active', false)
-            ->where('user_id', 37)
-            ->chunk(50, function($matrix) {
-            foreach($matrix as $mat) {
-                if ($mat) {
-                    $this->matrixService->reconnectDownline($mat);
-                }
-            }
-         });
-        */
-         
+    }
 
-         $matrixService->reconnectDownline($this->matrix);
-
-         
-        //$service->reconnectDownline($this->user, $this->stage);
+    public function handle(MatrixReconnectionService $reconnection): void
+    {
+        $reconnection->reconnectMatrix($this->matrix);
     }
 }

@@ -259,6 +259,20 @@ class StockistController extends Controller
         }
 
         $notify[] = ['success', 'Stockist activated successfully!'];
+
+        // The upline's enrollment bonuses: paid once, after the activation is saved.
+        // A failure does not undo the activation; the bonus can be paid later with
+        // php artisan stockist:enrollment-bonus {id} (it never pays twice).
+        try {
+            $bonus = app(\App\Services\StockistEnrollmentBonusService::class)->process($stockist);
+            if ($bonus) {
+                $notify[] = ['success', 'Enrollment bonus: ' . showAmount($bonus['total']) . ' paid to ' . $bonus['paid'] . ' upline member(s)' . ($bonus['skipped'] ? ' (' . $bonus['skipped'] . ' banned, not paid)' : '') . '.'];
+            }
+        } catch (\Throwable $e) {
+            report($e);
+            $notify[] = ['warning', 'The stockist is active, but the enrollment bonus could not be paid. Run: php artisan stockist:enrollment-bonus ' . $stockist->id];
+        }
+
         return to_route('admin.stockist.details', $stockist)->withNotify($notify);
     }
 

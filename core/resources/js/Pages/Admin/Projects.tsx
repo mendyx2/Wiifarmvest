@@ -31,7 +31,7 @@ type Props = {
 const DETAILS: [string, string][] = [
     ['direct_commission', 'Direct commission'],
     ['indirect_commission', 'Indirect commission'],
-    ['pairing_per_day', 'Pairing per day'],
+    ['pairing_per_day', 'Matching bonus per match'],
     ['upgrade_bonus', 'Upgrade bonus'],
     ['unilevel_bonus', 'Unilevel bonus'],
     ['monthly_maintenance', 'Monthly maintenance'],
@@ -203,11 +203,11 @@ function ProjectDialog({ project, currency, urls, onClose }: { project: Project 
                         {num('cash_back', t('Cash back'), currency)}
                         {num('direct_commission', t('Direct commission'), currency)}
                         {num('indirect_commission', t('Indirect commission'), currency)}
-                        {num('pairing_per_day', t('Pairing per day'), currency, t('0 = unlimited'))}
+                        {num('pairing_per_day', t('Matching bonus per match'), currency, t('Paid for each 50 PV matched on both legs. 0 = no matching bonus.'))}
                         {num('upgrade_bonus', t('Upgrade bonus'), '%')}
                         {num('unilevel_bonus', t('Unilevel bonus'), currency)}
                         {num('monthly_maintenance', t('Monthly maintenance'), currency)}
-                        {num('max_pairing_slots', t('Max pairing slots'))}
+                        {num('max_pairing_slots', t('Max matches per day'), undefined, t('0 = no daily cap. PV above the cap is carried forward to the next days.'))}
                         {num('sort_order', t('Sort order'))}
                     </div>
                     <div className="form-group">

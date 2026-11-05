@@ -22,6 +22,8 @@ use App\Services\StockistRebateService;
 use App\Services\UnilevelService;
 use App\Services\WalletService;
 use App\Models\RepurchasePv;
+use App\Services\BinaryTree;
+use Illuminate\Support\Facades\Log;
 
 class StockistController extends Controller
 {
@@ -381,27 +383,30 @@ class StockistController extends Controller
             return;
         }
 
-        $matrix      = Matrix::where('user_id', $user->id)->where('stage_id', 1)->first();
+        $matrix      = BinaryTree::matrixOf($user->id);
         $childUserId = $user->id;
         $levels      = 0;
+        $seen        = [$user->id => true];
 
-        while ($matrix && $matrix->parent_id && $levels < self::MAX_UPLINE_PV_LEVELS) {
-            $matrix = Matrix::find($matrix->parent_id);
+        // parent_id holds the parent's USER id, not a matrix id (notes Step 126)
+        while ($matrix && $matrix->parent_id && !isset($seen[(int) $matrix->parent_id]) && $levels < self::MAX_UPLINE_PV_LEVELS) {
+            $seen[(int) $matrix->parent_id] = true;
+            $matrix = BinaryTree::matrixOf((int) $matrix->parent_id);
             if (!$matrix) {
                 break;
             }
 
             $current = User::find($matrix->user_id);
+            $leg     = BinaryTree::legOf($matrix, (int) $childUserId);
 
-            if ($current && $current->project_id !== null) {
+            if ($leg === null) {
+                Log::error('[BinaryPV] Repurchase PV: member is not the left or right child of their parent; this upline skipped.', ['child_user_id' => $childUserId, 'parent_user_id' => $matrix->user_id]);
+            } elseif ($current && $current->project_id !== null) {
                 $uplineRecord = RepurchasePv::lockForUpdate()->firstOrNew(['user_id' => $current->id]);
                 $uplineRecord->total_pv = round((float)($uplineRecord->total_pv ?? 0) + $pvEarned, 2);
                 $uplineRecord->save();
 
-                // Same left/right resolution used by updateProductPV(), so this
-                // shared PV lands in pv_logs against the correct leg.
-                $position = $matrix->left == $childUserId ? 1 : 2;
-                pvLog($current->id, $pvEarned, $position, '+', "Repurchase PV shared from {$user->username}'s purchase");
+                pvLog($current->id, $pvEarned, $leg, '+', "Repurchase PV shared from {$user->username}'s purchase");
             }
 
             $childUserId = $matrix->user_id;

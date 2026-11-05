@@ -33,19 +33,25 @@ class GlobalSharePoolService
     /**
      * Distribute the global share pool for a given period.
      *
+     * Safe to run on a schedule: the period's pool row is locked and checked
+     * again inside the payment transaction, so two runs at once cannot both
+     * pay it. A named period is only looked up (asking for a past period used
+     * to create an empty pool row). Notes Step 124.
+     *
      * @param  string|null  $period  e.g. "Q4-2026"; defaults to current quarter
      * @return array  summary of distribution results
      */
     public function distribute(?string $period = null): array
     {
-        $ledger = GlobalPoolLedger::currentPeriod($period);
+        $ledger = $period === null
+            ? GlobalPoolLedger::currentPeriod()
+            : GlobalPoolLedger::where('period', $period)->where('status', GlobalPoolLedger::STATUS_ACCUMULATING)->first();
 
-        if ($ledger->status !== GlobalPoolLedger::STATUS_ACCUMULATING) {
-            return ['status' => 'already_distributed', 'period' => $ledger->period];
+        if (!$ledger) {
+            $done = GlobalPoolLedger::where('period', $period)->where('status', '!=', GlobalPoolLedger::STATUS_ACCUMULATING)->exists();
+            return ['status' => $done ? 'already_distributed' : 'empty_pool', 'period' => $period, 'pool' => 0];
         }
-
-        $pool = (float) $ledger->accumulated_amount;
-        if ($pool <= 0) {
+        if ((float) $ledger->accumulated_amount <= 0) {
             return ['status' => 'empty_pool', 'period' => $ledger->period, 'pool' => 0];
         }
 
@@ -57,17 +63,24 @@ class GlobalSharePoolService
             return [
                 'status'    => 'no_qualified_leaders',
                 'period'    => $ledger->period,
-                'pool'      => $pool,
+                'pool'      => (float) $ledger->accumulated_amount,
                 'qualified' => 0,
             ];
         }
 
-        $sharePerLeader = round($pool / $qualifiedUserIds->count(), 2);
-        $totalPaid      = 0.0;
-        $paid           = 0;
-        $failed         = 0;
+        $result = DB::transaction(function () use ($qualifiedUserIds, $ledger) {
+            // Re-read under a lock: another run may have paid this period a moment ago
+            $locked = GlobalPoolLedger::whereKey($ledger->id)->lockForUpdate()->first();
+            if (!$locked || $locked->status !== GlobalPoolLedger::STATUS_ACCUMULATING) {
+                return null;
+            }
 
-        DB::transaction(function () use ($qualifiedUserIds, $sharePerLeader, $ledger, &$totalPaid, &$paid, &$failed) {
+            $pool           = (float) $locked->accumulated_amount;
+            $sharePerLeader = round($pool / $qualifiedUserIds->count(), 2);
+            $totalPaid      = 0.0;
+            $paid           = 0;
+            $failed         = 0;
+
             foreach ($qualifiedUserIds as $userId) {
                 try {
                     $this->wallet->credit(
@@ -76,8 +89,8 @@ class GlobalSharePoolService
                         'global_share',
                         sprintf(
                             'Global Share Pool distribution for %s — ₦%s shared among %d qualified leaders',
-                            $ledger->period,
-                            number_format($ledger->accumulated_amount, 2),
+                            $locked->period,
+                            number_format($pool, 2),
                             $qualifiedUserIds->count()
                         ),
                         getTrx(),
@@ -91,26 +104,32 @@ class GlobalSharePoolService
                 }
             }
 
-            $ledger->markDistributed($paid, $totalPaid);
+            $locked->markDistributed($paid, $totalPaid);
+
+            return compact('pool', 'sharePerLeader', 'paid', 'failed');
         });
+
+        if ($result === null) {
+            return ['status' => 'already_distributed', 'period' => $ledger->period];
+        }
 
         Log::info('[GlobalShare] Distribution complete.', [
             'period'    => $ledger->period,
-            'pool'      => $pool,
+            'pool'      => $result['pool'],
             'qualified' => $qualifiedUserIds->count(),
-            'paid'      => $paid,
-            'failed'    => $failed,
-            'per_share' => $sharePerLeader,
+            'paid'      => $result['paid'],
+            'failed'    => $result['failed'],
+            'per_share' => $result['sharePerLeader'],
         ]);
 
         return [
             'status'    => 'distributed',
             'period'    => $ledger->period,
-            'pool'      => $pool,
+            'pool'      => $result['pool'],
             'qualified' => $qualifiedUserIds->count(),
-            'paid'      => $paid,
-            'failed'    => $failed,
-            'per_share' => $sharePerLeader,
+            'paid'      => $result['paid'],
+            'failed'    => $result['failed'],
+            'per_share' => $result['sharePerLeader'],
         ];
     }
 

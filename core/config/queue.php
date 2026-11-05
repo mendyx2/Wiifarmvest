@@ -17,6 +17,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | The application's queues
+    |--------------------------------------------------------------------------
+    |
+    | Every queue a job of this app is put on (->onQueue(...)), most urgent
+    | first. A worker must listen to all of them: `php artisan queue:work`
+    | alone works only "default", and a job on any other queue waits
+    | forever. The scheduler's queue run (routes/console.php) uses this
+    | list; a separate worker should too:
+    |   php artisan queue:work --queue=matching,payments,bonuses,dividends,savings_transfer,farm_maturity,default
+    |
+    */
+
+    'app_queues' => ['matching', 'payments', 'bonuses', 'dividends', 'savings_transfer', 'farm_maturity', 'default'],
+
+    /*
+    |--------------------------------------------------------------------------
     | Queue Connections
     |--------------------------------------------------------------------------
     |

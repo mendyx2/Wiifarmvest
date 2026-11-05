@@ -58,3 +58,31 @@ Schedule::command('usdt:scan')
     ->everyMinute()
     ->withoutOverlapping(5)
     ->appendOutputTo(storage_path('logs/usdt-scan.log'));
+
+// Global Share Pool: on the 1st of January, April, July and October, pay out the
+// quarter that just ended (no more money can come into it after it closes).
+// Re-running is safe: a paid period is never paid again.
+Schedule::command('pool:distribute --previous')
+    ->cron('17 1 1 1,4,7,10 *')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/pool-distribute.log'));
+
+// Leadership bonus: qualify new leaders and pay any matching bonus whose
+// leadership share was not paid at the time (each is paid once).
+Schedule::command('leadership:process')
+    ->hourlyAt(25)
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/leadership-process.log'));
+
+// Work every queue (config/queue.php 'app_queues') once a minute, until it is
+// empty. Matching bonuses, payments, dividends, savings transfers and farm
+// maturity are jobs on their own queues; without a worker listening to all
+// of them they wait forever. This runs them with nothing but the scheduler.
+// A permanent worker (`queue:work --queue=...` with the same list) is faster
+// and can run beside it. Skipped when jobs already run at once (sync).
+Schedule::command('queue:work --queue=' . implode(',', config('queue.app_queues')) . ' --stop-when-empty --max-time=55')
+    ->everyMinute()
+    ->withoutOverlapping(10)
+    ->runInBackground()
+    ->when(fn () => config('queue.default') !== 'sync')
+    ->appendOutputTo(storage_path('logs/queue-work.log'));
