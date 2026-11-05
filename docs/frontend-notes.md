@@ -7389,6 +7389,56 @@ package rates and daily caps, carry-forward, spillover, awards) were right.
   - class resolve-check, the route, view and config caches, and PHPUnit
     (19) pass.
 
+### Step 127: Owner's decisions on the daily cap and sponsors
+
+**The owner's decisions:**
+
+- PV above the daily matching cap is **carried forward**.
+- A member does **not** need a personal sponsor (their own referral) on
+  each leg to earn the matching bonus.
+
+**The code already did both.** Nothing in the payout logic changed.
+
+- **Carry forward:** `MatchingBonusService::processMatrix()` takes from
+  each leg's pairing PV only what it pays: 50 PV per match. When the
+  day's cap (`max_pairing_slots`) is reached, it pays nothing more and
+  takes nothing. The rest waits for the next days. No code anywhere
+  resets pairing PV to zero.
+- **No sponsor needed:** matching looks only at the two legs' pairing PV,
+  not at who referred whom.
+
+**Labels fixed, so the admin panel says this:**
+
+- **Member detail:** "PV Left/Right (Matched)" showed `pv_*_pairing`.
+  That is the PV still **waiting** to be matched, not what was matched.
+  The tiles now read "PV Left/Right (Waiting to Match)". The member pages
+  already said this.
+- **Projects form:** the hint "0 = unlimited" was on "Pairing per day".
+  That field is the amount paid per match, and 0 there means no matching
+  bonus at all. The fields now read:
+  - "Matching bonus per match": paid for each 50 PV matched on both legs;
+    0 = no matching bonus.
+  - "Max matches per day": 0 = no daily cap; PV above the cap is carried
+    forward.
+
+**Verification** (`p127_check.php`): a member with 1,000 PV on the left,
+400 on the right and a cap of 2 matches a day. Neither leg holds one of
+their own referrals.
+
+- **Day 1:**
+  - 8 matches are possible; 2 are paid.
+  - Only 100 PV per leg is used: 900 and 300 are carried.
+  - A second run the same day pays nothing and takes nothing.
+- **Days 2 to 4:** 2 matches a day from the carried PV. The right leg
+  reaches 0.
+- **The left leg's 600 PV** keeps waiting when there is nothing to pair it
+  with. It is not lost.
+- **Total:** 8 matches over 4 days.
+- **Also:** `tsc` passes.
+
+**Still open:** banned members still earn matching bonuses, and the award
+ladder in the code differs from the remediation notes.
+
 
 ## Part 4: Working on the front end
 

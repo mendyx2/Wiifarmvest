@@ -277,8 +277,8 @@ class ManageUsersController extends Controller
             'widgets' => [
                 $widget('PV Left Ranking', number_format((float) $userMatrix->pv_left, 2), 'las la-arrow-alt-circle-left', '1'),
                 $widget('PV Right Ranking', number_format((float) $userMatrix->pv_right, 2), 'las la-arrow-alt-circle-right', '13'),
-                $widget('PV Left (Matched)', number_format((float) $userMatrix->pv_left_pairing, 2), 'las la-check-double', '4'),
-                $widget('PV Right (Matched)', number_format((float) $userMatrix->pv_right_pairing, 2), 'las la-check-double', '16'),
+                $widget('PV Left (Waiting to Match)', number_format((float) $userMatrix->pv_left_pairing, 2), 'las la-check-double', '4'),
+                $widget('PV Right (Waiting to Match)', number_format((float) $userMatrix->pv_right_pairing, 2), 'las la-check-double', '16'),
             ],
         ] : null;
 
