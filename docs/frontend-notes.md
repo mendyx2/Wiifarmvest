@@ -7436,8 +7436,45 @@ their own referrals.
 - **Total:** 8 matches over 4 days.
 - **Also:** `tsc` passes.
 
-**Still open:** banned members still earn matching bonuses, and the award
-ladder in the code differs from the remediation notes.
+**Still open:** banned members still earn matching bonuses (decided in
+Step 128), and the award ladder in the code differs from the remediation
+notes.
+
+### Step 128: Banned members earn no matching bonus
+
+**The owner's decision:** banned members should not earn the matching
+bonus. Before, they were paid like anyone else.
+
+**Code:**
+
+- **`MatchingBonusService::processMatrix()`:** once the member's record
+  is locked, a member who is not active (`Status::USER_ACTIVE`) is paid
+  nothing. This is logged as `[MatchingBonus] Member is banned`. The
+  check runs at payout, so it holds even for a member banned after their
+  job was queued.
+- **`matching:dispatch`:** no longer queues jobs for banned members.
+- **Leadership bonuses** already skipped banned leaders, and the stockist
+  enrollment bonus already skipped banned uplines (Step 124).
+
+**Their pairing PV is left as it is:** nothing is paid, and nothing is
+taken from their legs.
+
+- PV from their downline still collects on their legs while they are
+  banned.
+- **If a member is unbanned, matching resumes from that waiting PV.** They
+  are paid for it then, still within the daily cap. So a ban pauses the
+  bonus; it does not cancel it.
+- **For the owner:** if a ban should forfeit the bonus for good, the PV
+  can instead be cleared, either at the ban or at each run. That is your
+  call; ask if you want it.
+
+**Verification** (`p128_check.php`):
+
+- **A banned member with 600 / 200 pairing PV:** nothing paid, no log, no
+  balance change, the PV still 600 / 200, and the skip logged.
+- **`matching:dispatch`:** queues the active members, not the banned one.
+- **Unbanned:** matching resumes (2 matches, within the cap of 2).
+- **Also:** the class resolve-check and PHPUnit (19) pass.
 
 
 ## Part 4: Working on the front end

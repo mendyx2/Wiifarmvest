@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Constants\Status;
+use App\Models\User;
 use App\Jobs\ProcessMatchingBonusJob;
 use App\Models\Matrix;
 use App\Services\MatchingBonusService;
@@ -26,6 +28,8 @@ class DispatchMatchingBonusCommand extends Command
             Matrix::where('stage_id', 1)
                 ->where('pv_left_pairing',  '>=', $threshold)
                 ->where('pv_right_pairing', '>=', $threshold)
+                // banned members earn no matching bonus (the job checks again)
+                ->whereIn('user_id', User::select('id')->where('status', Status::USER_ACTIVE))
                 ->chunkById(200, function ($matrices) use (&$dispatched) {
                     foreach ($matrices as $matrix) {
                         ProcessMatchingBonusJob::dispatch($matrix);

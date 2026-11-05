@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Constants\Status;
 use App\Contracts\MatchingBonusServiceInterface;
 use App\Models\Matrix;
 use App\Models\MatchingBonusLog;
@@ -67,6 +68,13 @@ class MatchingBonusService implements MatchingBonusServiceInterface
 
                 if (!$user) {
                     Log::error('[MatchingBonus] User not found.', ['matrix_id' => $matrixId, 'user_id' => $matrix->user_id]);
+                    return null;
+                }
+
+                // Banned members do not earn the matching bonus (owner's decision, notes
+                // Step 128). Their pairing PV is left as it is: nothing is paid or taken.
+                if ((int) $user->status !== Status::USER_ACTIVE) {
+                    Log::info('[MatchingBonus] Member is banned: no matching bonus.', ['user_id' => $user->id, 'matrix_id' => $matrixId]);
                     return null;
                 }
 
