@@ -7476,6 +7476,123 @@ taken from their legs.
 - **Unbanned:** matching resumes (2 matches, within the cap of 2).
 - **Also:** the class resolve-check and PHPUnit (19) pass.
 
+### Step 129: A demo database (`php artisan demo:install`)
+
+**Why:** the owner needs a hosted demo for a supervisor, without a copy of
+the live database.
+
+**The problem:**
+
+- The repository cannot build a database on its own. Its 9 migrations
+  only add tables and columns to the core schema (members, admins,
+  settings, the tree, the shop), and that schema was never in git.
+- The only full schema available is the test database these notes'
+  checks were built on.
+
+**New:**
+
+- **`core/database/demo/schema.sql`:** the 118 tables, as MySQL.
+  - **Source:** generated from that test schema, which every page was
+    checked against.
+  - **Columns:** all can be empty (NULL), and money is stored as
+    `DECIMAL(28,8)`.
+  - **Left out:** the tables the migrations create (leadership, the pools,
+    USDT), so those come out exactly as the migrations define them.
+  - **Added:** Laravel's own tables (`jobs`, `failed_jobs`, `cache`,
+    `sessions`, and their companions), so the database queue works.
+  - **Also added:** a small table for each of 9 models that have none
+    (`supplies`, `commissions`, and so on), so a stray query does not fail.
+- **`Database\Seeders\DemoSeeder`:** the demo content.
+  - **Settings:** e-mail, SMS and push are off. English, the home page
+    banner, the footer, the contact details and the policy pages.
+  - **The repository's own seeders:** states, admin permissions, and the 7
+    plan packages with their awards, unilevel and repurchase awards.
+  - **An admin** with the super-admin role.
+  - **Shop:** 7 products, with a price for every state, and a "Bank
+    Transfer" withdraw method.
+  - **The network:**
+    - member #1 `wiifarm` is the company account (sign-ups without a
+      referral go to member #1);
+    - then 14 fictional members, registered one by one through
+      `complete_registration_pin()`, the same code as a real sign-up;
+    - each package payment is split into the four pools first, as a real
+      payment is;
+    - so placement, direct and indirect bonuses, PV and cash back are
+      exactly what real sign-ups produce;
+    - one member is placed by spillover.
+  - **Then the real services run:**
+    - a day of matching (4 members paid, with the 80/20 autoship split);
+    - Zainab's Basic store is activated, and her upline is paid the
+      enrollment bonus;
+    - a ₦20,000 withdrawal waits for the admin.
+- **`App\Console\Commands\InstallDemo`:** creates the tables, runs the
+  migrations, then the seeder.
+  - `demo:install`: into an empty database. Refuses a database that has
+    tables.
+  - `demo:install --fresh`: wipes a demo database first. Asks before doing
+    so, and refuses when there are more than 50 members.
+  - `--admin-password=` / `--member-password=`, or the variables
+    `DEMO_ADMIN_PASSWORD` / `DEMO_MEMBER_PASSWORD`. The defaults are
+    `Admin@2026` and `Demo@2026`.
+  - **The start command** (`nixpacks.toml`, `Procfile`) runs
+    `demo:install --if-empty --if-enabled`. It does something only when
+    `DEMO_INSTALL=true` **and** the database is empty. A live site never
+    sets the variable, and has tables anyway.
+
+**Fixed on the way (found by loading every page against MySQL):**
+
+- **Admin → Paid users / Free users** crashed. They filtered on
+  `users.plan_id`, a column left from the original script, before
+  packages. "Paid" now means the member has a package (`project_id`).
+- **`/user/bv-log`** pointed to a method that does not exist. It is not
+  linked anywhere (BV became PV), so it now forwards to the PV log, like
+  `/shares` does.
+
+**For the owner:**
+
+- **Two licence checks from the script vendor (ViserLab) still apply on
+  the demo:**
+  - every page needs the `PURCHASECODE` variable;
+  - admin sign-in asks the vendor's server, and does not proceed if it
+    does not answer.
+- Use your real purchase code. Whether the vendor accepts it on a second
+  web address is between you and them. This sandbox cannot reach their
+  server, so admin sign-in was checked here with a session written
+  directly.
+- The demo:install output (in the deploy log) shows the passwords. Change
+  them with the variables above for anything beyond a private showing.
+
+**Verification:**
+
+- **Install:** `demo:install` on an empty MariaDB 10.11 database finishes
+  in about 6 seconds, with no errors logged.
+- **The data:**
+  - 15 members in the tree, PV on the correct legs, with the store's
+    3,000 PV;
+  - 14 direct and 28 indirect bonuses, 4 matching payouts, and 2
+    enrollment bonuses;
+  - all four pools above zero.
+- **Every GET route (352) loaded against MySQL**, as a guest, a member
+  and the admin:
+  - no server errors after the two fixes;
+  - the 403s are the cron URLs (they need the secret) and the ACB page
+    (refuses non-ACB members), both as intended;
+  - the redirects are the app's own (old URLs, pages that need a record).
+- **Browser:**
+  - **Member `amaka1`:** signs in. The dashboard shows ₦30,000, the
+    genealogy tree shows four levels, and the transactions and shop pages
+    load.
+  - **Admin:** the dashboard (15 members, 1 pending withdrawal, the pool
+    balances), members, member detail, tree, pending withdrawals,
+    stockists and projects. No page errors.
+- **Guards:**
+  - `--if-empty` on a full database does nothing;
+  - a plain run on a full database refuses;
+  - `--if-enabled` without `DEMO_INSTALL` does nothing;
+  - with `DEMO_INSTALL=true` on an empty database, it installs.
+- **Also:** the class resolve-check, the route, config and view caches,
+  and PHPUnit (19) pass.
+
 
 ## Part 4: Working on the front end
 

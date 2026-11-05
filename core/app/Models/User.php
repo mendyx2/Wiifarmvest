@@ -143,13 +143,15 @@ class User extends Authenticatable
         return $query->where('profile_complete', Status::ACTIVE)->where('status', Status::USER_ACTIVE)->where('ev', Status::VERIFIED)->where('sv', Status::VERIFIED);
     }
 
+    // "Paid" = has a package (project). users.plan_id is left from the original
+    // script and is not set any more (notes Step 129).
     public function scopePaidUser($query)
     {
-        return $query->where('plan_id', '!=', 0);
+        return $query->where('project_id', '>', 0);
     }
     public function scopeFreeUser($query)
     {
-        return $query->where('plan_id', 0);
+        return $query->where(fn ($q) => $q->whereNull('project_id')->orWhere('project_id', 0));
     }
 
     public function scopeBanned($query)
