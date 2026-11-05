@@ -1851,44 +1851,14 @@ function complete_registration_pin(User $user, Rmatrix $rmatrix, $user_parent_ma
     try {
  
         //$user->profile_complete = Status::YES;
-        $parent_id = 0;
-        $parent = User::find($user->ref_by); 
-    
-        if($user_parent_mat){
-            if($user_parent_mat->left == 0 ){
-                $user_parent_mat->left = $user->id;
-                $parent_id = $user_parent_mat->user_id;
-                $user_parent_mat->save();
-                $position = 'left';
-            }elseif($user_parent_mat->right == 0){
-                $user_parent_mat->right = $user->id;
-                $parent_id = $user_parent_mat->user_id;
-                $user_parent_mat->save();
-                $position = 'right';      
-            }        
-        }else{
-            $user_parent_matrix = Matrix::where('user_id', $rmatrix->parent_id)->where('stage_id', 1)->where('is_active', 1)->first();
+        // Place in the stage-1 tree (App\Services\BinaryTree, notes Step 126):
+        // the chosen parent and leg, further down that leg if the slot was
+        // taken meanwhile, else spillover under the sponsor. The slot is
+        // claimed atomically. $user_parent_mat is no longer needed (the
+        // spillover search runs here, after any slot taken meanwhile).
+        [$parent_id, $position] = app(\App\Services\BinaryTree::class)
+            ->placeNewMember($user, (int) $rmatrix->parent_id, $rmatrix->position, (int) $user->ref_by);
 
-            // check if the parent is in the Matrix before assignment to new user
-            if (!$user_parent_matrix) {
-                $parent_id = 0;
-                $pos = 0;
-                $position = 'root';
-            }else{
-                if($user_parent_matrix->left == 0 && $rmatrix->position == 'left'){
-                $user_parent_matrix->left = $user->id;
-                $parent_id = $user_parent_matrix->user_id;
-                $user_parent_matrix->save();
-                $position = 'left';
-
-                }elseif($user_parent_matrix->right == 0 && $rmatrix->position == 'right'){
-                    $user_parent_matrix->right = $user->id;
-                    $parent_id = $user_parent_matrix->user_id;
-                    $user_parent_matrix->save();
-                    $position = 'right';        
-                }
-            }
-        }
         //if Pin stats is 1. its means the pin is 9000. this user paid in full
         /*
         if($pin->stats == 0) {
@@ -1940,7 +1910,7 @@ function complete_registration_pin(User $user, Rmatrix $rmatrix, $user_parent_ma
         $inDirect_bonus_details = 'Indirect bonus gotten from username: '.$user->username. ' Subscribing to '.$project->title;
 
         
-        indirectBonus($user1, $pv, $inDirect_bonus_details, $trx);
+        indirectBonus($user1, $pv, $inDirect_bonus_details, $user->trx);   // was $trx, not yet defined here: every registration stopped with an error (notes Step 126)
 
         $dets = $user->username . ' Subscribed to ' . $user->project->title . ' Project.'; 
         // Next we distribute the PV along the user Tree.
@@ -2117,124 +2087,27 @@ function checkDownline($sponsor_id, $parent_id){
     // Not found in downline
     return false;
 }
+/**
+ * PV credit up the stage-1 binary tree. All three go through
+ * App\Services\BinaryTree::creditPv() (notes Step 126): the leg comes from
+ * the parent's own left/right (a broken link is logged and skipped, not put
+ * on the right leg), each credit is an atomic SQL increment, and a loop in
+ * the tree cannot hang the climb.
+ */
 function upLinePvOnUpgrade($user, $pvAmount, $details){
-    /* This function simply allocate pv to a single parent. 
-        check if the parent exist and detect the leg to allocate the pv. 
-        then  call pvlog function for documentation. 
-    */
-
+    // One level only: the direct parent in the tree
     if ($user->ref_by > 0) {
-
-        $userMatrix = Matrix::where('stage_id', 1)->where('user_id', $user->id)->first();
-
-        if (!$userMatrix) {
-            return;
-        }
-
-        $childId  = $user->id;
-        $parentId = (int) $userMatrix->parent_id;
-
-        if($parentId > 0) {
-            $parentMatrix = Matrix::where('stage_id', 1)->where('user_id', $parentId)->first();
-            if ($parentMatrix) {            
-                if ((int) $parentMatrix->left == $childId) {
-                    $parentMatrix->pv_left         += $pvAmount;
-                    $parentMatrix->pv_left_pairing += $pvAmount;
-                    $position                = 1;
-                } else {
-                    $parentMatrix->pv_right         += $pvAmount;
-                    $parentMatrix->pv_right_pairing += $pvAmount;
-                    $position                 = 2;
-                }
-                $parentMatrix->save();
-                pvLog($parentMatrix->user_id, $pvAmount, $position, '+', $details);
-
-            }
-
-        }
+        app(\App\Services\BinaryTree::class)->creditPv($user, (float) $pvAmount, $details, 1);
     }
- }
- 
- function updatePV(User $user, $details, $pv){
-
-        $user_m = Matrix::where('stage_id', 1)->where('user_id', $user->id)->first();
-        
-        // User has no stage-1 matrix record — nothing to propagate
-        if (!$user_m || !$user_m->parent_id) {
-            return;
-        }
-        
-        $user_child = $user->id;
-        $user_id    = $user_m->parent_id;
-
-        while ($user_id) {
-
-            $user_matrix = Matrix::where('stage_id', 1)->where('user_id', $user_id)->first();
-
-            if (!$user_matrix) {
-                break;
-            }
-
-            if ($user_matrix->left == $user_child) {
-                $user_matrix->pv_left         += $pv;
-                $user_matrix->pv_left_pairing += $pv;
-                $position = 1;
-            } else {
-                $user_matrix->pv_right         += $pv;
-                $user_matrix->pv_right_pairing += $pv;
-                $position = 2;
-            }
-            $user_matrix->save();
-
-            pvLog($user_matrix->user_id, $pv, $position, '+', $details);
-            
-            $user_child = $user_matrix->user_id;
-            $user_id    = $user_matrix->parent_id;
-        }
-
 }
+
+function updatePV(User $user, $details, $pv){
+    app(\App\Services\BinaryTree::class)->creditPv($user, (float) $pv, $details);
+}
+
 //This is called in stockistController when a user bought products
 function updateProductPV(User $user, Product $product, $quantity, $details){
-
-    $pv = (float)$product->pv * $quantity;
-    
-    if ($pv <= 0) {
-         return;
-    }
-   
-
-    $user_m = Matrix::where('user_id', $user->id)->where('stage_id', 1)->first();
-
-    // User has no stage-1 matrix record — nothing to propagate
-    if (!$user_m || !$user_m->parent_id) {
-        return;
-    }
-   
-    $user_child = $user->id;
-    $user_id    = $user_m->parent_id;
-
-    while ($user_id) {
-        $user_matrix = Matrix::where('user_id', $user_id)->where('stage_id', 1)->first();
-        if (!$user_matrix) {
-            break;
-        }
-        if ($user_matrix->left == $user_child) {
-            $user_matrix->pv_left         += $pv;
-            $user_matrix->pv_left_pairing += $pv;
-            $position = 1;
-        } else {
-            $user_matrix->pv_right         += $pv;
-            $user_matrix->pv_right_pairing += $pv;
-            $position = 2;
-        }
-        $user_matrix->save();
-
-        pvLog($user_matrix->user_id, $pv, $position, '+', $details);
-
-        $user_child = $user_matrix->user_id;
-        $user_id    = $user_matrix->parent_id;
-    }
-
+    app(\App\Services\BinaryTree::class)->creditPv($user, (float) $product->pv * $quantity, $details);
 }
 
  function pvLog($user_id, $pv, $position, $trx_type, $details){

@@ -248,45 +248,4 @@ class ProjectController extends Controller
         $notify[] = ['success', 'Your project has been upgraded successfully.'];
         return back()->withNotify($notify);
     }
-
-    
-
-
-    /**
-     * Walk up the binary tree from $user and credit each ancestor with the PV difference.
-     * Mirrors the logic in updatePV() but accepts a custom amount instead of $user->project->pv.
-     */
-    private function propagatePv(User $user, int $pvAmount, string $details): void
-    {
-        $userMatrix = Matrix::where('stage_id', 1)->where('user_id', $user->id)->first();
-        if (!$userMatrix) {
-            return;
-        }
-
-        $childId  = $user->id;
-        $parentId = (int) $userMatrix->parent_id;
-
-        while ($parentId > 0) {
-            $parentMatrix = Matrix::where('stage_id', 1)->where('user_id', $parentId)->first();
-            if (!$parentMatrix) {
-                break;
-            }
-            if ((int) $parentMatrix->left == $childId) {
-                $parentMatrix->pv_left         += $pvAmount;
-                $parentMatrix->pv_left_pairing += $pvAmount;
-                $position                = 1;
-            } else {
-                $parentMatrix->pv_right         += $pvAmount;
-                $parentMatrix->pv_right_pairing += $pvAmount;
-                $position                 = 2;
-            }
-
-            $parentMatrix->save();
-            
-            pvLog($parentMatrix->user_id, $pvAmount, $position, '+', $details);
-
-            $childId  = $parentMatrix->user_id;
-            $parentId = (int) $parentMatrix->parent_id;
-        }
-    }
 }

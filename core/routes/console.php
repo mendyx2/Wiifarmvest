@@ -73,3 +73,16 @@ Schedule::command('leadership:process')
     ->hourlyAt(25)
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/leadership-process.log'));
+
+// Work every queue (config/queue.php 'app_queues') once a minute, until it is
+// empty. Matching bonuses, payments, dividends, savings transfers and farm
+// maturity are jobs on their own queues; without a worker listening to all
+// of them they wait forever. This runs them with nothing but the scheduler.
+// A permanent worker (`queue:work --queue=...` with the same list) is faster
+// and can run beside it. Skipped when jobs already run at once (sync).
+Schedule::command('queue:work --queue=' . implode(',', config('queue.app_queues')) . ' --stop-when-empty --max-time=55')
+    ->everyMinute()
+    ->withoutOverlapping(10)
+    ->runInBackground()
+    ->when(fn () => config('queue.default') !== 'sync')
+    ->appendOutputTo(storage_path('logs/queue-work.log'));

@@ -7256,6 +7256,140 @@ php artisan stockist:enrollment-bonus --all               # shows the same, asks
   amounts at activation, never twice, the loop, and the failure and retry
   (now confirmed with `--force`).
 
+### Step 126: Binary tree fixes (queues, taken slots, simultaneous updates, wrong leg)
+
+**Why:** the binary-system review found four defects that could stop or
+misdirect payouts. The mechanics themselves (1 PV = ₦600, 50 PV per match,
+package rates and daily caps, carry-forward, spillover, awards) were right.
+
+**1. Matching bonuses (and other queued jobs) could never run.**
+
+- **Before:** the jobs go on named queues: `matching`, `payments`,
+  `bonuses`, `dividends`, `savings_transfer` and `farm_maturity`.
+  `php artisan queue:work` alone works only `default`, and the server had
+  no worker listening to the others. The 01:30 `matching:dispatch` queued
+  the jobs, and they waited forever.
+- **Now:**
+  - `config/queue.php` lists every queue in `app_queues`, most urgent
+    first.
+  - The scheduler works all of them every minute, until they are empty
+    (`queue:work --queue=<all> --stop-when-empty --max-time=55`, logged
+    to `storage/logs/queue-work.log`).
+  - So the one cron entry (`schedule:run`) is enough. It is skipped when
+    `QUEUE_CONNECTION=sync`, since jobs already run at once then.
+  - A permanent worker is faster and can run beside it. It must use the
+    same list (README).
+- **Correction:** the advice in Step 114 (`--queue=dividends,default`) was
+  too narrow. Use the full list.
+
+**2. A taken slot at payment time left the new member stuck or outside the tree.**
+
+- **Before:** a new member chooses a parent and a leg at sign-up, and is
+  placed when payment completes (`complete_registration_pin()`). If
+  someone else had taken that slot meanwhile:
+  - `$position` was never set, and the registration stopped with an
+    error; or
+  - the member was made a root, with no upline.
+- **Now:** a new service, `App\Services\BinaryTree::placeNewMember()`,
+  places members:
+  - **The chosen slot**, if it is still free.
+  - **Taken:** the first free slot further down that same leg, so the
+    member stays on the side chosen for them.
+  - **No choice, or the chosen parent is not in the tree:** the first free
+    slot under the sponsor, level by level, left first (spillover, as
+    before).
+  - **Root:** only when there is no tree to join, and that is logged if a
+    tree exists.
+- The `$user_parent_mat` argument is kept for the Paystack caller, but no
+  longer used: the search runs inside the registration, after any slot
+  was taken.
+
+**3. Simultaneous registrations or purchases could overwrite each other.**
+
+- **Placement:** a slot is now taken with one conditional UPDATE ("set
+  left = me where left is still 0"). Two members can never get the same
+  slot. The loser searches again (up to 5 times, then a clear error),
+  and the registration transaction rolls back cleanly.
+- **PV:** each upline's PV was read, added to in PHP and saved. Two
+  purchases at the same moment could lose one of them. Each credit is now
+  one SQL increment:
+  ```sql
+  pv_left = pv_left + 100, pv_left_pairing = pv_left_pairing + 100
+  ```
+
+**4. PV went to the right leg when the tree did not say which leg.**
+
+- **Before:** "if the parent's left is me → left, otherwise → right".
+  When a member's parent named neither leg (a broken link), the PV went
+  to the parent's right leg and counted towards right-leg matches.
+- **Now:** `BinaryTree::creditPv()` credits a leg only when the parent
+  names the member on it. A broken link is logged (`[BinaryPV]` in
+  `laravel.log`) and that upline is skipped. The climb goes on above it,
+  on the correct leg.
+- A loop in the tree now ends the climb, instead of running forever.
+
+**One place for all of it:**
+
+- `updatePV()` (registration, upgrades, stockist store PV),
+  `updateProductPV()` and `upLinePvOnUpgrade()` (one level) now call
+  `BinaryTree::creditPv()`.
+- The three copies of the climb in helpers.php are gone.
+- `ProjectController::propagatePv()`, a fourth copy that nothing called,
+  is removed.
+
+**Two more bugs found on the way:**
+
+- **The stockist repurchase PV share walked the wrong records.**
+  - `shareRepurchasePvUpline()` looked up the upline with
+    `Matrix::find($matrix->parent_id)`. That treats the parent's member id
+    as a tree-record id, so it credited unrelated members, or stopped.
+  - It now walks member ids (`BinaryTree::matrixOf()`), takes the leg from
+    `legOf()` (a broken link is logged and skipped), and stops on a loop.
+  - The 10-level limit and the RepurchasePv locking are unchanged.
+- **Completing a registration always stopped with an error.**
+  - In `complete_registration_pin()`, the indirect bonus was given `$trx`
+    a few lines before `$trx` was set. The resulting "Undefined
+    variable" error rolled back the whole registration.
+  - It now uses `$user->trx`, which the next lines already used for the
+    cash back.
+  - **For the owner:** members who paid but could not complete
+    registration this way may be waiting. Check for paid registrations
+    whose members are still inactive.
+
+**Verification** (`p126_check.php`, 26 checks, on a test tree):
+
+- **PV:**
+  - lands on the correct leg at each level;
+  - the update SQL is an in-place increment;
+  - a member whose parent does not name them gives that parent nothing
+    (before: the right leg), the upline above still gets it on the left,
+    and the error is logged;
+  - pv_logs show the left leg;
+  - a two-member loop ends;
+  - `upLinePvOnUpgrade` credits one level only.
+- **Placement:**
+  - chosen free slot → that slot;
+  - chosen slot taken → the free slot down the same leg;
+  - no choice → spillover under the sponsor;
+  - no tree → root.
+- **Race:** a slot taken between the search and the claim is kept by the
+  other member; this one searches again and gets the next slot.
+- **Repurchase share:** both real uplines get it, on the left leg.
+- **Full registration:**
+  - the chosen slot was taken before payment completed;
+  - the registration completes, and the member is active;
+  - the member is placed down the chosen leg;
+  - their package PV climbs four levels on the correct legs;
+  - there is one matrix row.
+- **Schedule:**
+  - the queue run lists all seven queues;
+  - it is skipped with `sync` and runs with `database`.
+- **Also:**
+  - Steps 124 and 125's checks pass again;
+  - class resolve-check, the route, view and config caches, and PHPUnit
+    (19) pass.
+
+
 ## Part 4: Working on the front end
 
 ### Run locally

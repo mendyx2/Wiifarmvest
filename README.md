@@ -62,6 +62,17 @@ The server must run `php artisan schedule:run` every minute: payments,
 awards, matching and leadership bonuses, the quarterly Global Share Pool, the
 USDT scan and backups all run from it (`core/routes/console.php`).
 
+Many of those are queued jobs, each on its own queue (matching, payments,
+bonuses, dividends, savings_transfer, farm_maturity, default; the list is
+`queue.app_queues` in `core/config/queue.php`). The scheduler works all of
+them once a minute, so the cron entry alone is enough. A permanent worker is
+faster; it must listen to every queue, since `queue:work` alone works only
+`default`:
+
+```bash
+php artisan queue:work --queue=matching,payments,bonuses,dividends,savings_transfer,farm_maturity,default
+```
+
 ## Where to read more
 
 - `docs/frontend-notes.md`: Part 1 explains Inertia, Part 4 how to work on
