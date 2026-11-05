@@ -12,6 +12,8 @@ cmds = [
 cmds = ["cd core && npm run build"]
 
 [start]
+# demo:install fills an EMPTY database with demo data, and only when the
+# DEMO_INSTALL variable is true (notes Step 129); otherwise it does nothing.
 # Members' documents go to private storage first (safe to repeat; see
 # core/app/Console/Commands/MovePrivateUploads.php). A failure does not stop the site.
-cmd = "php core/artisan uploads:move-private --no-interaction; php -S 0.0.0.0:${PORT:-8080} server.php"
+cmd = "php core/artisan demo:install --if-empty --if-enabled --no-interaction; php core/artisan uploads:move-private --no-interaction; php -S 0.0.0.0:${PORT:-8080} server.php"

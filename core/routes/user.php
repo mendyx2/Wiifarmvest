@@ -328,7 +328,7 @@ Route::middleware(['auth', 'XssSanitizer'])->name('user.')->group(function () {
                 Route::get('investment/portfolio', 'investmentPortfolio')->name('investment.portfolio');
                 Route::get('investment/{investmentId}/details', 'investmentDetails')->name('investment.details');
 
-                Route::get('bv-log', 'bvlog')->name('bv.log');
+                Route::get('bv-log', fn () => to_route('user.pv.log'))->name('bv.log');   // BV is now PV; there was no bvlog() (notes Step 129)
                 Route::get('pv-log', 'pvlog')->name('pv.log');
                 Route::get('awards', 'myAwards')->name('awards');
                 Route::get('repurchase-award', 'repurchaseAward')->name('repurchase.award');

@@ -73,6 +73,19 @@ faster; it must listen to every queue, since `queue:work` alone works only
 php artisan queue:work --queue=matching,payments,bonuses,dividends,savings_transfer,farm_maturity,default
 ```
 
+## A demo site
+
+`php artisan demo:install` builds a complete demo into an **empty** MySQL
+database: the tables (`core/database/demo/schema.sql`), the migrations,
+and sample content (`core/database/seeders/DemoSeeder.php`): settings,
+products, and a network of fictional members with real bonuses and PV.
+Sign in at `/admin` as `admin` / `Admin@2026`, or at `/user/login` as
+`amaka1` / `Demo@2026`.
+
+On a host, set `DEMO_INSTALL=true`: the start command then installs the
+demo on the first start, when the database is empty, and never touches a
+database that has tables. Never set it for the live site. Notes Step 129.
+
 ## Where to read more
 
 - `docs/frontend-notes.md`: Part 1 explains Inertia, Part 4 how to work on
